@@ -1,0 +1,25 @@
+{
+  "version": "sample",
+  "date": "2025-11-01",
+  "server": "sample-fortigate",
+  "isdb": {
+    "1": {
+      "name": "Google",
+      "content": "ID: 1\nName: Google\nProtocols: TCP\nPorts: 80,443\nCategories: Search-Engines",
+      "date": "2025-11-01",
+      "version": "sample"
+    },
+    "2": {
+      "name": "Facebook",
+      "content": "ID: 2\nName: Facebook\nProtocols: TCP\nPorts: 80,443\nCategories: Social-Media",
+      "date": "2025-11-01",
+      "version": "sample"
+    },
+    "3": {
+      "name": "YouTube",
+      "content": "ID: 3\nName: YouTube\nProtocols: TCP\nPorts: 80,443\nCategories: Video-Sharing",
+      "date": "2025-11-01",
+      "version": "sample"
+    }
+  }
+}

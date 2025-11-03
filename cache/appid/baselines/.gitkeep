@@ -1,0 +1,2 @@
+# This directory contains versioned baseline App-ID and ISDB caches
+# Baseline files are excluded from git (.gitignore) but directory structure is tracked

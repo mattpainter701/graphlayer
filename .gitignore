@@ -50,3 +50,7 @@ Thumbs.db
 *.mov
 *.wmv
 
+# Sample data directory - do not sync to GitHub
+sample_data/
+
+.claude/

@@ -1,0 +1,129 @@
+! Cisco IOS Switch Configuration - L2 Security Test Sample
+! Generated for integration testing
+! Device: SW-CORE-01
+! Purpose: Test full L2 pipeline with security controls
+!
+version 15.2
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname SW-CORE-01
+!
+boot-start-marker
+boot-end-marker
+!
+! Global L2 Security Controls
+ip dhcp snooping
+ip dhcp snooping vlan 100,200
+ip arp inspection vlan 100,200
+ip arp inspection validate src-mac dst-mac ip
+!
+! 802.1X Global Configuration
+aaa new-model
+aaa authentication dot1x default group radius
+aaa authorization network default group radius
+dot1x system-auth-control
+!
+! VLANs
+vlan 100
+ name Engineering
+!
+vlan 200
+ name Guest_Network
+!
+vlan 300
+ name Management
+!
+vlan 999
+ name Quarantine
+!
+! Access Port with Full Security Stack
+interface GigabitEthernet1/0/1
+ description Engineering Workstation - High Security
+ switchport mode access
+ switchport access vlan 100
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security aging time 2
+ switchport port-security aging type inactivity
+ ip dhcp snooping limit rate 10
+ ip arp inspection trust
+ ip verify source port-security
+ authentication port-control auto
+ authentication periodic
+ authentication timer reauthenticate 3600
+ mab
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+! Access Port with Medium Security (DHCP + DAI only)
+interface GigabitEthernet1/0/2
+ description Guest Access - Medium Security
+ switchport mode access
+ switchport access vlan 200
+ ip dhcp snooping limit rate 15
+ authentication host-mode multi-auth
+ authentication port-control auto
+ mab
+ spanning-tree portfast
+!
+! Access Port with Low Security (Minimal controls)
+interface GigabitEthernet1/0/3
+ description Legacy Device - Low Security
+ switchport mode access
+ switchport access vlan 100
+ spanning-tree portfast
+!
+! Trunk Port to Distribution Switch
+interface GigabitEthernet1/0/24
+ description Trunk to DIST-SW-01
+ switchport mode trunk
+ switchport trunk allowed vlan 100,200,300
+ switchport trunk native vlan 999
+ ip dhcp snooping trust
+ ip arp inspection trust
+!
+! Port-Channel Configuration
+interface Port-channel1
+ description LAG to Server Farm
+ switchport mode trunk
+ switchport trunk allowed vlan 100,300
+!
+interface GigabitEthernet1/0/47
+ description Member of Po1
+ switchport mode trunk
+ switchport trunk allowed vlan 100,300
+ channel-group 1 mode active
+!
+interface GigabitEthernet1/0/48
+ description Member of Po1
+ switchport mode trunk
+ switchport trunk allowed vlan 100,300
+ channel-group 1 mode active
+!
+! SVI for Management
+interface Vlan300
+ description Management SVI
+ ip address 10.0.0.1 255.255.255.0
+ no shutdown
+!
+! Loopback for testing
+interface Loopback0
+ ip address 1.1.1.1 255.255.255.255
+!
+! Static Routes for testing
+ip route 0.0.0.0 0.0.0.0 10.0.0.254
+ip route 192.168.0.0 255.255.0.0 10.0.0.253
+!
+! SNMP Configuration
+snmp-server community public RO
+snmp-server location DataCenter-A
+!
+line con 0
+ logging synchronous
+line vty 0 4
+ transport input ssh
+!
+end

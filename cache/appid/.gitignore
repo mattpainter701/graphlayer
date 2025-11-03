@@ -1,0 +1,16 @@
+# Ignore device-specific caches and backups
+*/current.json
+*/current.json.meta
+*/backups/
+*/fetch_log.json
+
+# Keep baseline structure but ignore actual baseline files
+baselines/**/*.json
+baselines/**/*.json.gz
+
+# But track baseline index and documentation
+!baselines/baseline_index.json
+!baselines/README.md
+!baselines/.gitkeep
+!baselines/panos/.gitkeep
+!baselines/fortios/.gitkeep

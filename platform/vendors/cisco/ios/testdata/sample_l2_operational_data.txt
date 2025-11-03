@@ -1,0 +1,78 @@
+=== DHCP Snooping Bindings ===
+MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface
+------------------  ---------------  ----------  -------------  ----  --------------------
+00:11:22:33:44:55   192.168.1.10     86356       dhcp-snooping  100   GigabitEthernet1/0/1
+aa:bb:cc:dd:ee:ff   192.168.2.20     43178       dhcp-snooping  200   GigabitEthernet1/0/2
+
+=== Authentication Sessions ===
+Interface: GigabitEthernet1/0/1
+  MAC Address: 0011.2233.4455
+  IPv4 Address: 192.168.1.10
+  Status: Authc Success
+  Domain: DATA
+  Oper host mode: multi-auth
+  Oper control dir: both
+  Session timeout: N/A
+  Restart timeout: N/A
+  Authorized By: Authentication Server
+  Vlan Policy: N/A
+  Session Uptime: 2h 15m
+  Common Session ID: 0A0001C8000000010000000F
+  Acct Session ID: 0x00000010
+  Handle: 0x91000001
+  Method: dot1x
+
+Interface: GigabitEthernet1/0/2
+  MAC Address: aabb.ccdd.eeff
+  IPv4 Address: 192.168.2.20
+  Status: Authc Success
+  Domain: DATA
+  Oper host mode: multi-auth
+  Oper control dir: both
+  Authorized By: Authentication Server
+  Session Uptime: 0h 45m
+  Method: mab
+
+=== Port Security ===
+Port Security              : Enabled
+Port Status                : Secure-up
+Violation Mode             : Restrict
+Aging Time                 : 2 mins
+Aging Type                 : Inactivity
+SecureStatic Address Aging : Disabled
+Maximum MAC Addresses      : 2
+Total MAC Addresses        : 1
+Configured MAC Addresses   : 0
+Sticky MAC Addresses       : 0
+Last Source Address:Vlan   : 0011.2233.4455:100
+Security Violation Count   : 0
+
+=== IP Source Guard ===
+Interface  Filter-type  Filter-mode  IP-address       Mac-address        Vlan
+---------  -----------  -----------  ---------------  -----------------  ----
+Gi1/0/1    ip-mac       active       192.168.1.10     00:11:22:33:44:55  100
+
+=== ARP Inspection Statistics ===
+Vlan      Forwarded   Dropped     DHCP Drops  ACL Drops
+----      ---------   -------     ----------  ---------
+100       1245        5           3           2
+200       892         2           1           1
+
+=== MAC Address Table ===
+Mac Address Table
+-------------------------------------------
+
+Vlan    Mac Address       Type        Ports
+----    -----------       --------    -----
+ 100    0011.2233.4455    DYNAMIC     Gi1/0/1
+ 100    1122.3344.5566    DYNAMIC     Gi1/0/3
+ 200    aabb.ccdd.eeff    DYNAMIC     Gi1/0/2
+ 300    5566.7788.99aa    DYNAMIC     Gi1/0/24
+
+Total Mac Addresses for this criterion: 4
+
+=== ARP Table ===
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  10.0.0.1         -          5566.7788.99aa  ARPA   Vlan300
+Internet  192.168.1.10     0          0011.2233.4455  ARPA   Vlan100
+Internet  192.168.2.20     5          aabb.ccdd.eeff  ARPA   Vlan200
