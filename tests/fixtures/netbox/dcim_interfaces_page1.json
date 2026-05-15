@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "id": 1001,
+      "name": "GigabitEthernet1/0/1",
+      "display": "GigabitEthernet1/0/1",
+      "device": {
+        "id": 101,
+        "name": "core-sw-01"
+      },
+      "type": {
+        "value": "1000base-t",
+        "label": "1000BASE-T"
+      },
+      "enabled": true,
+      "description": "Uplink to edge router",
+      "label": "uplink-1",
+      "mac_address": "00:11:22:33:44:55",
+      "mtu": 1500,
+      "last_updated": "2024-03-02T16:24:00Z",
+      "untagged_vlan": {
+        "id": 10,
+        "vid": 10,
+        "name": "Users"
+      },
+      "tagged_vlans": [
+        {
+          "id": 11,
+          "vid": 20,
+          "name": "Servers"
+        }
+      ],
+      "custom_fields": {
+        "poe": true
+      }
+    }
+  ]
+}

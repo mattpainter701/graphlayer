@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "id": 2001,
+      "name": "ge-0/0/0",
+      "display": "ge-0/0/0",
+      "device": {
+        "id": 202,
+        "name": "edge-router-01"
+      },
+      "type": {
+        "value": "1000base-t",
+        "label": "1000BASE-T"
+      },
+      "enabled": true,
+      "description": "Uplink from core switch",
+      "label": "uplink-1",
+      "mac_address": "00:aa:bb:cc:dd:ee",
+      "mtu": 1500,
+      "last_updated": "2024-03-02T16:26:00Z",
+      "untagged_vlan": null,
+      "tagged_vlans": [],
+      "custom_fields": {
+        "poe": false
+      }
+    }
+  ]
+}

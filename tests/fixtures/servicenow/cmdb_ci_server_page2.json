@@ -1,0 +1,14 @@
+{
+  "result": [
+    {
+      "sys_id": "srv-002",
+      "name": "app-server-02",
+      "sys_class_name": "cmdb_ci_server",
+      "manufacturer_display_value": "HPE",
+      "model_id_display_value": "ProLiant DL360",
+      "ip_address": "10.10.1.12",
+      "serial_number": "SN-002",
+      "sys_updated_on": "2024-01-03T10:00:00+00:00"
+    }
+  ]
+}

@@ -1,0 +1,210 @@
+"""Shared connector contract and normalization helpers for Python connectors.
+
+This module gives the Python connector implementations a small, explicit
+contract that mirrors the Sprint 2 roadmap:
+
+- Connect() / Collect() / Transform() / Close()
+- normalized records with provenance and deterministic fingerprints
+- lightweight state tracking for tests and harnesses
+"""
+
+from __future__ import annotations
+
+import abc
+import hashlib
+import json
+import os
+import tempfile
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
+
+
+@dataclass(frozen=True)
+class NormalizedRecord:
+    """Canonical connector output with provenance attached."""
+
+    record_type: str
+    source_connector: str
+    source_id: str
+    payload: Dict[str, Any]
+    confidence: float = 1.0
+    collected_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    raw_fingerprint: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class ConnectorContract(abc.ABC):
+    """Minimal interface expected by the Sprint 2 connector harness."""
+
+    @abc.abstractmethod
+    def connect(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def collect(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def transform(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def close(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+
+class BaseConnector(ConnectorContract):
+    """Common setup, lifecycle wrappers, and normalization helpers."""
+
+    def __init__(
+        self,
+        guid: str,
+        connector_data: Optional[Mapping[str, Any]] = None,
+        working_folder: Optional[str] = None,
+        task_guid: Optional[str] = None,
+    ) -> None:
+        connector_data = dict(connector_data or {})
+        payload = dict(connector_data.get("payload", {}) or {})
+        credentials = dict(connector_data.get("credentials", {}) or {})
+
+        self.guid = guid
+        self.task_guid = task_guid
+        self.connector_data = connector_data
+        self.name = connector_data.get("name", guid)
+        self.connector_type = connector_data.get("connector_type", "")
+        self.host = connector_data.get("host", payload.get("host", ""))
+        self.username = connector_data.get("username", credentials.get("username", ""))
+        self.password = connector_data.get("password", credentials.get("password", ""))
+        self.devices = list(connector_data.get("devices", []))
+        self.payload = payload
+        self.credentials = credentials
+        self.working_folder = working_folder or connector_data.get("working_folder") or os.path.join(
+            tempfile.gettempdir(), f"graphlayer-{guid}"
+        )
+        self.state = "disconnected"
+        self.connected = False
+
+        os.makedirs(self.working_folder, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Sprint 2 contract aliases
+    # ------------------------------------------------------------------
+    def Connect(self, *args: Any, **kwargs: Any) -> Any:
+        return self.connect(*args, **kwargs)
+
+    def Collect(self, *args: Any, **kwargs: Any) -> Any:
+        return self.collect(*args, **kwargs)
+
+    def Transform(self, *args: Any, **kwargs: Any) -> Any:
+        return self.transform(*args, **kwargs)
+
+    def Close(self, *args: Any, **kwargs: Any) -> Any:
+        return self.close(*args, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Default lifecycle helpers
+    # ------------------------------------------------------------------
+    def collect(self, *args: Any, **kwargs: Any) -> Any:
+        if hasattr(self, "do_download") and callable(getattr(self, "do_download")):
+            return self.do_download(*args, **kwargs)
+        raise NotImplementedError("collect() requires a do_download() implementation")
+
+    def transform(self, raw_data: Any, **kwargs: Any) -> Any:
+        """Default transform is identity; harnesses can override per connector."""
+
+        return raw_data
+
+    def close(self, *args: Any, **kwargs: Any) -> Any:
+        disconnect = getattr(self, "disconnect", None)
+        if callable(disconnect):
+            result = disconnect(*args, **kwargs)
+        else:
+            result = None
+        self.connected = False
+        self.state = "disconnected"
+        return result
+
+    # ------------------------------------------------------------------
+    # Normalization helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def normalize_hostname(name: str) -> str:
+        return name.strip().lower()
+
+    @staticmethod
+    def normalize_path(path: str) -> str:
+        cleaned = str(path or "").strip().replace("\\", "/")
+        if not cleaned or cleaned == "/":
+            return ""
+        cleaned = os.path.normpath(cleaned)
+        cleaned = cleaned.replace("\\", "/")
+        if cleaned == ".":
+            return ""
+        if cleaned.startswith("./"):
+            cleaned = cleaned[2:]
+        if cleaned != "/" and cleaned.endswith("/"):
+            cleaned = cleaned[:-1]
+        return cleaned
+
+    @staticmethod
+    def canonical_fingerprint(data: Any) -> str:
+        serialized = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+        return f"sha256:{hashlib.sha256(serialized.encode('utf-8')).hexdigest()}"
+
+    def build_normalized_record(
+        self,
+        record_type: str,
+        source_id: str,
+        payload: Mapping[str, Any],
+        confidence: float = 1.0,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> NormalizedRecord:
+        raw_payload = dict(payload)
+        return NormalizedRecord(
+            record_type=record_type,
+            source_connector=self.connector_type or self.__class__.__name__,
+            source_id=source_id,
+            payload=raw_payload,
+            confidence=confidence,
+            raw_fingerprint=self.canonical_fingerprint(raw_payload),
+            metadata=dict(metadata or {}),
+        )
+
+    def build_normalized_payload(
+        self,
+        record_type: str,
+        records: Iterable[Mapping[str, Any]],
+        confidence: float = 1.0,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        normalized_records = [
+            self.build_normalized_record(
+                record_type=record_type,
+                source_id=str(record.get("id") or record.get("name") or index),
+                payload=record,
+                confidence=confidence,
+                metadata=metadata,
+            )
+            for index, record in enumerate(records)
+        ]
+        return {
+            "record_type": record_type,
+            "connector": self.connector_type or self.__class__.__name__,
+            "count": len(normalized_records),
+            "records": [record.__dict__ for record in normalized_records],
+        }
+
+    def validate_required_fields(self, fields: Iterable[str]) -> None:
+        missing = [field for field in fields if not getattr(self, field, None)]
+        if missing:
+            raise ValueError(f"missing required connector fields: {', '.join(missing)}")
+
+    def mark_connected(self) -> None:
+        self.connected = True
+        self.state = "connected"
+
+    def mark_disconnected(self) -> None:
+        self.connected = False
+        self.state = "disconnected"

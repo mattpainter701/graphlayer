@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "id": 5002,
+      "address": "10.0.0.254/24",
+      "family": 4,
+      "status": "active",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": 2001,
+      "assigned_object": {
+        "id": 2001,
+        "name": "ge-0/0/0",
+        "device": {
+          "id": 202,
+          "name": "edge-router-01"
+        }
+      },
+      "dns_name": "edge-router-01.mgmt.example.com",
+      "description": "Management address",
+      "last_updated": "2024-03-02T16:30:00Z",
+      "custom_fields": {
+        "primary": true
+      }
+    }
+  ]
+}

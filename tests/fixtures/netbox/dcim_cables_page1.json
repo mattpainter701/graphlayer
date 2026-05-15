@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "id": 3001,
+      "status": "connected",
+      "label": "core-to-edge",
+      "type": "cat6",
+      "length": 15,
+      "length_unit": "m",
+      "termination_a": {
+        "id": 1001,
+        "name": "GigabitEthernet1/0/1",
+        "device": {
+          "id": 101,
+          "name": "core-sw-01"
+        }
+      },
+      "termination_b": {
+        "id": 2001,
+        "name": "ge-0/0/0",
+        "device": {
+          "id": 202,
+          "name": "edge-router-01"
+        }
+      },
+      "last_updated": "2024-03-02T16:28:00Z",
+      "custom_fields": {
+        "path": "MDF-1"
+      }
+    }
+  ]
+}

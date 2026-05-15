@@ -1,0 +1,14 @@
+{
+  "result": [
+    {
+      "sys_id": "srv-001",
+      "name": "app-server-01",
+      "sys_class_name": "cmdb_ci_server",
+      "manufacturer_display_value": "Dell",
+      "model_id_display_value": "PowerEdge R740",
+      "ip_address": "10.10.1.11",
+      "serial_number": "SN-001",
+      "sys_updated_on": "2024-01-02T10:00:00+00:00"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "id": 4001,
+      "prefix": "10.0.0.0/24",
+      "status": "active",
+      "role": {
+        "id": 41,
+        "name": "Infrastructure",
+        "slug": "infrastructure"
+      },
+      "site": {
+        "id": 1,
+        "name": "New York DC",
+        "slug": "nyc-1"
+      },
+      "tenant": {
+        "id": 50,
+        "name": "Acme Corp",
+        "slug": "acme"
+      },
+      "vlan": {
+        "id": 10,
+        "vid": 10,
+        "name": "Users"
+      },
+      "description": "Core management subnet",
+      "family": 4,
+      "is_pool": false,
+      "last_updated": "2024-03-02T16:29:00Z",
+      "custom_fields": {
+        "critical": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "id": 5001,
+      "address": "10.0.0.2/24",
+      "family": 4,
+      "status": "active",
+      "assigned_object_type": "dcim.interface",
+      "assigned_object_id": 1001,
+      "assigned_object": {
+        "id": 1001,
+        "name": "GigabitEthernet1/0/1",
+        "device": {
+          "id": 101,
+          "name": "core-sw-01"
+        }
+      },
+      "dns_name": "core-sw-01.mgmt.example.com",
+      "description": "Management address",
+      "last_updated": "2024-03-02T16:29:30Z",
+      "custom_fields": {
+        "primary": true
+      }
+    }
+  ]
+}

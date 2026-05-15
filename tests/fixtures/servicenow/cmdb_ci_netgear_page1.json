@@ -1,0 +1,14 @@
+{
+  "result": [
+    {
+      "sys_id": "sw-001",
+      "name": "access-switch-01",
+      "sys_class_name": "cmdb_ci_netgear",
+      "manufacturer_display_value": "Cisco",
+      "model_id_display_value": "Catalyst 9300",
+      "ip_address": "10.10.2.10",
+      "serial_number": "SW-001",
+      "sys_updated_on": "2024-01-04T10:00:00+00:00"
+    }
+  ]
+}

@@ -43,12 +43,10 @@ import os
 import re
 from datetime import datetime
 
-try:
-    from orionsdk import SwisClient
-except ImportError:
-    raise ImportError("orionsdk library required. Install with: pip install orionsdk")
-
 from graphlayer_utils import journal as logger
+
+# External SDK imports are intentionally lazy so the connector module remains
+# importable in environments that only run the normalization harness/tests.
 
 # Import the base connector class
 # Adjust import based on your project structure
@@ -109,6 +107,11 @@ class SolarWindsNCMConnector(BaseConnector):
                     "verify_ssl": self.verify_ssl
                 }
             )
+
+            try:
+                from orionsdk import SwisClient
+            except ImportError as exc:
+                raise ImportError("orionsdk library required. Install with: pip install orionsdk") from exc
 
             # Create SWIS client
             self._swis = SwisClient(

@@ -1,0 +1,9 @@
+{
+  "result": [
+    {
+      "sys_id": "ping-001",
+      "name": "cmdb-root",
+      "sys_class_name": "cmdb_ci"
+    }
+  ]
+}
