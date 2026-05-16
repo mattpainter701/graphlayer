@@ -206,6 +206,49 @@ class BaseConnector(ConnectorContract):
             keys.append(key)
         return keys
 
+    @staticmethod
+    def _dedup_key_for_record(record: NormalizedRecord) -> str:
+        """Derive a stable deduplication key for a normalized record.
+
+        Prefer the raw fingerprint when available because it reflects the full
+        normalized payload. Fall back to correlation keys when a caller is
+        deduplicating partially normalized records or transformed payloads.
+        """
+
+        if record.raw_fingerprint:
+            return f"fingerprint:{record.raw_fingerprint}"
+
+        correlation_keys = record.payload.get("correlation_keys", [])
+        if isinstance(correlation_keys, (list, tuple, set)) and correlation_keys:
+            normalized_keys = sorted({str(key).strip().lower() for key in correlation_keys if str(key).strip()})
+            if normalized_keys:
+                return f"correlation:{'|'.join(normalized_keys)}"
+
+        return f"source:{record.source_connector}:{record.record_type}:{record.source_id}"
+
+    def deduplicate_normalized_records(self, records: Iterable[NormalizedRecord]) -> list[NormalizedRecord]:
+        """Collapse duplicate normalized records, keeping the highest-confidence copy.
+
+        Records are considered duplicates when they share the same raw fingerprint
+        or, if that is unavailable, the same correlation-key signature. If two
+        duplicates have the same confidence, the first record wins to preserve
+        input order stability.
+        """
+
+        winners: dict[str, NormalizedRecord] = {}
+        order: list[str] = []
+        for record in records:
+            key = self._dedup_key_for_record(record)
+            existing = winners.get(key)
+            if existing is None:
+                winners[key] = record
+                order.append(key)
+                continue
+            if record.confidence > existing.confidence:
+                winners[key] = record
+
+        return [winners[key] for key in order]
+
     def build_normalized_payload(
         self,
         record_type: str,
