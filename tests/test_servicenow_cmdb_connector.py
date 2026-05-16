@@ -140,6 +140,8 @@ class ServiceNowCMDBConnectorTests(unittest.TestCase):
             server_record = next(record for record in bundle["devices"] if record["payload"]["id"] == "srv-001")
             self.assertEqual(server_record["metadata"]["sys_id"], "srv-001")
             self.assertEqual(server_record["metadata"]["source_table"], "cmdb_ci_server")
+            self.assertEqual(server_record["payload"]["evidence"]["sys_id"], "srv-001")
+            self.assertEqual(server_record["payload"]["evidence"]["table"], "cmdb_ci_server")
             self.assertEqual(server_record["payload"]["vendor"], "Dell")
             self.assertEqual(server_record["payload"]["model"], "PowerEdge R740")
             self.assertIn("hostname:app-server-01", server_record["payload"]["correlation_keys"])
@@ -151,6 +153,8 @@ class ServiceNowCMDBConnectorTests(unittest.TestCase):
             self.assertEqual(relationship["payload"]["target_id"], "srv-001")
             self.assertEqual(relationship["payload"]["relationship_type"], "Runs on::Runs")
             self.assertEqual(relationship["metadata"]["source_table"], "cmdb_rel_ci")
+            self.assertEqual(relationship["payload"]["evidence"]["sys_id"], "rel-001")
+            self.assertEqual(relationship["payload"]["evidence"]["table"], "cmdb_rel_ci")
             self.assertIn("source_id:sw-001", relationship["payload"]["correlation_keys"])
             self.assertIn("target_id:srv-001", relationship["payload"]["correlation_keys"])
 

@@ -330,6 +330,7 @@ class ServiceNowCMDBConnector(BaseConnector):
             "serial_number": self._value(record, "serial_number"),
             "last_updated": self._value(record, "sys_updated_on") or self._value(record, "updated_on"),
             "source_table": ci_class,
+            "evidence": self._evidence(record, ci_class),
             "correlation_keys": self.build_correlation_keys(
                 ("hostname", hostname),
                 ("ip_address", self._value(record, "ip_address") or self._value(record, "ip")),
@@ -366,6 +367,7 @@ class ServiceNowCMDBConnector(BaseConnector):
             "relationship_type": rel_type,
             "last_updated": self._value(record, "sys_updated_on") or self._value(record, "updated_on"),
             "source_table": self.relationship_table,
+            "evidence": self._evidence(record, self.relationship_table),
             "correlation_keys": self.build_correlation_keys(
                 ("source_id", parent_id),
                 ("source_name", parent_name),
@@ -387,6 +389,15 @@ class ServiceNowCMDBConnector(BaseConnector):
             confidence=0.84,
             metadata=metadata,
         )
+
+    def _evidence(self, record: Mapping[str, Any], table: str) -> Dict[str, str]:
+        evidence = {
+            "source": "servicenow_cmdb",
+            "table": table,
+            "sys_id": self._value(record, "sys_id"),
+            "sys_updated_on": self._value(record, "sys_updated_on"),
+        }
+        return {key: value for key, value in evidence.items() if value}
 
     def _map_device_type(self, ci_class: str, model: str, name: str) -> str:
         haystack = f"{ci_class} {model} {name}".lower()
