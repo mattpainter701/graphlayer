@@ -330,6 +330,14 @@ class ServiceNowCMDBConnector(BaseConnector):
             "serial_number": self._value(record, "serial_number"),
             "last_updated": self._value(record, "sys_updated_on") or self._value(record, "updated_on"),
             "source_table": ci_class,
+            "correlation_keys": self.build_correlation_keys(
+                ("hostname", hostname),
+                ("ip_address", self._value(record, "ip_address") or self._value(record, "ip")),
+                ("serial", self._value(record, "serial_number")),
+                ("ci_class", ci_class),
+                ("vendor", self._value(record, "manufacturer") or self._value(record, "vendor") or self._value(record, "manufacturer.display_value")),
+                ("model", model),
+            ),
         }
         metadata = {
             "sys_id": self._value(record, "sys_id"),
@@ -358,6 +366,13 @@ class ServiceNowCMDBConnector(BaseConnector):
             "relationship_type": rel_type,
             "last_updated": self._value(record, "sys_updated_on") or self._value(record, "updated_on"),
             "source_table": self.relationship_table,
+            "correlation_keys": self.build_correlation_keys(
+                ("source_id", parent_id),
+                ("source_name", parent_name),
+                ("target_id", child_id),
+                ("target_name", child_name),
+                ("relationship_type", rel_type),
+            ),
         }
         metadata = {
             "sys_id": self._value(record, "sys_id"),
@@ -463,3 +478,6 @@ def test_connection(instance_url: str, username: str, password: str, **kwargs: A
         return {"status": "success", "connected": connector.connected}
     except Exception as exc:  # pragma: no cover - smoke helper only
         return {"status": "error", "error": str(exc)}
+
+
+test_connection.__test__ = False

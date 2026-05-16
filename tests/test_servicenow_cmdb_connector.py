@@ -142,12 +142,17 @@ class ServiceNowCMDBConnectorTests(unittest.TestCase):
             self.assertEqual(server_record["metadata"]["source_table"], "cmdb_ci_server")
             self.assertEqual(server_record["payload"]["vendor"], "Dell")
             self.assertEqual(server_record["payload"]["model"], "PowerEdge R740")
+            self.assertIn("hostname:app-server-01", server_record["payload"]["correlation_keys"])
+            self.assertIn("ip_address:10.10.1.11", server_record["payload"]["correlation_keys"])
+            self.assertIn("serial:sn-001", server_record["payload"]["correlation_keys"])
 
             relationship = bundle["relationships"][0]
             self.assertEqual(relationship["payload"]["source_id"], "sw-001")
             self.assertEqual(relationship["payload"]["target_id"], "srv-001")
             self.assertEqual(relationship["payload"]["relationship_type"], "Runs on::Runs")
             self.assertEqual(relationship["metadata"]["source_table"], "cmdb_rel_ci")
+            self.assertIn("source_id:sw-001", relationship["payload"]["correlation_keys"])
+            self.assertIn("target_id:srv-001", relationship["payload"]["correlation_keys"])
 
             state_path = Path(tmpdir) / "servicenow_cmdb_state.json"
             with open(state_path, "r", encoding="utf-8") as handle:

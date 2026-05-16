@@ -332,6 +332,15 @@ class NetBoxConnector(BaseConnector):
             "status": self._value(record, "status"),
             "last_updated": self._value(record, "last_updated"),
             "custom_fields": self._value(record, "custom_fields", allow_mapping=True),
+            "correlation_keys": self.build_correlation_keys(
+                ("hostname", hostname),
+                ("management_ip", self._primary_ip(record)),
+                ("serial", self._value(record, "serial")),
+                ("site", self._nested_value(record, "site", "slug") or self._nested_value(record, "site", "name")),
+                ("role", self._nested_value(record, "device_role", "slug") or self._nested_value(record, "device_role", "name")),
+                ("vendor", manufacturer),
+                ("model", device_type),
+            ),
         }
         metadata = {
             "netbox_id": self._value(record, "id"),
@@ -370,6 +379,13 @@ class NetBoxConnector(BaseConnector):
             "ip_addresses": assigned_ips,
             "last_updated": self._value(record, "last_updated"),
             "custom_fields": self._value(record, "custom_fields", allow_mapping=True),
+            "correlation_keys": self.build_correlation_keys(
+                ("device_name", self._nested_value(record, "device", "name")),
+                ("interface_name", self._value(record, "name")),
+                ("mac_address", self._value(record, "mac_address")),
+                ("label", self._value(record, "label")),
+                ("device_id", self._nested_value(record, "device", "id")),
+            ),
         }
         metadata = {
             "netbox_id": self._value(record, "id"),
@@ -399,6 +415,14 @@ class NetBoxConnector(BaseConnector):
             "termination_b": term_b,
             "last_updated": self._value(record, "last_updated"),
             "custom_fields": self._value(record, "custom_fields", allow_mapping=True),
+            "correlation_keys": self.build_correlation_keys(
+                ("a_device", term_a.get("device_name")),
+                ("a_interface", term_a.get("interface_name")),
+                ("b_device", term_b.get("device_name")),
+                ("b_interface", term_b.get("interface_name")),
+                ("type", self._value(record, "type")),
+                ("label", self._value(record, "label")),
+            ),
         }
         metadata = {
             "netbox_id": self._value(record, "id"),
@@ -616,3 +640,6 @@ def test_connection(instance_url: str, api_token: str, **kwargs: Any) -> Dict[st
         return {"status": "success", "connected": connector.connected}
     except Exception as exc:  # pragma: no cover - smoke helper only
         return {"status": "error", "error": str(exc)}
+
+
+test_connection.__test__ = False

@@ -172,6 +172,40 @@ class BaseConnector(ConnectorContract):
             metadata=dict(metadata or {}),
         )
 
+    @staticmethod
+    def normalize_correlation_value(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return text.lower()
+
+    def build_correlation_keys(self, *pairs: Any) -> list[str]:
+        """Build deterministic cross-source correlation keys.
+
+        Each input should be a ``(label, value)`` pair. Labels are normalized to
+        lower-case and values are stripped/lower-cased so the resulting keys are
+        stable across connector sources.
+        """
+
+        keys: list[str] = []
+        seen: set[str] = set()
+        for item in pairs:
+            if not isinstance(item, tuple) or len(item) != 2:
+                continue
+            label, value = item
+            normalized_value = self.normalize_correlation_value(value)
+            if not normalized_value:
+                continue
+            normalized_label = str(label or "").strip().lower()
+            if not normalized_label:
+                continue
+            key = f"{normalized_label}:{normalized_value}"
+            if key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+        return keys
+
     def build_normalized_payload(
         self,
         record_type: str,
