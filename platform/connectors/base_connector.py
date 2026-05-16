@@ -249,6 +249,65 @@ class BaseConnector(ConnectorContract):
 
         return [winners[key] for key in order]
 
+    def build_correlation_report(self, records: Iterable[NormalizedRecord]) -> Dict[str, Any]:
+        """Summarize correlation groups and confidence signals for normalized records.
+
+        The report is intentionally lightweight: it exposes the grouped dedup keys,
+        the source IDs that contributed to each group, the shared correlation keys,
+        and a small confidence summary. This makes it easy for harnesses and tests
+        to inspect why a record was treated as a duplicate without altering the
+        underlying deduplication behavior.
+        """
+
+        records_list = list(records)
+        grouped_records: dict[str, list[NormalizedRecord]] = {}
+        ordered_keys: list[str] = []
+        for record in records_list:
+            key = self._dedup_key_for_record(record)
+            if key not in grouped_records:
+                grouped_records[key] = []
+                ordered_keys.append(key)
+            grouped_records[key].append(record)
+
+        deduped_records = self.deduplicate_normalized_records(records_list)
+        winner_by_key = {self._dedup_key_for_record(record): record for record in deduped_records}
+
+        groups: list[Dict[str, Any]] = []
+        for key in ordered_keys:
+            group_records = grouped_records[key]
+            confidences = [record.confidence for record in group_records]
+            correlation_keys = sorted(
+                {
+                    str(correlation_key).strip().lower()
+                    for record in group_records
+                    for correlation_key in record.payload.get("correlation_keys", [])
+                    if str(correlation_key).strip()
+                }
+            )
+            groups.append(
+                {
+                    "dedup_key": key,
+                    "record_count": len(group_records),
+                    "source_ids": [record.source_id for record in group_records],
+                    "source_connectors": [record.source_connector for record in group_records],
+                    "correlation_keys": correlation_keys,
+                    "confidence": {
+                        "min": min(confidences),
+                        "max": max(confidences),
+                        "mean": round(sum(confidences) / len(confidences), 3),
+                    },
+                    "selected_source_id": winner_by_key[key].source_id,
+                    "selected_confidence": winner_by_key[key].confidence,
+                }
+            )
+
+        return {
+            "total_records": len(records_list),
+            "unique_groups": len(groups),
+            "duplicate_groups": sum(1 for group in groups if group["record_count"] > 1),
+            "groups": groups,
+        }
+
     def build_normalized_payload(
         self,
         record_type: str,

@@ -200,6 +200,55 @@ class ConnectorContractTests(unittest.TestCase):
         self.assertEqual(deduped[0].source_id, "link-2")
         self.assertEqual(deduped[0].confidence, 0.8)
 
+    def test_build_correlation_report_groups_shared_keys_and_confidence(self):
+        connector = DummyConnector(
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "connector_type": "dummy",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+
+        first = NormalizedRecord(
+            record_type="link",
+            source_connector="dummy",
+            source_id="link-1",
+            payload={"correlation_keys": ["Hostname:Edge-01", "ip:10.0.0.1"]},
+            confidence=0.45,
+            raw_fingerprint="",
+        )
+        second = NormalizedRecord(
+            record_type="link",
+            source_connector="dummy",
+            source_id="link-2",
+            payload={"correlation_keys": ["ip:10.0.0.1", "hostname:edge-01", "ip:10.0.0.1"]},
+            confidence=0.8,
+            raw_fingerprint="",
+        )
+        third = NormalizedRecord(
+            record_type="link",
+            source_connector="dummy",
+            source_id="link-3",
+            payload={"correlation_keys": ["hostname:core-01"]},
+            confidence=0.6,
+            raw_fingerprint="",
+        )
+
+        report = connector.build_correlation_report([first, second, third])
+        self.assertEqual(report["total_records"], 3)
+        self.assertEqual(report["unique_groups"], 2)
+        self.assertEqual(report["duplicate_groups"], 1)
+
+        duplicate_group = next(group for group in report["groups"] if group["record_count"] == 2)
+        self.assertEqual(duplicate_group["dedup_key"], "correlation:hostname:edge-01|ip:10.0.0.1")
+        self.assertEqual(duplicate_group["source_ids"], ["link-1", "link-2"])
+        self.assertEqual(duplicate_group["correlation_keys"], ["hostname:edge-01", "ip:10.0.0.1"])
+        self.assertEqual(duplicate_group["confidence"], {"min": 0.45, "max": 0.8, "mean": 0.625})
+        self.assertEqual(duplicate_group["selected_source_id"], "link-2")
+        self.assertEqual(duplicate_group["selected_confidence"], 0.8)
+
 
 if __name__ == "__main__":
     unittest.main()
