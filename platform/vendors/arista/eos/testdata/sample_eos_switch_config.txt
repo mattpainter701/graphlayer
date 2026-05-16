@@ -1,0 +1,221 @@
+! Arista EOS sample configuration - MLAG Leaf Switch
+! Model: DCS-7050SX3-48YC8
+! Version: 4.27.3M
+hostname leaf01
+version 4.27.3M
+
+!
+! Management
+!
+interface Management1
+   description Management interface
+   ip address 192.168.1.101/24
+   no shutdown
+
+!
+! VLAN definitions
+!
+vlan 10
+   name Users
+   state active
+
+vlan 20
+   name Servers
+   state active
+
+vlan 30
+   name DMZ
+   state active
+
+vlan 100
+   name MLAG-Peer
+   state active
+
+vlan 200
+   name Native
+
+vlan 3000
+   name VXLAN-L2
+
+!
+! VLAN interfaces (SVIs)
+!
+interface Vlan10
+   description Users gateway
+   ip address 10.0.10.1/24
+   no shutdown
+
+interface Vlan20
+   description Servers gateway
+   ip address 10.0.20.1/24
+   no shutdown
+
+interface Vlan100
+   description MLAG peer keepalive
+   ip address 10.255.255.1/30
+   no shutdown
+
+!
+! Physical interfaces
+!
+interface Ethernet1
+   description PoC-to-dist01
+   switchport mode trunk
+   switchport trunk allowed vlan 10,20,30,100
+   switchport trunk native vlan 200
+   channel-group 1 mode active
+   no shutdown
+
+interface Ethernet2
+   description PoC-to-dist02
+   switchport mode trunk
+   switchport trunk allowed vlan 10,20,30,100
+   switchport trunk native vlan 200
+   channel-group 1 mode active
+   no shutdown
+
+interface Ethernet3
+   description server-rack1-port01
+   switchport mode access
+   switchport access vlan 10
+   spanning-tree portfast
+   no shutdown
+
+interface Ethernet4
+   description server-rack1-port02
+   switchport mode access
+   switchport access vlan 20
+   spanning-tree portfast
+   no shutdown
+
+interface Ethernet5
+   description server-rack2-port01
+   switchport mode trunk
+   switchport trunk allowed vlan 10,20
+   no shutdown
+
+interface Ethernet6
+   description server-rack2-port02
+   switchport mode access
+   switchport access vlan 10
+   spanning-tree portfast
+   storm-control broadcast level 10
+   no shutdown
+
+interface Ethernet7
+   unused-port
+   shutdown
+
+interface Ethernet48
+   description peer-link-to-leaf02
+   switchport mode trunk
+   switchport trunk allowed vlan 10,20,30
+   channel-group 1000 mode active
+   no shutdown
+
+interface Ethernet49
+   description peer-link2-to-leaf02
+   switchport mode trunk
+   switchport trunk allowed vlan 10,20,30
+   channel-group 1000 mode active
+   no shutdown
+
+!
+! Port-Channels
+!
+interface Port-Channel1
+   description LAG-to-dist
+   switchport mode trunk
+   switchport trunk allowed vlan 10,20,30,100
+   switchport trunk native vlan 200
+   no shutdown
+
+interface Port-Channel1000
+   description MLAG peer-link
+   switchport mode trunk
+   switchport trunk allowed vlan 10,20,30
+   no shutdown
+
+!
+! MLAG configuration
+!
+mlag configuration
+   domain-id MLAG-DOMAIN-01
+   local-interface Vlan100
+   peer-address 10.255.255.2
+   peer-link Port-Channel1000
+   heartbeat-interval 5000
+   reload-delay 300
+   no shutdown
+
+!
+! VXLAN
+!
+interface Vxlan1
+   description VXLAN overlay
+   vxlan source-interface Loopback0
+   vxlan vlan 10 vni 10010
+   vxlan vlan 20 vni 10020
+   vxlan vlan 30 vni 10030
+   vxlan flood vtep 10.0.0.1 10.0.0.2
+   vxlan learn from arp
+
+!
+! Static routes
+!
+ip route 0.0.0.0/0 192.168.1.1
+ip route 10.0.0.0/8 192.168.1.254 name dc-core
+ip route 172.16.0.0/16 10.255.255.2 tag 100
+
+!
+! OSPF
+!
+router ospf 100
+   router-id 10.0.0.101
+   network 10.0.0.0 0.0.0.255 area 0.0.0.0
+   network 10.255.255.0 0.0.0.3 area 0.0.0.0
+   network 192.168.1.0 0.0.0.255 area 0.0.0.10
+   passive-interface default
+   no passive-interface Vlan100
+
+!
+! BGP
+!
+router bgp 65001
+   router-id 10.0.0.101
+   maximum-paths 4
+   neighbor 10.0.0.1 remote-as 65000
+   neighbor 10.0.0.1 description spine-01
+   neighbor 10.0.0.2 remote-as 65000
+   neighbor 10.0.0.2 description spine-02
+   network 10.0.10.0/24
+   network 10.0.20.0/24
+   vrf TENANT-A
+      rd 65001:100
+      neighbor 10.0.10.1 remote-as 65001
+      neighbor 10.0.10.1 update-source Vlan10
+
+!
+! Access-lists
+!
+ip access-list MGMT-ACL
+   10 permit ip 192.168.0.0/24 any
+   20 permit ip 10.0.0.0/8 any
+   999 deny ip any any log
+
+ip access-list SSH-ONLY
+   10 permit tcp any any eq 22
+   20 deny ip any any
+
+!
+! VRF instances
+!
+vrf instance TENANT-A
+   rd 65001:100
+   route-target import 65001:100
+   route-target export 65001:100
+
+vrf instance TENANT-B
+   rd 65001:200
+   route-target import 65001:200
+   route-target export 65001:200

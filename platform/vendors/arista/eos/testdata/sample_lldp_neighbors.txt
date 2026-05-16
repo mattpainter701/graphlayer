@@ -1,0 +1,35 @@
+Local Interface: Ethernet1
+Chassis ID: 00:1c:73:00:11:aa
+Port ID: Ethernet1
+System Name: dist01.example.com
+System Description: Cisco Nexus 93108TC-EX
+System Capabilities: bridge,router
+Management Address: 10.0.0.1
+TTL: 120
+
+Local Interface: Ethernet2
+Chassis ID: 00:1c:73:00:22:bb
+Port ID: Ethernet1
+System Name: dist02.example.com
+System Description: Cisco Nexus 93108TC-EX
+System Capabilities: bridge,router
+Management Address: 10.0.0.2
+TTL: 120
+
+Local Interface: Ethernet48
+Chassis ID: 50:6a:03:ab:cd:01
+Port ID: Ethernet48
+System Name: leaf02.example.com
+System Description: Arista DCS-7050SX3-48YC8
+System Capabilities: bridge,router
+Management Address: 10.255.255.2
+TTL: 120
+
+Local Interface: Ethernet49
+Chassis ID: 50:6a:03:ab:cd:01
+Port ID: Ethernet49
+System Name: leaf02.example.com
+System Description: Arista DCS-7050SX3-48YC8
+System Capabilities: bridge,router
+Management Address: 10.255.255.2
+TTL: 120

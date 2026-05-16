@@ -1,0 +1,13 @@
+Codes: C - connected, S - static, O - OSPF, B - BGP
+Gateway of last resort is 192.168.1.1
+
+S       0.0.0.0/0 [1/0] via 192.168.1.1, Management1
+C       10.0.0.101/32 is directly connected, Loopback0
+C       10.0.10.0/24 is directly connected, Vlan10
+C       10.0.20.0/24 is directly connected, Vlan20
+C       10.255.255.0/30 is directly connected, Vlan100
+S       10.0.0.0/8 [1/0] via 192.168.1.254, Management1
+O       10.0.1.0/24 [110/20] via 10.0.0.1, Vlan100
+O       10.0.2.0/24 [110/20] via 10.0.0.2, Vlan100
+B       172.16.0.0/16 [200/0] via 10.0.0.1, Vlan100
+S       172.16.0.0/16 [1/0] via 10.255.255.2, Vlan100

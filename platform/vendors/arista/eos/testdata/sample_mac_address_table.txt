@@ -1,0 +1,9 @@
+Vlan    Mac Address       Type        Ports      Moves   Last Move
+10      00:1c:73:00:11:aa DYNAMIC     Et1        1       0:01:23 ago
+10      50:6a:03:ab:cd:01 DYNAMIC     Et48       2       0:05:00 ago
+10      50:6a:03:ab:cd:02 DYNAMIC     Et5        1       1:20:30 ago
+20      00:50:56:ab:cd:01 DYNAMIC     Et4        1       0:15:10 ago
+20      00:50:56:ab:cd:02 DYNAMIC     Et3        1       0:10:05 ago
+20      00:50:56:ab:cd:03 DYNAMIC     Et5        1       0:30:00 ago
+30      a0:36:9f:11:22:33 DYNAMIC     Et6        1       0:00:15 ago
+Total Mac Addresses for this criterion: 7

@@ -1,0 +1,8 @@
+Address         Age (min)  Hardware Addr      Interface
+10.0.10.5         0         00:50:56:ab:cd:01  Vlan10
+10.0.10.10        5         00:50:56:ab:cd:02  Vlan10
+10.0.20.5         0         00:50:56:ab:cd:03  Vlan20
+10.0.20.10       10         00:50:56:ab:cd:04  Vlan20
+10.255.255.2      0         50:6a:03:ab:cd:01  Vlan100
+192.168.1.1       1         00:1c:73:00:11:aa  Management1
+192.168.1.254     5         00:1c:73:00:22:bb  Management1

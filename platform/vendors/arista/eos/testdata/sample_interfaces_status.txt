@@ -1,0 +1,13 @@
+Port      Name     Status       Vlan   Duplex   Speed   Type
+Et1       dist01  connected    1      a-full   10G     SFP+
+Et2       dist02  connected    1      a-full   10G     SFP+
+Et3       rack1-srv1 connected 10     a-full   1G      RJ45
+Et4       rack1-srv2 connected 20     a-full   1G      RJ45
+Et5       rack2-srv connected  trunk  a-full   10G     SFP+
+Et6       rack1-srv3 connected 10     a-full   1G      RJ45
+Et7                notconnect  1      a-full   10G     SFP+
+Et48      peer-leaf connected trunk  a-full   10G     SFP+
+Et49      peer-leaf connected trunk  a-full   10G     SFP+
+Ma1       mgmt     connected   1      a-full   100f    RJ45
+Po1       dist     connected   trunk  a-full   20G     SFP+
+Po1000    peer     connected   trunk  a-full   40G     SFP+
