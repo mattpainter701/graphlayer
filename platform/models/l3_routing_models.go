@@ -388,8 +388,9 @@ type RouteSelectionCriteria struct {
 // Helper Types
 // ========================================================================
 
-// NodeMetadata stores common metadata for network elements
-type NodeMetadata struct {
+// L3NodeMetadata stores routing-specific metadata for L3 elements.
+// Replaces the deprecated duplicate NodeMetadata definition.
+type L3NodeMetadata struct {
 	Vendor      string            `json:"vendor,omitempty" bson:"vendor,omitempty"`
 	Model       string            `json:"model,omitempty" bson:"model,omitempty"`
 	Version     string            `json:"version,omitempty" bson:"version,omitempty"`

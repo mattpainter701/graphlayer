@@ -1,0 +1,91 @@
+{
+  "name": "cisco-3-switch-l2",
+  "description": "Known-good Cisco IOS L2 topology: 3 switches, 2 L2 links",
+  "topology": {
+    "metadata": {
+      "source": "reference",
+      "version": "1.0",
+      "generated_at": "2026-05-16T00:00:00Z",
+      "total_devices": 3,
+      "total_links": 2,
+      "input_files": ["cisco-switch-01.cfg", "cisco-switch-02.cfg", "cisco-switch-03.cfg"]
+    },
+    "devices": [
+      {
+        "id": "hostname:core-sw-01",
+        "hostname": "core-sw-01",
+        "vendor": "cisco",
+        "family": "IOS",
+        "model": "WS-C3850-48P",
+        "serial": "FOC1111AAAA",
+        "management_ip": "10.0.0.1",
+        "device_type": "switch",
+        "os_version": "16.12.5",
+        "interface_count": 48,
+        "has_config": true,
+        "has_operational": true,
+        "evidence_count": 2,
+        "evidence_sources": ["config", "operational"],
+        "confidence": 0.90
+      },
+      {
+        "id": "hostname:dist-sw-01",
+        "hostname": "dist-sw-01",
+        "vendor": "cisco",
+        "family": "IOS",
+        "model": "WS-C2960X-48FPD-L",
+        "serial": "FOC2222BBBB",
+        "management_ip": "10.0.0.2",
+        "device_type": "switch",
+        "os_version": "15.2(7)E7",
+        "interface_count": 48,
+        "has_config": true,
+        "has_operational": true,
+        "evidence_count": 2,
+        "evidence_sources": ["config", "operational"],
+        "confidence": 0.90
+      },
+      {
+        "id": "hostname:access-sw-01",
+        "hostname": "access-sw-01",
+        "vendor": "cisco",
+        "family": "IOS",
+        "model": "WS-C2960X-24TS-L",
+        "serial": "FOC3333CCCC",
+        "management_ip": "10.0.0.3",
+        "device_type": "switch",
+        "os_version": "15.2(7)E7",
+        "interface_count": 24,
+        "has_config": true,
+        "has_operational": true,
+        "evidence_count": 2,
+        "evidence_sources": ["config", "operational"],
+        "confidence": 0.90
+      }
+    ],
+    "links": [
+      {
+        "id": "l2link:core-sw|Gi1/0/1|dist-sw|Gi1/0/1",
+        "from_device": "hostname:core-sw-01",
+        "from_port": "Gi1/0/1",
+        "to_device": "hostname:dist-sw-01",
+        "to_port": "Gi1/0/1",
+        "link_type": "l2",
+        "protocol": "lldp",
+        "evidence_count": 2,
+        "confidence": 0.90
+      },
+      {
+        "id": "l2link:dist-sw|Gi1/0/48|access-sw|Gi1/0/1",
+        "from_device": "hostname:dist-sw-01",
+        "from_port": "Gi1/0/48",
+        "to_device": "hostname:access-sw-01",
+        "to_port": "Gi1/0/1",
+        "link_type": "l2",
+        "protocol": "lldp",
+        "evidence_count": 2,
+        "confidence": 0.90
+      }
+    ]
+  }
+}
