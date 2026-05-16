@@ -1,0 +1,13 @@
+Port           Description                Status  Speed    Duplex   Vlan   Type
+ethernet1/1/1  VLTi-link-to-leaf02        up      10G      full     -      SFP+
+ethernet1/1/2  VLTi-link-to-leaf02        up      10G      full     -      SFP+
+ethernet1/1/3  server-rack1-port01        up      1G       full     access BASE-T
+ethernet1/1/4  server-rack1-port02        up      1G       full     access BASE-T
+ethernet1/1/5  PoC-to-spine01             up      10G      full     trunk  SFP+
+ethernet1/1/6  PoC-to-spine02             up      10G      full     trunk  SFP+
+ethernet1/1/7                            down    auto     auto     1      BASE-T
+ethernet1/1/8  routed-link-to-firewall    up      10G      full     -      SFP+
+mgmt1/1/1      OOB Management             up      1G       full     -      BASE-T
+port-channel10 VLT-port-channel-to-spine01 up      -        -        trunk  -
+port-channel11 VLT-port-channel-to-spine02 up      -        -        trunk  -
+port-channel1  VLT-peer-link              up      -        -        trunk  -

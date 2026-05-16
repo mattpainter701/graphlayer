@@ -1,0 +1,36 @@
+-------------------------------------------------------------------------------
+Local Interface ethernet1/1/1 has 1 neighbor
+  Chassis ID:    00:11:22:33:44:55
+  Port ID:       ethernet1/1/1
+  System Name:   leaf02.example.com
+  System Desc:   Dell EMC Networking OS10 Enterprise
+  Capabilities:  Bridge Router
+  Mgmt Address:  10.0.0.2
+  TTL:           120
+-------------------------------------------------------------------------------
+Local Interface ethernet1/1/5 has 1 neighbor
+  Chassis ID:    00:aa:bb:cc:dd:01
+  Port ID:       ethernet1/1/1
+  System Name:   spine01.example.com
+  System Desc:   Dell EMC Networking OS10 Enterprise
+  Capabilities:  Bridge Router
+  Mgmt Address:  10.0.0.3
+  TTL:           120
+-------------------------------------------------------------------------------
+Local Interface ethernet1/1/6 has 1 neighbor
+  Chassis ID:    00:aa:bb:cc:dd:02
+  Port ID:       ethernet1/1/1
+  System Name:   spine02.example.com
+  System Desc:   Dell EMC Networking OS10 Enterprise
+  Capabilities:  Bridge Router
+  Mgmt Address:  10.0.0.4
+  TTL:           120
+-------------------------------------------------------------------------------
+Local Interface ethernet1/1/3 has 1 neighbor
+  Chassis ID:    00:de:ad:be:ef:01
+  Port ID:       eth0
+  System Name:   server-rack1-01.example.com
+  System Desc:   Ubuntu 22.04 LTS
+  Capabilities:  Station Only
+  Mgmt Address:  10.0.10.100
+  TTL:           120

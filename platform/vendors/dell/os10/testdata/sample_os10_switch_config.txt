@@ -1,0 +1,131 @@
+! Dell OS10 Switch Configuration
+! Sample config for parser testing — VLT spine/leaf topology
+
+hostname leaf01
+!
+interface mgmt1/1/1
+ description OOB Management
+ no shutdown
+ ip address 192.168.1.101/24
+!
+interface ethernet1/1/1
+ description VLTi-link-to-leaf02
+ no shutdown
+ no switchport
+ ip address 10.255.255.1/30
+!
+interface ethernet1/1/2
+ description VLTi-link-to-leaf02
+ no shutdown
+ no switchport
+ ip address 10.255.255.5/30
+!
+interface ethernet1/1/3
+ description server-rack1-port01
+ no shutdown
+ switchport mode access
+ switchport access vlan 10
+ spanning-tree portfast
+!
+interface ethernet1/1/4
+ description server-rack1-port02
+ no shutdown
+ switchport mode access
+ switchport access vlan 20
+ spanning-tree portfast
+!
+interface ethernet1/1/5
+ description PoC-to-spine01
+ no shutdown
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,100
+ switchport trunk native vlan 200
+ channel-group 10 mode active
+!
+interface ethernet1/1/6
+ description PoC-to-spine02
+ no shutdown
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,100
+ switchport trunk native vlan 200
+ channel-group 11 mode active
+!
+interface ethernet1/1/7
+ description unused-port
+ shutdown
+!
+interface ethernet1/1/8
+ description routed-link-to-firewall
+ no shutdown
+ no switchport
+ ip address 10.0.0.1/30
+!
+interface vlan10
+ description Users gateway
+ no shutdown
+ ip address 10.0.10.1/24
+!
+interface vlan20
+ description Servers gateway
+ no shutdown
+ ip address 10.0.20.1/24
+!
+interface loopback0
+ description Router-ID
+ no shutdown
+ ip address 10.255.255.10/32
+!
+interface port-channel10
+ description VLT-port-channel-to-spine01
+ no shutdown
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,100
+ vlt-port-channel 10
+!
+interface port-channel11
+ description VLT-port-channel-to-spine02
+ no shutdown
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,100
+ vlt-port-channel 11
+!
+vlt-domain 1
+ discovery-interface ethernet1/1/1
+ peer-link port-channel1
+ backup destination 192.168.1.102
+ vlt-mac 00:00:00:00:00:01
+ delay-restore 90
+ peer-routing
+!
+interface port-channel1
+ description VLT-peer-link
+ no shutdown
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,100
+!
+ip route 0.0.0.0/0 10.0.0.2
+ip route 10.0.0.0/8 192.168.1.254 1
+ip route 172.16.0.0/16 10.255.255.2 tag 100
+!
+ip access-list ACL-INBOUND
+ seq 10 permit tcp 10.0.10.0 0.0.0.255 any eq 443
+ seq 20 permit tcp 10.0.20.0 0.0.0.255 host 10.0.0.10 eq 22
+ seq 30 deny ip any any log
+!
+router ospf 1
+ router-id 10.255.255.10
+ network 10.0.0.0 0.0.0.3 area 0.0.0.0
+ network 10.0.10.0 0.0.0.255 area 0.0.0.0
+ network 10.0.20.0 0.0.0.255 area 0.0.0.0
+!
+router bgp 65001
+ router-id 10.255.255.10
+ neighbor 10.0.0.1 remote-as 65002
+ neighbor 10.0.0.1 description spine01
+ neighbor 10.0.0.1 update-source loopback0
+ neighbor 10.0.0.5 remote-as 65002
+ neighbor 10.0.0.5 description spine02
+ neighbor 10.0.0.5 update-source loopback0
+ network 10.0.10.0/24
+ network 10.0.20.0/24
+ maximum-paths 4
