@@ -34,6 +34,7 @@ The main platform code is located in the **[`platform/`](platform/)** directory.
 - **📖 [Platform Documentation](platform/docs/getting-started/README.md)** - Complete framework documentation
 - **🏗️ [Platform Architecture](platform/docs/FINAL_STRUCTURE.md)** - Directory structure and organization
 - **🔧 [Integration Guide](platform/docs/getting-started/INTEGRATION_GUIDE.md)** - How to use the platform
+- **🔌 [Connector Authoring Guide](platform/docs/getting-started/CONNECTOR_AUTHORING_GUIDE.md)** - Connector contract, normalization rules, and registry usage
 - **📚 [Use Cases](platform/docs/getting-started/USE_CASES.md)** - Practical examples
 
 ### Vendor Support

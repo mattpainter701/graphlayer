@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from platform.connectors import NetBoxConnector
+from platform.connectors import NetBoxConnector, create_connector, list_connectors, register_connector
 from platform.connectors.base_connector import BaseConnector, NormalizedRecord
 from platform.connectors.fileshare_connector import FileShareConnector
 from platform.connectors.solarwinds_ncm_connector import (
@@ -131,6 +131,32 @@ class ConnectorContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(connector.connector_type, "netbox")
+
+    def test_runtime_connector_registry_creates_registered_connectors(self):
+        register_connector("dummy", DummyConnector)
+        self.assertIn("dummy", list_connectors())
+
+        connector = create_connector(
+            "dummy",
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+
+        self.assertIsInstance(connector, DummyConnector)
+        self.assertEqual(connector.connector_type, "dummy")
+        self.assertTrue(connector.Connect())
+        self.assertEqual(connector.Collect(sample=True), {"status": "ok", "kwargs": {"sample": True}})
+
+    def test_builtin_connector_registry_includes_roadmap_tier_one_and_two(self):
+        available = set(list_connectors())
+        self.assertIn("solarwinds_ncm", available)
+        self.assertIn("servicenow_cmdb", available)
+        self.assertIn("netbox", available)
+        self.assertIn("fileshare", available)
 
     def test_deduplicate_normalized_records_prefers_higher_confidence(self):
         connector = DummyConnector(
