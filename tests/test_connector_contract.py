@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -323,6 +324,52 @@ class ConnectorContractTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             connector.filter_normalized_records_by_confidence([], 1.5)
+
+    def test_apply_staleness_decay_reduces_confidence_for_older_records(self):
+        connector = DummyConnector(
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "connector_type": "dummy",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+
+        now = datetime(2024, 1, 31, 12, 0, 0, tzinfo=timezone.utc)
+        collected_at = (now - timedelta(days=15)).isoformat()
+
+        decayed = connector.apply_staleness_decay(
+            0.8,
+            collected_at,
+            now=now,
+            half_life_days=30,
+        )
+
+        self.assertAlmostEqual(decayed, 0.8 * (0.5 ** 0.5), places=6)
+
+    def test_apply_staleness_decay_keeps_fresh_records_and_validates_half_life(self):
+        connector = DummyConnector(
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "connector_type": "dummy",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+
+        now = datetime(2024, 1, 31, 12, 0, 0, tzinfo=timezone.utc)
+        collected_at = now.isoformat()
+
+        self.assertEqual(
+            connector.apply_staleness_decay(0.73, collected_at, now=now, half_life_days=30),
+            0.73,
+        )
+        self.assertEqual(connector.apply_staleness_decay(1.2, "", now=now, half_life_days=30), 1.0)
+
+        with self.assertRaises(ValueError):
+            connector.apply_staleness_decay(0.5, collected_at, now=now, half_life_days=0)
 
 
 if __name__ == "__main__":

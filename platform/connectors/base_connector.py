@@ -324,6 +324,37 @@ class BaseConnector(ConnectorContract):
 
         return [record for record in records if record.confidence >= minimum_confidence]
 
+    @staticmethod
+    def apply_staleness_decay(
+        confidence: float,
+        collected_at: str,
+        *,
+        now: Optional[datetime] = None,
+        half_life_days: float = 30.0,
+    ) -> float:
+        """Apply a simple half-life decay to a confidence score based on age.
+
+        This helper is intentionally small: it gives callers a deterministic way to
+        reduce confidence for older evidence without changing any existing record
+        shapes. A half-life of ``30`` means confidence is halved every 30 days.
+        """
+
+        if half_life_days <= 0:
+            raise ValueError("half_life_days must be greater than 0")
+
+        if not collected_at:
+            return max(0.0, min(1.0, confidence))
+
+        reference_time = now or datetime.now(timezone.utc)
+        parsed_collected_at = datetime.fromisoformat(str(collected_at).replace("Z", "+00:00"))
+        if parsed_collected_at.tzinfo is None:
+            parsed_collected_at = parsed_collected_at.replace(tzinfo=timezone.utc)
+
+        age_seconds = max(0.0, (reference_time - parsed_collected_at).total_seconds())
+        age_days = age_seconds / 86400.0
+        decay_factor = 0.5 ** (age_days / half_life_days)
+        return max(0.0, min(1.0, confidence * decay_factor))
+
     def build_normalized_payload(
         self,
         record_type: str,
