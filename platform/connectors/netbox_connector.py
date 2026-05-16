@@ -319,6 +319,9 @@ class NetBoxConnector(BaseConnector):
         device_type = self._nested_value(record, "device_type", "display") or self._nested_value(record, "device_type", "model")
         manufacturer = self._nested_value(record, "device_type", "manufacturer", "display") or self._nested_value(record, "device_type", "manufacturer", "name")
         hostname = self._value(record, "name") or self._value(record, "display") or self._value(record, "id")
+        rack_name = self._nested_value(record, "rack", "name") or self._nested_value(record, "rack", "display")
+        rack_position = self._int_value(record, "position")
+        rack_face = self._nested_value(record, "face", "value") or self._value(record, "face")
         normalized = {
             "id": self._value(record, "id"),
             "hostname": hostname,
@@ -327,6 +330,9 @@ class NetBoxConnector(BaseConnector):
             "model": device_type,
             "role": self._nested_value(record, "device_role", "slug") or self._nested_value(record, "device_role", "name"),
             "site": self._nested_value(record, "site", "slug") or self._nested_value(record, "site", "name"),
+            "rack": rack_name,
+            "rack_position": rack_position,
+            "rack_face": rack_face,
             "management_ip": self._primary_ip(record),
             "serial_number": self._value(record, "serial"),
             "status": self._value(record, "status"),
@@ -337,6 +343,7 @@ class NetBoxConnector(BaseConnector):
                 ("management_ip", self._primary_ip(record)),
                 ("serial", self._value(record, "serial")),
                 ("site", self._nested_value(record, "site", "slug") or self._nested_value(record, "site", "name")),
+                ("rack", rack_name),
                 ("role", self._nested_value(record, "device_role", "slug") or self._nested_value(record, "device_role", "name")),
                 ("vendor", manufacturer),
                 ("model", device_type),

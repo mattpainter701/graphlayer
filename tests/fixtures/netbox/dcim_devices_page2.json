@@ -33,6 +33,16 @@
       },
       "custom_fields": {
         "rack_u": 1
+      },
+      "rack": {
+        "id": 5,
+        "name": "Rack-A01",
+        "display": "Rack-A01"
+      },
+      "position": 1,
+      "face": {
+        "value": "front",
+        "label": "Front"
       }
     }
   ]

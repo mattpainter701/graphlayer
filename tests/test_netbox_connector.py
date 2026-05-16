@@ -156,9 +156,13 @@ class NetBoxConnectorTests(unittest.TestCase):
             self.assertEqual(device["payload"]["model"], "C9300-48P")
             self.assertEqual(device["payload"]["device_type"], "switch")
             self.assertEqual(device["payload"]["site"], "nyc-1")
+            self.assertEqual(device["payload"]["rack"], "Rack-A01")
+            self.assertEqual(device["payload"]["rack_position"], 12)
+            self.assertEqual(device["payload"]["rack_face"], "front")
             self.assertIn("hostname:core-sw-01", device["payload"]["correlation_keys"])
             self.assertIn("management_ip:10.0.0.2/24", device["payload"]["correlation_keys"])
             self.assertIn("serial:fcw1234a1b2", device["payload"]["correlation_keys"])
+            self.assertIn("rack:rack-a01", device["payload"]["correlation_keys"])
 
             interface = next(record for record in bundle["interfaces"] if record["payload"]["id"] == "1001")
             self.assertEqual(interface["payload"]["device_name"], "core-sw-01")
