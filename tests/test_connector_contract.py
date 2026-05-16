@@ -249,6 +249,81 @@ class ConnectorContractTests(unittest.TestCase):
         self.assertEqual(duplicate_group["selected_source_id"], "link-2")
         self.assertEqual(duplicate_group["selected_confidence"], 0.8)
 
+    def test_filter_normalized_records_by_confidence_preserves_order(self):
+        connector = DummyConnector(
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "connector_type": "dummy",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+
+        records = [
+            connector.build_normalized_record(
+                record_type="device",
+                source_id="device-low",
+                payload={"hostname": "edge-01"},
+                confidence=0.29,
+            ),
+            connector.build_normalized_record(
+                record_type="device",
+                source_id="device-mid",
+                payload={"hostname": "edge-02"},
+                confidence=0.5,
+            ),
+            connector.build_normalized_record(
+                record_type="device",
+                source_id="device-high",
+                payload={"hostname": "edge-03"},
+                confidence=0.91,
+            ),
+        ]
+
+        filtered = connector.filter_normalized_records_by_confidence(records, 0.5)
+        self.assertEqual([record.source_id for record in filtered], ["device-mid", "device-high"])
+        self.assertEqual([record.confidence for record in filtered], [0.5, 0.91])
+
+    def test_build_normalized_payload_can_apply_minimum_confidence_filter(self):
+        connector = DummyConnector(
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "connector_type": "dummy",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+
+        payload = connector.build_normalized_payload(
+            record_type="device",
+            records=[
+                {"id": "device-low", "hostname": "edge-01"},
+                {"id": "device-high", "hostname": "edge-02"},
+            ],
+            confidence=0.8,
+            minimum_confidence=0.75,
+        )
+
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(payload["minimum_confidence"], 0.75)
+        self.assertEqual([record["source_id"] for record in payload["records"]], ["device-low", "device-high"])
+
+    def test_filter_normalized_records_by_confidence_rejects_invalid_threshold(self):
+        connector = DummyConnector(
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "connector_type": "dummy",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+
+        with self.assertRaises(ValueError):
+            connector.filter_normalized_records_by_confidence([], 1.5)
+
 
 if __name__ == "__main__":
     unittest.main()

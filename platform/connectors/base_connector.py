@@ -308,12 +308,29 @@ class BaseConnector(ConnectorContract):
             "groups": groups,
         }
 
+    @staticmethod
+    def filter_normalized_records_by_confidence(
+        records: Iterable[NormalizedRecord],
+        minimum_confidence: float,
+    ) -> list[NormalizedRecord]:
+        """Return records whose confidence meets or exceeds ``minimum_confidence``.
+
+        The helper preserves input order so callers can filter topology exports
+        without changing the stable ordering that deduplication and reporting rely on.
+        """
+
+        if not 0.0 <= minimum_confidence <= 1.0:
+            raise ValueError("minimum_confidence must be between 0.0 and 1.0")
+
+        return [record for record in records if record.confidence >= minimum_confidence]
+
     def build_normalized_payload(
         self,
         record_type: str,
         records: Iterable[Mapping[str, Any]],
         confidence: float = 1.0,
         metadata: Optional[Mapping[str, Any]] = None,
+        minimum_confidence: Optional[float] = None,
     ) -> Dict[str, Any]:
         normalized_records = [
             self.build_normalized_record(
@@ -325,10 +342,13 @@ class BaseConnector(ConnectorContract):
             )
             for index, record in enumerate(records)
         ]
+        if minimum_confidence is not None:
+            normalized_records = self.filter_normalized_records_by_confidence(normalized_records, minimum_confidence)
         return {
             "record_type": record_type,
             "connector": self.connector_type or self.__class__.__name__,
             "count": len(normalized_records),
+            "minimum_confidence": minimum_confidence,
             "records": [record.__dict__ for record in normalized_records],
         }
 
