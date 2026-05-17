@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -116,8 +115,8 @@ func (ac *APIConnector) setupHTTPClient() {
 	}
 
 	// Load CA certificate if provided
-	if ac.config.CACert != "" {
-		caCert, err := ioutil.ReadFile(ac.config.CACert)
+	if ac.Config.CACert != "" {
+		caCert, err := ioutil.ReadFile(ac.Config.CACert)
 		if err == nil {
 			caCertPool := x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
@@ -126,8 +125,8 @@ func (ac *APIConnector) setupHTTPClient() {
 	}
 
 	// Load client certificate if provided
-	if ac.config.CertFile != "" && ac.config.KeyFileAPI != "" {
-		cert, err := tls.LoadX509KeyPair(ac.config.CertFile, ac.config.KeyFileAPI)
+	if ac.Config.CertFile != "" && ac.Config.KeyFileAPI != "" {
+		cert, err := tls.LoadX509KeyPair(ac.Config.CertFile, ac.Config.KeyFileAPI)
 		if err == nil {
 			tlsConfig.Certificates = []tls.Certificate{cert}
 		}
@@ -151,7 +150,7 @@ func (ac *APIConnector) setupHTTPClient() {
 	// Create HTTP client with timeout
 	ac.httpClient = &http.Client{
 		Transport: transport,
-		Timeout:   ac.config.Timeout,
+		Timeout:   ac.Config.Timeout,
 		// Don't follow redirects automatically for better control
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
@@ -171,16 +170,16 @@ func (ac *APIConnector) Connect(ctx context.Context) error {
 		return err
 	}
 
-	ac.setConnectionState(base.ConnectionStateConnecting)
+	ac.SetConnectionState(base.ConnectionStateConnecting)
 
 	// Test connectivity and authenticate if needed
 	if err := ac.authenticate(ctx); err != nil {
-		ac.setConnectionState(base.ConnectionStateError)
+		ac.SetConnectionState(base.ConnectionStateError)
 		return fmt.Errorf("failed to authenticate to API server: %w", err)
 	}
 
-	ac.setConnected(true)
-	ac.setConnectionState(base.ConnectionStateConnected)
+	ac.SetConnected(true)
+	ac.SetConnectionState(base.ConnectionStateConnected)
 
 	return nil
 }
@@ -213,7 +212,7 @@ func (ac *APIConnector) authenticateCiscoFMC(ctx context.Context) error {
 	}
 
 	// FMC uses basic auth for token generation
-	req.SetBasicAuth(ac.config.Username, ac.config.Password)
+	req.SetBasicAuth(ac.Config.Username, ac.Config.Password)
 
 	resp, err := ac.httpClient.Do(req)
 	if err != nil {
@@ -237,7 +236,7 @@ func (ac *APIConnector) authenticateCiscoFMC(ctx context.Context) error {
 // authenticatePanorama authenticates with Palo Alto Panorama
 func (ac *APIConnector) authenticatePanorama(ctx context.Context) error {
 	// Panorama uses API key authentication, no separate login needed
-	if ac.config.APIKey == "" {
+	if ac.Config.APIKey == "" {
 		return fmt.Errorf("API key required for Panorama")
 	}
 	
@@ -261,8 +260,8 @@ func (ac *APIConnector) authenticateFortiManager(ctx context.Context) error {
 		"params": []map[string]interface{}{
 			{
 				"data": map[string]string{
-					"user":   ac.config.Username,
-					"passwd": ac.config.Password,
+					"user":   ac.Config.Username,
+					"passwd": ac.Config.Password,
 				},
 				"url": "/sys/login/user",
 			},
@@ -351,8 +350,8 @@ func (ac *APIConnector) Disconnect(ctx context.Context) error {
 		ac.httpClient.CloseIdleConnections()
 	}
 
-	ac.setConnected(false)
-	ac.setConnectionState(base.ConnectionStateDisconnected)
+	ac.SetConnected(false)
+	ac.SetConnectionState(base.ConnectionStateDisconnected)
 	return nil
 }
 
@@ -379,7 +378,7 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 
 	// Retry logic with exponential backoff
 	var resp *http.Response
-	for attempt := 0; attempt < ac.config.RetryCount; attempt++ {
+	for attempt := 0; attempt < ac.Config.RetryCount; attempt++ {
 		var reqBody io.Reader
 		if bodyBytes != nil {
 			reqBody = bytes.NewReader(bodyBytes)
@@ -403,8 +402,8 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 		}
 
 		// Wait before retry (exponential backoff)
-		if attempt < ac.config.RetryCount-1 {
-			backoff := time.Duration(attempt+1) * ac.config.RetryDelay
+		if attempt < ac.Config.RetryCount-1 {
+			backoff := time.Duration(attempt+1) * ac.Config.RetryDelay
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -415,7 +414,7 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("request failed after %d attempts: %w", ac.config.RetryCount, err)
+		return nil, fmt.Errorf("request failed after %d attempts: %w", ac.Config.RetryCount, err)
 	}
 
 	return resp, nil
@@ -450,17 +449,17 @@ func (ac *APIConnector) createRequest(ctx context.Context, method, endpoint stri
 	// Set authentication headers
 	if authToken != "" {
 		req.Header.Set("X-auth-access-token", authToken)
-	} else if ac.config.APIKey != "" {
-		req.Header.Set("X-PAN-KEY", ac.config.APIKey) // Panorama
-		req.Header.Set("X-API-Key", ac.config.APIKey)  // Generic
-	} else if ac.config.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+ac.config.Token)
-	} else if ac.config.Username != "" && ac.config.Password != "" {
-		req.SetBasicAuth(ac.config.Username, ac.config.Password)
+	} else if ac.Config.APIKey != "" {
+		req.Header.Set("X-PAN-KEY", ac.Config.APIKey) // Panorama
+		req.Header.Set("X-API-Key", ac.Config.APIKey)  // Generic
+	} else if ac.Config.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+ac.Config.Token)
+	} else if ac.Config.Username != "" && ac.Config.Password != "" {
+		req.SetBasicAuth(ac.Config.Username, ac.Config.Password)
 	}
 
 	// Add custom headers
-	for key, value := range ac.config.Headers {
+	for key, value := range ac.Config.Headers {
 		req.Header.Set(key, value)
 	}
 
@@ -503,8 +502,8 @@ func (ac *APIConnector) GetDeviceInfo(ctx context.Context) (*base.DeviceInfo, er
 
 	deviceInfo := &base.DeviceInfo{
 		ID:             ac.generateDeviceID(),
-		Hostname:       ac.config.Host,
-		IPAddress:      ac.config.Host,
+		Hostname:       ac.Config.Host,
+		IPAddress:      ac.Config.Host,
 		Vendor:         ac.getVendor(),
 		Model:          ac.getModel(),
 		ConnectionType: "api",
@@ -563,10 +562,10 @@ func (ac *APIConnector) ExecuteCommand(ctx context.Context, command string, time
 	duration := time.Since(start)
 
 	if err != nil {
-		return ac.createCommandResult(ac.config.Host, command, "", err.Error(), -1, duration), nil
+		return ac.CreateCommandResult(ac.Config.Host, command, "", err.Error(), -1, duration), nil
 	}
 
-	return ac.createCommandResult(ac.config.Host, command, output, "", 0, duration), nil
+	return ac.CreateCommandResult(ac.Config.Host, command, output, "", 0, duration), nil
 }
 
 // GetDeviceInventory gets the list of devices from the management system
@@ -735,7 +734,6 @@ func (ac *APIConnector) getCiscoFMCDevices(ctx context.Context) ([]*base.DeviceI
 	for _, item := range fmcResp.Items {
 		devices = append(devices, &base.DeviceInfo{
 			ID:             item.ID,
-			Name:           item.Name,
 			Hostname:       item.HostName,
 			Model:          item.Model,
 			Vendor:         "Cisco",
@@ -821,12 +819,10 @@ func (ac *APIConnector) getPanoramaDevices(ctx context.Context) ([]*base.DeviceI
 	for _, d := range xmlResp.Devices {
 		devices = append(devices, &base.DeviceInfo{
 			ID:             d.Serial,
-			Name:           d.Name,
 			Hostname:       d.Hostname,
 			Model:          d.Model,
 			Vendor:         "Palo Alto Networks",
 			ConnectionType: "api",
-			Status:         d.Status,
 			LastSeen:       time.Now(),
 		})
 	}
@@ -914,20 +910,11 @@ func (ac *APIConnector) getNCMDevices(ctx context.Context) ([]*base.DeviceInfo, 
 
 	devices := make([]*base.DeviceInfo, 0, len(swisResp.Results))
 	for _, node := range swisResp.Results {
-		status := "unknown"
-		if node.Status == 1 {
-			status = "up"
-		} else if node.Status == 2 {
-			status = "down"
-		}
-		
 		devices = append(devices, &base.DeviceInfo{
 			ID:             fmt.Sprintf("%d", node.NodeID),
-			Name:           node.Caption,
 			IPAddress:      node.IPAddress,
 			Model:          node.MachineType,
 			Vendor:         node.Vendor,
-			Status:         status,
 			ConnectionType: "api",
 			LastSeen:       time.Now(),
 		})
@@ -1037,20 +1024,11 @@ func (ac *APIConnector) getFortiManagerDevices(ctx context.Context) ([]*base.Dev
 	
 	devices := make([]*base.DeviceInfo, 0, len(fmgrResp.Result[0].Data))
 	for _, dev := range fmgrResp.Result[0].Data {
-		status := "unknown"
-		if dev.ConnStatus == "1" {
-			status = "connected"
-		} else {
-			status = "disconnected"
-		}
-		
 		devices = append(devices, &base.DeviceInfo{
 			ID:             dev.Name,
-			Name:           dev.Name,
 			IPAddress:      dev.IP,
 			Model:          dev.Platform,
 			Vendor:         "Fortinet",
-			Status:         status,
 			ConnectionType: "api",
 			LastSeen:       time.Now(),
 		})
@@ -1069,7 +1047,7 @@ func (ac *APIConnector) getDeviceConfig(ctx context.Context, deviceID string) (*
 
 // generateDeviceID generates a unique device ID
 func (ac *APIConnector) generateDeviceID() string {
-	return fmt.Sprintf("api_%s_%d", ac.config.Host, ac.config.Port)
+	return fmt.Sprintf("api_%s_%d", ac.Config.Host, ac.Config.Port)
 }
 
 // getVendor returns the vendor name based on device type
@@ -1139,8 +1117,6 @@ func (ac *APIConnector) GetRequestCount() uint64 {
 
 // GetRunningConfig retrieves the running configuration from the management system or managed device
 func (ac *APIConnector) GetRunningConfig(ctx context.Context, timeout time.Duration) (*base.ConfigResult, error) {
-	startTime := time.Now()
-	
 	switch ac.deviceType {
 	case types.DeviceTypeCiscoFMC:
 		return ac.getCiscoFMCConfig(ctx, "running")
@@ -1154,13 +1130,10 @@ func (ac *APIConnector) GetRunningConfig(ctx context.Context, timeout time.Durat
 		return nil, fmt.Errorf("GetRunningConfig not supported for device type: %s", ac.deviceType)
 	}
 	
-	_ = time.Since(startTime)
 }
 
 // GetStartupConfig retrieves the startup configuration from the management system or managed device
 func (ac *APIConnector) GetStartupConfig(ctx context.Context, timeout time.Duration) (*base.ConfigResult, error) {
-	startTime := time.Now()
-	
 	switch ac.deviceType {
 	case types.DeviceTypeCiscoFMC:
 		return ac.getCiscoFMCConfig(ctx, "startup")
@@ -1174,7 +1147,6 @@ func (ac *APIConnector) GetStartupConfig(ctx context.Context, timeout time.Durat
 		return nil, fmt.Errorf("GetStartupConfig not supported for device type: %s", ac.deviceType)
 	}
 	
-	_ = time.Since(startTime)
 }
 
 // ExecuteCommands executes multiple commands in sequence
@@ -1255,17 +1227,17 @@ func (ac *APIConnector) GetConfigFilePath(fileName string) string {
 // SetWorkingFolder sets the working folder for file operations
 func (ac *APIConnector) SetWorkingFolder(folder string) error {
 	// Store in config options
-	if ac.config.Options == nil {
-		ac.config.Options = make(map[string]interface{})
+	if ac.Config.Options == nil {
+		ac.Config.Options = make(map[string]interface{})
 	}
-	ac.config.Options["working_folder"] = folder
+	ac.Config.Options["working_folder"] = folder
 	return nil
 }
 
 // GetWorkingFolder gets the current working folder
 func (ac *APIConnector) GetWorkingFolder() string {
-	if ac.config.Options != nil {
-		if folder, ok := ac.config.Options["working_folder"].(string); ok {
+	if ac.Config.Options != nil {
+		if folder, ok := ac.Config.Options["working_folder"].(string); ok {
 			return folder
 		}
 	}
@@ -1282,7 +1254,7 @@ func (ac *APIConnector) GetConnectionState() base.ConnectionState {
 
 // GetConfig returns the connection configuration
 func (ac *APIConnector) GetConfig() *base.ConnectionConfig {
-	return ac.config
+	return ac.Config
 }
 
 // ===== Config Retrieval Methods by Platform =====

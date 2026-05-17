@@ -186,7 +186,7 @@ func TestCategorizeCommandError(t *testing.T) {
 				t.Errorf("Expected failure type %s, got %s", tt.expectedType, failureType)
 			}
 
-			if tt.shouldContain != "" && !contains(reason, tt.shouldContain) {
+			if tt.shouldContain != "" && !containsStr(reason, tt.shouldContain) {
 				t.Errorf("Expected reason to contain '%s', got '%s'", tt.shouldContain, reason)
 			}
 		})
@@ -325,18 +325,9 @@ func TestCommandExecutionSummaryAggregation(t *testing.T) {
 }
 
 // Helper function
-func contains(s, substr string) bool {
+func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || 
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 // Test error severity classification

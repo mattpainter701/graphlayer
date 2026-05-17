@@ -60,10 +60,7 @@ func NewConnectorOrchestrator(baseDir string, credService CredentialService, tas
 	}
 
 	// Initialize App-ID/ISDB cache manager
-	cacheManager, err := appid.NewCacheManager(baseDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create App-ID cache manager: %w", err)
-	}
+	cacheManager := appid.NewCacheManager(baseDir, baseDir, nil)
 
 	return &ConnectorOrchestrator{
 		manager:           registry.NewConnectorManager(),
@@ -88,7 +85,7 @@ func (co *ConnectorOrchestrator) ExecutePull(ctx context.Context, job *Connector
 	}
 
 	// Create working folder
-	workingFolder, err := co.storage.CreateWorkingFolder(job.GUID)
+	_, err := co.storage.CreateWorkingFolder(job.GUID)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("Failed to create working folder: %v", err))
 		result.Duration = time.Since(start)
@@ -861,7 +858,7 @@ func getPaloAltoAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_full",
 			Description: "Full PAN-OS configuration export (XML)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config",
 			Timeout:     60 * time.Second,
 			Tags:        map[string]string{"config": "true", "xml": "true", "priority": "p0", "critical": "true"},
@@ -871,7 +868,7 @@ func getPaloAltoAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_vsys",
 			Description: "Virtual systems (vsys) configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "vsys": "true", "xml": "true", "priority": "p0"},
@@ -881,7 +878,7 @@ func getPaloAltoAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_network",
 			Description: "Network configuration (interfaces, zones, VLANs, virtual-routers)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/network",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "network": "true", "xml": "true", "priority": "p0"},
@@ -964,7 +961,7 @@ func getPaloAltoAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_ipsec_tunnels",
 			Description: "IPsec tunnel configuration (tunnel interface, IKE gateway, crypto profile)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/network/tunnel/ipsec",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "vpn": "true", "ipsec": "true", "xml": "true", "priority": "p1"},
@@ -974,7 +971,7 @@ func getPaloAltoAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_ike_gateways",
 			Description: "IKE gateway configuration (peer IP, authentication, crypto profile)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/network/ike/gateway",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "vpn": "true", "ike": "true", "xml": "true", "priority": "p1"},
@@ -1092,7 +1089,7 @@ func getPaloAltoAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_devices_panorama",
 			Description: "Panorama managed devices list (Panorama mode only)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "devices": "true", "xml": "true", "priority": "p0", "panorama_only": "true"},
@@ -1102,7 +1099,7 @@ func getPaloAltoAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_shared_objects_panorama",
 			Description: "Shared objects across device groups (Panorama mode only)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/shared",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "shared": "true", "xml": "true", "priority": "p0", "panorama_only": "true"},
@@ -1122,7 +1119,7 @@ func getPanoramaAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_device_groups",
 			Description: "Device groups for policy inheritance (Panorama)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/device-group",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "device-groups": "true", "xml": "true", "priority": "p0"},
@@ -1132,7 +1129,7 @@ func getPanoramaAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_templates",
 			Description: "Network and device configuration templates (Panorama)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/template",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "templates": "true", "xml": "true", "priority": "p0"},
@@ -1142,7 +1139,7 @@ func getPanoramaAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_managed_devices",
 			Description: "Firewalls managed by Panorama",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/panorama/managed-devices",
 			Timeout:     45 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "managed-devices": "true", "xml": "true", "priority": "p0"},
@@ -1152,7 +1149,7 @@ func getPanoramaAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_shared_addresses",
 			Description: "Shared address objects across all device groups",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/shared/address",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "shared": "true", "address": "true", "xml": "true", "priority": "p0"},
@@ -1162,7 +1159,7 @@ func getPanoramaAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_shared_services",
 			Description: "Shared service objects across all device groups",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/shared/service",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "shared": "true", "service": "true", "xml": "true", "priority": "p0"},
@@ -1173,7 +1170,7 @@ func getPanoramaAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_config_device_group_pre_rules",
 			Description: "Pre-rules for device group (applied before local firewall rules)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/device-group/entry[@name='{device-group}']/pre-rulebase/security/rules",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "panorama": "true", "device-group": "true", "pre-rules": "true", "xml": "true", "priority": "p0", "requires_substitution": "true"},
@@ -1237,7 +1234,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_security_policies_%s", vsys),
 			Description: fmt.Sprintf("Security policies for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/rulebase/security", vsys),
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "security": "true", "policies": "true", "xml": "true", "priority": "p0", "vsys": vsys, "dynamic": "true"},
@@ -1247,7 +1244,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_nat_policies_%s", vsys),
 			Description: fmt.Sprintf("NAT policies for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/rulebase/nat", vsys),
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "nat": "true", "policies": "true", "xml": "true", "priority": "p0", "vsys": vsys, "dynamic": "true"},
@@ -1257,7 +1254,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_address_objects_%s", vsys),
 			Description: fmt.Sprintf("Address and address-group objects for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/address", vsys),
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "address": "true", "objects": "true", "xml": "true", "priority": "p0", "vsys": vsys, "dynamic": "true"},
@@ -1267,7 +1264,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_service_objects_%s", vsys),
 			Description: fmt.Sprintf("Service and service-group objects for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/service", vsys),
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "service": "true", "objects": "true", "xml": "true", "priority": "p0", "vsys": vsys, "dynamic": "true"},
@@ -1277,7 +1274,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_zones_%s", vsys),
 			Description: fmt.Sprintf("Security zones configuration for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/zone", vsys),
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "zone": "true", "xml": "true", "priority": "p0", "vsys": vsys, "dynamic": "true"},
@@ -1291,7 +1288,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_url_filtering_%s", vsys),
 			Description: fmt.Sprintf("URL filtering profiles for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/profiles/url-filtering", vsys),
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "security": "true", "url-filtering": "true", "xml": "true", "priority": "p2", "vsys": vsys, "dynamic": "true"},
@@ -1301,7 +1298,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_antivirus_%s", vsys),
 			Description: fmt.Sprintf("Antivirus profiles for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/profiles/virus", vsys),
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "security": "true", "antivirus": "true", "xml": "true", "priority": "p2", "vsys": vsys, "dynamic": "true"},
@@ -1311,7 +1308,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_antispyware_%s", vsys),
 			Description: fmt.Sprintf("Anti-spyware profiles for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/profiles/spyware", vsys),
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "security": "true", "anti-spyware": "true", "xml": "true", "priority": "p2", "vsys": vsys, "dynamic": "true"},
@@ -1321,7 +1318,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_vulnerability_%s", vsys),
 			Description: fmt.Sprintf("Vulnerability protection profiles for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/profiles/vulnerability", vsys),
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "security": "true", "vulnerability": "true", "xml": "true", "priority": "p2", "vsys": vsys, "dynamic": "true"},
@@ -1331,7 +1328,7 @@ func getDynamicPANOSVsysCommands(vsysList []string) []types.CommandTemplate {
 		commands = append(commands, types.CommandTemplate{
 			Name:        fmt.Sprintf("show_config_file_blocking_%s", vsys),
 			Description: fmt.Sprintf("File blocking profiles for %s", vsys),
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     fmt.Sprintf("/api/?type=config&action=show&xpath=/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='%s']/profiles/file-blocking", vsys),
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "security": "true", "file-blocking": "true", "xml": "true", "priority": "p2", "vsys": vsys, "dynamic": "true"},
@@ -1364,7 +1361,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_system_vdom",
 			Description: "Virtual Domain (VDOM) list and configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/system/vdom",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "vdom": "true", "json": "true", "priority": "p0"},
@@ -1374,7 +1371,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_system_global",
 			Description: "Global system configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/system/global",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "system": "true", "json": "true", "priority": "p0"},
@@ -1388,7 +1385,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_system_interface",
 			Description: "System interfaces configuration (all VDOMs)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/system/interface",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "interface": "true", "json": "true", "priority": "p0"},
@@ -1398,7 +1395,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_system_zone",
 			Description: "Security zones configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/system/zone",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "zone": "true", "json": "true", "priority": "p0"},
@@ -1408,7 +1405,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_router_static",
 			Description: "Static routing table configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/router/static",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "routing": "true", "json": "true", "priority": "p0"},
@@ -1418,7 +1415,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_router_bgp",
 			Description: "BGP routing configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/router/bgp",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "routing": "true", "bgp": "true", "json": "true", "priority": "p1"},
@@ -1432,7 +1429,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_policy",
 			Description: "IPv4 security policies (firewall rules)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/policy",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "policy": "true", "firewall": "true", "json": "true", "priority": "p0"},
@@ -1442,7 +1439,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_policy6",
 			Description: "IPv6 security policies (firewall rules)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/policy6",
 			Timeout:     30 * time.Second,
 			Tags:        map[string]string{"config": "true", "policy": "true", "firewall": "true", "ipv6": "true", "json": "true", "priority": "p1"},
@@ -1452,7 +1449,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_central_snat",
 			Description: "Central Source NAT policies",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/central-snat-map",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "nat": "true", "snat": "true", "json": "true", "priority": "p0"},
@@ -1462,7 +1459,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_vip",
 			Description: "Virtual IPs (destination NAT)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/vip",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "nat": "true", "dnat": "true", "vip": "true", "json": "true", "priority": "p0"},
@@ -1472,7 +1469,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_ippool",
 			Description: "IP pools for source NAT",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/ippool",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "nat": "true", "snat": "true", "ippool": "true", "json": "true", "priority": "p0"},
@@ -1486,7 +1483,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_address",
 			Description: "Firewall address objects (IPv4)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/address",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "address": "true", "objects": "true", "json": "true", "priority": "p0"},
@@ -1496,7 +1493,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_addrgrp",
 			Description: "Firewall address groups",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/addrgrp",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "address": "true", "groups": "true", "json": "true", "priority": "p0"},
@@ -1506,7 +1503,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_service_custom",
 			Description: "Custom service objects (TCP/UDP ports)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/service/custom",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "service": "true", "objects": "true", "json": "true", "priority": "p0"},
@@ -1516,7 +1513,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_firewall_service_group",
 			Description: "Service groups",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/firewall/service/group",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "service": "true", "groups": "true", "json": "true", "priority": "p0"},
@@ -1530,7 +1527,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_system_sdwan",
 			Description: "SD-WAN configuration (zones, members, health checks)",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/system/sdwan",
 			Timeout:     20 * time.Second,
 			Tags:        map[string]string{"config": "true", "sdwan": "true", "json": "true", "priority": "p1"},
@@ -1540,7 +1537,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_system_sdwan_health_check",
 			Description: "SD-WAN health check configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/system/sdwan/health-check",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "sdwan": "true", "health": "true", "json": "true", "priority": "p1"},
@@ -1554,7 +1551,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_vpn_ipsec_phase1",
 			Description: "IPsec VPN Phase 1 (IKE gateway) configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/vpn.ipsec/phase1-interface",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "vpn": "true", "ipsec": "true", "phase1": "true", "json": "true", "priority": "p1"},
@@ -1564,7 +1561,7 @@ func getFortiGateAuxCommands() []types.CommandTemplate {
 		{
 			Name:        "show_vpn_ipsec_phase2",
 			Description: "IPsec VPN Phase 2 (tunnel) configuration",
-			Category:    types.CommandCategoryConfiguration,
+			Category:    types.CommandCategoryConfig,
 			Command:     "/api/v2/cmdb/vpn.ipsec/phase2-interface",
 			Timeout:     15 * time.Second,
 			Tags:        map[string]string{"config": "true", "vpn": "true", "ipsec": "true", "phase2": "true", "json": "true", "priority": "p1"},
@@ -1941,30 +1938,20 @@ func shouldSkipCommand(cmd types.CommandTemplate, capabilities *DeviceCapabiliti
 
 // extractIOSVersion extracts IOS version from 'show version' output
 func extractIOSVersion(output string) string {
-	// Look for common IOS version patterns
-	patterns := []string{
-		`Version ([0-9]+\.[0-9]+\([0-9]+[A-Za-z]*\)[A-Za-z0-9]*)`,
-		`IOS.*Version ([0-9]+\.[0-9]+)`,
-		`Software.*Version ([0-9]+\.[0-9]+)`,
-	}
-	
-	for _, pattern := range patterns {
-		// Simple pattern matching (in production, use regexp)
-		if idx := strings.Index(output, "Version "); idx != -1 {
-			start := idx + 8
-			end := start
-			for end < len(output) && output[end] != '\n' && output[end] != ',' {
-				end++
-			}
-			if end > start {
-				version := strings.TrimSpace(output[start:end])
-				if len(version) > 0 && len(version) < 50 {
-					return version
-				}
+	if idx := strings.Index(output, "Version "); idx != -1 {
+		start := idx + 8
+		end := start
+		for end < len(output) && output[end] != '\n' && output[end] != ',' {
+			end++
+		}
+		if end > start {
+			version := strings.TrimSpace(output[start:end])
+			if len(version) > 0 && len(version) < 50 {
+				return version
 			}
 		}
 	}
-	
+
 	return "unknown"
 }
 
@@ -2081,16 +2068,16 @@ func (co *ConnectorOrchestrator) collectAppID(ctx context.Context, connector bas
 
 	// Load existing cache for merge
 	existingCache, err := co.appIDCacheManager.LoadAppIDCache(deviceID)
-	if err != nil && err != appid.ErrCacheNotFound {
+	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("[WARN] Failed to load existing App-ID cache: %v", err))
 	}
 
 	// Merge with existing cache
-	merger := appid.NewCacheMerger()
+	merger := appid.NewCacheMerger(nil)
 	mergedCache, mergeReport, err := merger.MergeAppID(existingCache, collectionResult.AppIDCache, appid.FetchMetadata{
-		Status:        collectionResult.FetchStatus,
-		Timestamp:     collectionResult.Timestamp,
-		EntriesFetched: collectionResult.AppsCollected,
+		Status:         collectionResult.Status,
+		Timestamp:      collectionResult.StartTime.Format(time.RFC3339),
+		ActualTotal: collectionResult.AppsCollected,
 	})
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("[WARN] App-ID merge failed: %v", err))
@@ -2170,16 +2157,16 @@ func (co *ConnectorOrchestrator) collectISDB(ctx context.Context, connector base
 
 	// Load existing cache for merge
 	existingCache, err := co.appIDCacheManager.LoadISDBCache(deviceID)
-	if err != nil && err != appid.ErrCacheNotFound {
+	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("[WARN] Failed to load existing ISDB cache: %v", err))
 	}
 
 	// Merge with existing cache
-	merger := appid.NewCacheMerger()
+	merger := appid.NewCacheMerger(nil)
 	mergedCache, mergeReport, err := merger.MergeISDB(existingCache, collectionResult.ISDBCache, appid.FetchMetadata{
-		Status:        collectionResult.FetchStatus,
-		Timestamp:     collectionResult.Timestamp,
-		EntriesFetched: collectionResult.ServicesCollected,
+		Status:         collectionResult.Status,
+		Timestamp:      collectionResult.StartTime.Format(time.RFC3339),
+		ActualTotal: collectionResult.ServicesCollected,
 	})
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("[WARN] ISDB merge failed: %v", err))
@@ -2187,11 +2174,10 @@ func (co *ConnectorOrchestrator) collectISDB(ctx context.Context, connector base
 		return
 	}
 
-	// Create backup before saving
+	// Create backup before saving (App-ID only; ISDB backup not yet implemented)
 	if existingCache != nil && len(existingCache.Services) > 0 {
-		if err := co.appIDCacheManager.BackupISDBCache(deviceID); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("[WARN] Failed to backup ISDB cache: %v", err))
-		}
+		// Note: BackupISDBCache not yet implemented in CacheManager
+		result.Errors = append(result.Errors, "[INFO] ISDB cache backup skipped (not yet implemented)")
 	}
 
 	// Save merged cache

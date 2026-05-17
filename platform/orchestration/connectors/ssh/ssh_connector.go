@@ -39,6 +39,7 @@ type SSHConnector struct {
 
 // InteractiveShell represents an interactive shell session (similar to paramiko's invoke_shell)
 type InteractiveShell struct {
+	client  *ssh.Client
 	session *ssh.Session
 	stdin   io.WriteCloser
 	stdout  io.Reader
@@ -86,12 +87,12 @@ func (sc *SSHConnector) Connect(ctx context.Context) error {
 		return err
 	}
 
-	sc.setConnectionState(base.ConnectionStateConnecting)
+	sc.SetConnectionState(base.ConnectionStateConnecting)
 
 	// Get authentication methods
 	authMethods, err := sc.getAuthMethods()
 	if err != nil {
-		sc.setConnectionState(base.ConnectionStateError)
+		sc.SetConnectionState(base.ConnectionStateError)
 		return fmt.Errorf("failed to setup authentication: %w", err)
 	}
 
@@ -103,10 +104,10 @@ func (sc *SSHConnector) Connect(ctx context.Context) error {
 	}
 
 	config := &ssh.ClientConfig{
-		User:            sc.config.Username,
+		User:            sc.Config.Username,
 		Auth:            authMethods,
 		HostKeyCallback: hostKeyCallback,
-		Timeout:         sc.config.Timeout,
+		Timeout:         sc.Config.Timeout,
 		// Production settings
 		Config: ssh.Config{
 			Ciphers: []string{
@@ -117,16 +118,16 @@ func (sc *SSHConnector) Connect(ctx context.Context) error {
 		},
 	}
 
-	addr := fmt.Sprintf("%s:%d", sc.config.Host, sc.config.Port)
+	addr := fmt.Sprintf("%s:%d", sc.Config.Host, sc.Config.Port)
 
 	// Dial with context support
 	dialer := &net.Dialer{
-		Timeout: sc.config.Timeout,
+		Timeout: sc.Config.Timeout,
 	}
 
 	netConn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		sc.setConnectionState(base.ConnectionStateError)
+		sc.SetConnectionState(base.ConnectionStateError)
 		return fmt.Errorf("failed to dial %s: %w", addr, err)
 	}
 
@@ -134,13 +135,13 @@ func (sc *SSHConnector) Connect(ctx context.Context) error {
 	sshConn, chans, reqs, err := ssh.NewClientConn(netConn, addr, config)
 	if err != nil {
 		netConn.Close()
-		sc.setConnectionState(base.ConnectionStateError)
+		sc.SetConnectionState(base.ConnectionStateError)
 		return fmt.Errorf("failed to establish SSH connection to %s: %w", addr, err)
 	}
 
 	sc.client = ssh.NewClient(sshConn, chans, reqs)
-	sc.setConnected(true)
-	sc.setConnectionState(base.ConnectionStateConnected)
+	sc.SetConnected(true)
+	sc.SetConnectionState(base.ConnectionStateConnected)
 
 	// Prepare keepalive channel
 	if sc.keepAliveDone != nil {
@@ -215,6 +216,7 @@ func (sc *SSHConnector) InvokeShell(ctx context.Context) (*InteractiveShell, err
 	reader := bufio.NewReader(stdout)
 
 	shell := &InteractiveShell{
+		client:         sc.client,
 		session:        session,
 		stdin:          stdin,
 		stdout:         stdout,
@@ -279,11 +281,6 @@ func (shell *InteractiveShell) readUntilPrompt(timeout time.Duration) (string, e
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		// Set read deadline
-		if err := shell.session.Conn.SetReadDeadline(deadline); err != nil {
-			return "", err
-		}
-
 		line, err := shell.reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF || strings.Contains(err.Error(), "timeout") {
@@ -316,13 +313,11 @@ func (shell *InteractiveShell) clearBuffer() {
 	// Non-blocking read to clear any buffered data
 	buf := make([]byte, 4096)
 	for {
-		shell.session.Conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 		n, err := shell.reader.Read(buf)
 		if err != nil || n == 0 {
 			break
 		}
 	}
-	shell.session.Conn.SetReadDeadline(time.Time{}) // Clear deadline
 }
 
 // Close closes the interactive shell
@@ -343,9 +338,9 @@ func (sc *SSHConnector) ExecuteCommand(ctx context.Context, command string, time
 	if sc.shell != nil {
 		output, err := sc.shell.SendCommand(command, timeout)
 		if err != nil {
-			return sc.createCommandResult(sc.config.Host, command, "", err.Error(), -1, 0), nil
+			return sc.CreateCommandResult(sc.Config.Host, command, "", err.Error(), -1, 0), nil
 		}
-		return sc.createCommandResult(sc.config.Host, command, output, "", 0, 0), nil
+		return sc.CreateCommandResult(sc.Config.Host, command, output, "", 0, 0), nil
 	}
 
 	// Otherwise, use exec mode (creates new session for each command)
@@ -386,13 +381,13 @@ func (sc *SSHConnector) executeCommandExec(ctx context.Context, command string, 
 	case output := <-outputChan:
 		duration := time.Since(start)
 		cleaned := sc.parseOutput(string(output), command)
-		return sc.createCommandResult(sc.config.Host, command, cleaned, "", 0, duration), nil
+		return sc.CreateCommandResult(sc.Config.Host, command, cleaned, "", 0, duration), nil
 	case err := <-errorChan:
 		duration := time.Since(start)
-		return sc.createCommandResult(sc.config.Host, command, "", err.Error(), -1, duration), nil
+		return sc.CreateCommandResult(sc.Config.Host, command, "", err.Error(), -1, duration), nil
 	case <-ctx.Done():
 		duration := time.Since(start)
-		return sc.createCommandResult(sc.config.Host, command, "", "command timeout", -1, duration), nil
+		return sc.CreateCommandResult(sc.Config.Host, command, "", "command timeout", -1, duration), nil
 	}
 }
 
@@ -424,8 +419,8 @@ func (sc *SSHConnector) Disconnect(ctx context.Context) error {
 		sc.client = nil
 	}
 
-	sc.setConnected(false)
-	sc.setConnectionState(base.ConnectionStateDisconnected)
+	sc.SetConnected(false)
+	sc.SetConnectionState(base.ConnectionStateDisconnected)
 	return nil
 }
 
@@ -442,7 +437,7 @@ func (sc *SSHConnector) keepAlive(done <-chan struct{}) {
 				_, _, err := sc.client.SendRequest("keepalive@openssh.com", true, nil)
 				if err != nil {
 					// Connection lost, mark as disconnected
-					sc.setConnectionState(base.ConnectionStateError)
+					sc.SetConnectionState(base.ConnectionStateError)
 					return
 				}
 			}
@@ -457,12 +452,12 @@ func (sc *SSHConnector) getAuthMethods() ([]ssh.AuthMethod, error) {
 	var authMethods []ssh.AuthMethod
 
 	// Password authentication
-	if sc.config.Password != "" {
-		authMethods = append(authMethods, ssh.Password(sc.config.Password))
+	if sc.Config.Password != "" {
+		authMethods = append(authMethods, ssh.Password(sc.Config.Password))
 	}
 
 	// Public key authentication
-	if sc.config.KeyFile != "" {
+	if sc.Config.KeyFile != "" {
 		key, err := sc.parsePrivateKey()
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse private key: %w", err)
@@ -479,14 +474,14 @@ func (sc *SSHConnector) getAuthMethods() ([]ssh.AuthMethod, error) {
 
 // parsePrivateKey parses the private key file
 func (sc *SSHConnector) parsePrivateKey() (ssh.AuthMethod, error) {
-	keyData, err := ioutil.ReadFile(sc.config.KeyFile)
+	keyData, err := ioutil.ReadFile(sc.Config.KeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}
 
 	var signer ssh.Signer
-	if sc.config.KeyPassword != "" {
-		signer, err = ssh.ParsePrivateKeyWithPassphrase(keyData, []byte(sc.config.KeyPassword))
+	if sc.Config.KeyPassword != "" {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase(keyData, []byte(sc.Config.KeyPassword))
 	} else {
 		signer, err = ssh.ParsePrivateKey(keyData)
 	}
@@ -562,8 +557,8 @@ func (sc *SSHConnector) GetDeviceInfo(ctx context.Context) (*base.DeviceInfo, er
 
 	deviceInfo := &base.DeviceInfo{
 		ID:                sc.generateDeviceID(),
-		Hostname:          sc.config.Host,
-		IPAddress:         sc.config.Host,
+		Hostname:          sc.Config.Host,
+		IPAddress:         sc.Config.Host,
 		Vendor:            sc.getVendor(),
 		Model:             sc.extractModel(result.Output),
 		OSType:            string(types.GetOSTypeFromDeviceType(sc.deviceType)),
@@ -605,7 +600,7 @@ func (sc *SSHConnector) GetRunningConfig(ctx context.Context, timeout time.Durat
 		return nil, fmt.Errorf("failed to get running config: %w", err)
 	}
 
-	return sc.createConfigResult(sc.config.Host, "running", result.Output, result.Duration), nil
+	return sc.CreateConfigResult(sc.Config.Host, "running", result.Output, result.Duration), nil
 }
 
 // GetStartupConfig retrieves the startup configuration
@@ -624,7 +619,7 @@ func (sc *SSHConnector) GetStartupConfig(ctx context.Context, timeout time.Durat
 		return nil, fmt.Errorf("failed to get startup config: %w", err)
 	}
 
-	return sc.createConfigResult(sc.config.Host, "startup", result.Output, result.Duration), nil
+	return sc.CreateConfigResult(sc.Config.Host, "startup", result.Output, result.Duration), nil
 }
 
 // IsConnected returns whether the SSH connection is active
@@ -652,7 +647,7 @@ func (sc *SSHConnector) Ping(ctx context.Context, timeout time.Duration) error {
 
 // generateDeviceID generates a unique device ID
 func (sc *SSHConnector) generateDeviceID() string {
-	return fmt.Sprintf("ssh_%s_%d", sc.config.Host, sc.config.Port)
+	return fmt.Sprintf("ssh_%s_%d", sc.Config.Host, sc.Config.Port)
 }
 
 // getVendor returns the vendor name based on device type
@@ -848,10 +843,11 @@ func (sc *SSHConnector) WriteConfigToFile(ctx context.Context, configType string
 
 // GetConfigFilePath returns the file path for a config type
 func (sc *SSHConnector) GetConfigFilePath(configType string) string {
-	if sc.workingFolder == "" {
+	folder := sc.GetWorkingFolder()
+	if folder == "" {
 		return ""
 	}
-	return filepath.Join(sc.workingFolder, fmt.Sprintf("%s_%s.txt", sc.config.Host, configType))
+	return filepath.Join(folder, fmt.Sprintf("%s_%s.txt", sc.Config.Host, configType))
 }
 
 // GetManagedDevices returns managed devices (SSH connectors manage single devices)
