@@ -1191,7 +1191,7 @@ func CiscoIOSMapper(p *CiscoIOSProcessor) models.ParsedNetworkTopology {
 		FirewallPolicies: helper.SliceFromMap(p.TopologyFirewallPolicies),
 		Devices:          []models.Device{*p.TopologyDevice},
 		FirewallName:     p.iosConfig.Hostname,
-		Metadata: models.NodeMetadata{
+		Metadata: models.L3NodeMetadata{
 			Parser:     processor.ParserTypeCiscoIOS,
 			SourceType: constants.SOURCE_TYPE_VENDOR,
 		},

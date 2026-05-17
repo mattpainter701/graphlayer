@@ -800,7 +800,7 @@ func PANOSMapper(p *PANOSProcessor) models.ParsedNetworkTopology {
 		FirewallPolicies: helper.SliceFromMap(p.TopologyFirewallPolicies),
 		Devices:          []models.Device{*p.TopologyDevice},
 		FirewallName:     p.systemInfo.Hostname,
-		Metadata: models.NodeMetadata{
+		Metadata: models.L3NodeMetadata{
 			Parser:     processor.ParserTypePaloAlto,
 			SourceType: constants.SOURCE_TYPE_VENDOR,
 		},

@@ -516,7 +516,7 @@ func CiscoNXOSMapper(p *CiscoNXOSProcessor) models.ParsedNetworkTopology {
 		FirewallPolicies: helper.SliceFromMap(p.TopologyFirewallPolicies),
 		Devices:          []models.Device{*p.TopologyDevice},
 		FirewallName:     p.nxosConfig.Hostname,
-		Metadata: models.NodeMetadata{
+		Metadata: models.L3NodeMetadata{
 			Parser:     processor.ParserTypeCiscoNXOS,
 			SourceType: constants.SOURCE_TYPE_VENDOR,
 		},
