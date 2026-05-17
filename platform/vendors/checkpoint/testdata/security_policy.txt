@@ -1,0 +1,17 @@
+Security Policy: Production Policy
+Installed On: cp-gw-01
+Installation Targets: cp-gw-01, cp-gw-02
+
+Access Rules:
+#	Name	Source	Destination	Service	Action	Track	Install On	Time
+1	Allow HTTP	Internal	DMZ	http	accept	log	Policy Targets	Any	Web traffic
+2	Allow HTTPS	Internal	DMZ	https	accept	log	Policy Targets	Any	Secure web
+3	Allow DNS	Internal	DMZ	dns	accept	log	Policy Targets	Any	DNS queries
+4	Allow SSH	Management	All	ssh	accept	log	Policy Targets	Any	Admin access
+5	Block External	External	Internal	Any	drop	log	Policy Targets	Any	Block inbound
+6	Allow VPN	VPN_Users	Internal	Any	accept	log	Policy Targets	Any	VPN access
+7	Allow Mail	Internal	Mail_Server	smtp	accept	log	Policy Targets	Any	Email traffic
+8	Block Malicious	Any	Any	Any	drop	alert	Policy Targets	Any	Threat prevention
+
+Global Properties:
+Apply Gateway Rules: Before Local

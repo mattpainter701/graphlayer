@@ -1,0 +1,19 @@
+hostname cp-gw-01
+interface eth0 ip address 192.168.1.1 netmask 255.255.255.0
+interface eth1 ip address 10.0.0.1 netmask 255.255.255.0
+interface eth2 ip address 172.16.0.1 netmask 255.255.255.0
+ip route 0.0.0.0 0.0.0.0 192.168.1.254 eth0
+ip route 10.0.0.0 255.0.0.0 10.0.0.254 eth1
+dns primary 8.8.8.8
+dns secondary 8.8.4.4
+ntp server 0.pool.ntp.org
+ntp server 1.pool.ntp.org
+snmp enable
+snmp community public
+snmp location Datacenter
+snmp contact admin@example.com
+user admin uid 1000
+user operator uid 1001
+service ssh enable
+service snmp enable
+service telnet disable
