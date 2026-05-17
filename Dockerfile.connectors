@@ -1,0 +1,9 @@
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+COPY platform/connectors/ /app/connectors/
+COPY platform/connectors/requirements.txt /app/requirements.txt 2>/dev/null || true
+RUN pip install --no-cache-dir -r /app/requirements.txt 2>/dev/null || true
+
+EXPOSE 8081
+CMD ["python", "-m", "connectors.server"]

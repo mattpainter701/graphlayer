@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/orchestration"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/orchestration"
 	// Parser packages are imported but commented until full integration is complete
-	// "github.com/mattpainter701/graphlayer/platform/platform/vendors/cisco/ios"
-	// "github.com/mattpainter701/graphlayer/platform/platform/vendors/cisco/asa"
-	// "github.com/mattpainter701/graphlayer/platform/platform/vendors/cisco/nxos"
-	// "github.com/mattpainter701/graphlayer/platform/platform/vendors/aruba/aoscx"
-	// "github.com/mattpainter701/graphlayer/platform/platform/vendors/juniper/junos"
-	// "github.com/mattpainter701/graphlayer/platform/platform/vendors/paloalto/firewall"
-	// "github.com/mattpainter701/graphlayer/platform/platform/vendors/fortinet/fortigate"
+	// "github.com/mattpainter701/graphlayer/platform/vendors/cisco/ios"
+	// "github.com/mattpainter701/graphlayer/platform/vendors/cisco/asa"
+	// "github.com/mattpainter701/graphlayer/platform/vendors/cisco/nxos"
+	// "github.com/mattpainter701/graphlayer/platform/vendors/aruba/aoscx"
+	// "github.com/mattpainter701/graphlayer/platform/vendors/juniper/junos"
+	// "github.com/mattpainter701/graphlayer/platform/vendors/paloalto/firewall"
+	// "github.com/mattpainter701/graphlayer/platform/vendors/fortinet/fortigate"
 )
 
 // ParserBridge connects connectors to parsers

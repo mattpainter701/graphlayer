@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 )
 
 // L2DecisionEngine implements Layer 2 reachability determination logic.

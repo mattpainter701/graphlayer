@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/types"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
 )
 
 // Test shouldSkipCommand function

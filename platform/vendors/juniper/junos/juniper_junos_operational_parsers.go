@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/vendors/juniper"
+	"github.com/mattpainter701/graphlayer/platform/vendors/juniper"
 )
 
 // computeSnippetHash creates SHA-256 hash for evidence tracking

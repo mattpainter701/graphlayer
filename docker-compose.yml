@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+  graphlayer-core:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    ports:
+      - "8080:8080"
+    environment:
+      - GRAPHLAYER_CONNECTORS_URL=http://graphlayer-connectors:8081
+      - GRAPHLAYER_LOG_LEVEL=info
+    volumes:
+      - graphlayer_data:/data
+      - ./platform/comparison/testdata:/testdata:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  graphlayer-connectors:
+    build:
+      context: .
+      dockerfile: Dockerfile.connectors
+    ports:
+      - "8081:8081"
+    environment:
+      - NETBOX_URL=${NETBOX_URL:-http://netbox:8000}
+      - NETBOX_TOKEN=${NETBOX_TOKEN:-}
+      - SERVICENOW_URL=${SERVICENOW_URL:-}
+      - SOLARWINDS_URL=${SOLARWINDS_URL:-}
+      - LOG_LEVEL=info
+    volumes:
+      - connector_cache:/cache
+
+  graphlayer-reference:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+      target: reference
+    ports:
+      - "8082:8082"
+    command: ["/app/graphlayer-compare", "--server", "--port", "8082"]
+    environment:
+      - GRAPHLAYER_CORE_URL=http://graphlayer-core:8080
+
+  # Optional: NetBox for demo CMDB integration
+  netbox:
+    image: netboxcommunity/netbox:v4.0
+    ports:
+      - "8000:8000"
+    environment:
+      - SUPERUSER_NAME=admin
+      - SUPERUSER_PASSWORD=admin
+      - SUPERUSER_EMAIL=admin@example.com
+    volumes:
+      - netbox_data:/opt/netbox/netbox/media
+    profiles:
+      - full
+
+volumes:
+  graphlayer_data:
+  connector_cache:
+  netbox_data:

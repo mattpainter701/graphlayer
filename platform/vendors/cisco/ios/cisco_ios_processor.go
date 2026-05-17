@@ -10,7 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 	helper "github.com/mattpainter701/graphlayer/platform/core/helpers"
 	docinterfaces "github.com/mattpainter701/graphlayer/platform/core/interfaces"
 	connectorInterfaces "github.com/mattpainter701/graphlayer/platform/core/interfaces/connectors"

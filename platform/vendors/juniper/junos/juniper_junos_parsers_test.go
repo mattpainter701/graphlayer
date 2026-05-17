@@ -3,7 +3,7 @@ package junos
 import (
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/vendors/juniper"
+	"github.com/mattpainter701/graphlayer/platform/vendors/juniper"
 )
 
 // Test VLAN parsing with hierarchical Junos syntax

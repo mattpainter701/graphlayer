@@ -13,8 +13,11 @@ import (
 	"sync"
 )
 
-//go:embed ../data/*.txt ../data/*.csv
+//go:embed data/*.txt data/*.csv
 var embeddedData embed.FS
+
+// Note: IANA data files must be copied to reference/iana/data/ for embed to work.
+// The ../data/* path is invalid for go:embed which requires files within the package directory.
 
 // IANALoader provides access to IANA protocol, service, and EtherType mappings
 type IANALoader struct {

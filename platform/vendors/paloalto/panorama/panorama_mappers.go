@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"example.com/topology/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 )
 
 // ========================================

@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+
+# ── Core Go binary ───────────────────────────────────────────
+FROM golang:1.24-bookworm AS core-builder
+WORKDIR /build
+COPY platform/go.mod platform/go.sum ./
+COPY platform/core/ ./core/
+RUN go mod download
+COPY platform/ ./
+RUN CGO_ENABLED=0 go build -o /graphlayer-core ./cmd/graphlayer-compare/main.go
+
+# ── reference comparison binary ─────────────────────────────────
+FROM core-builder AS reference-builder
+RUN CGO_ENABLED=0 go build -o /graphlayer-compare ./cmd/graphlayer-compare/main.go
+
+# ── Runtime image ────────────────────────────────────────────
+FROM gcr.io/distroless/static-debian12:nonroot AS core
+COPY --from=core-builder /graphlayer-core /app/graphlayer-core
+COPY platform/comparison/testdata/ /testdata/
+EXPOSE 8080
+ENTRYPOINT ["/app/graphlayer-core", "--server", "--port", "8080"]
+
+# ── reference runtime ───────────────────────────────────────────
+FROM gcr.io/distroless/static-debian12:nonroot AS reference
+COPY --from=reference-builder /graphlayer-compare /app/graphlayer-compare
+EXPOSE 8082
+ENTRYPOINT ["/app/graphlayer-compare"]

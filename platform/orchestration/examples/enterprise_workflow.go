@@ -1,4 +1,4 @@
-package examples
+package connectors
 
 import (
 	"context"
@@ -6,11 +6,11 @@ import (
 	"log"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/base"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/integration"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/orchestrator"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/services"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/types"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/base"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/integration"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/orchestration"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/services"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
 )
 
 // EnterpriseWorkflowExample demonstrates the complete enterprise workflow

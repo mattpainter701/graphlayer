@@ -1,10 +1,10 @@
-package ios
+package cisco
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 )
 
 // ========================================================================

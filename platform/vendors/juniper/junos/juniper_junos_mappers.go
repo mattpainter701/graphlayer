@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
-	"github.com/mattpainter701/graphlayer/platform/platform/vendors/juniper"
+	"github.com/mattpainter701/graphlayer/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/vendors/juniper"
 )
 
 // Juniper Junos Mappers

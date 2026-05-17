@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/reference/appid"
+	"github.com/mattpainter701/graphlayer/platform/reference/appid"
 )
 
 /*

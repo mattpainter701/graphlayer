@@ -403,20 +403,6 @@ type CiscoPortChannel struct {
 	SourceSnippetHash string
 }
 
-// CiscoGlobalL2Controls aggregates switch-wide integrity toggles.
-type CiscoGlobalL2Controls struct {
-	SnoopingEnabled        bool
-	SnoopingVLANs          []int
-	DAIEnabledVLANs        []int
-	DAIACLByVLAN           map[int]string
-	IPSGGlobal             bool
-	Dot1xSystemAuthControl bool
-	MABGlobal              bool
-	SourceBlock            string
-	SourceSnippetHash      string
-	LastUpdated            string
-}
-
 // CiscoSVI marks VLAN interfaces that provide L3 handoff points.
 type CiscoSVI struct {
 	VLANID            int
@@ -428,16 +414,6 @@ type CiscoSVI struct {
 	SourceSnippetHash string
 }
 
-// CiscoFDBEntry represents MAC placement evidence gathered from the device or
-// supporting telemetry sources.
-type CiscoFDBEntry struct {
-	MAC            string
-	LastSeenPort   string
-	VLANID         int
-	LastSeenTS     string
-	EvidenceSource string
-	Confidence     float64
-}
 
 // ===== Operational Data Structures (Phase 1.0.5) =====
 
@@ -1088,12 +1064,12 @@ type L2SwitchTopology struct {
 	FDBEntries          []*CiscoFDBEntry              `json:"fdb_entries"`
 
 	// L2 Security Data
-	DHCPSnoopingBindings   []DHCPSnoopingBinding      `json:"dhcp_snooping_bindings"`
-	AuthSessions           []AuthenticationSession    `json:"auth_sessions"`
-	PortSecurityStatus     []PortSecurityStatus       `json:"port_security_status"`
-	IPSGBindings           []IPSGBinding              `json:"ipsg_bindings"`
-	ARPInspectionStats     *ARPInspectionStatistics   `json:"arp_inspection_stats"`
-	PrivateVLANs           []PrivateVLAN              `json:"private_vlans"`
+	DHCPSnoopingBindings   []CiscoDHCPSnoopingBinding      `json:"dhcp_snooping_bindings"`
+	AuthSessions           []CiscoAuthenticationSession    `json:"auth_sessions"`
+	PortSecurityStatus     []CiscoPortSecurityStatus       `json:"port_security_status"`
+	IPSGBindings           []CiscoIPSGBinding              `json:"ipsg_bindings"`
+	ARPInspectionStats     *CiscoARPInspectionStats       `json:"arp_inspection_stats"`
+	PrivateVLANs           []CiscoPVLANMapping              `json:"private_vlans"`
 
 	// Decisions (cached)
 	L2Decisions         []*L2DecisionCacheEntry       `json:"l2_decisions"`

@@ -475,4 +475,22 @@ type ParsedNetworkTopologyOwnedAddresses struct {
 	OwnedAddress   Address `json:"owned_address_data" bson:"owned_address_data"`
 }
 
+// DeviceGroup represents a logical grouping of devices (e.g., Panorama device groups)
+type DeviceGroup struct {
+	ID          string            `json:"id" bson:"_id,omitempty"`
+	Name        string            `json:"name" bson:"name"`
+	Description string            `json:"description,omitempty" bson:"description,omitempty"`
+	Members     []string          `json:"members" bson:"members"` // Device IDs in this group
+	Metadata    map[string]string `json:"metadata,omitempty" bson:"metadata,omitempty"`
+}
+
+// IntegrationMessage represents a message passed between integration components
+type IntegrationMessage struct {
+	ID        string                 `json:"id" bson:"_id,omitempty"`
+	Source    string                 `json:"source" bson:"source"`
+	Type      string                 `json:"type" bson:"type"`
+	Payload   map[string]interface{} `json:"payload" bson:"payload"`
+	Timestamp int64                  `json:"timestamp" bson:"timestamp"`
+}
+
 

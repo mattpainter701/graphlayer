@@ -351,5 +351,4 @@ func (r *CollectionResult) ToFetchRecord() FetchRecord {
 	return record
 }
 
-// Compile-time check to ensure we import fmt
-import "fmt"
+// Compile-time check to ensure we import fmt was here; removed stray import.

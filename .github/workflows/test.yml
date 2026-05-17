@@ -1,0 +1,55 @@
+name: Test & Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Run tests with coverage
+        run: |
+          cd platform
+          TMPDIR=${RUNNER_TEMP} go test -coverprofile=coverage.out -coverpkg=./... \
+            ./correlation/... ./comparison/... ./graph/... \
+            ./intelligence/... ./scoring/... ./vendors/shared/... \
+            ./models/... ./reference/iana/...
+
+      - name: Coverage threshold check
+        run: |
+          cd platform
+          COV=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Coverage: ${COV}%"
+          if (( $(echo "$COV < 70.0" | bc -l) )); then
+            echo "Coverage ${COV}% below 70% threshold"
+            exit 1
+          fi
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: platform/coverage.out
+
+  python-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run Python connector tests
+        run: |
+          pip install pytest
+          pytest tests/ -v

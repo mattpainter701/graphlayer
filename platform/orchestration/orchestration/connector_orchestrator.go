@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/api"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/base"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/ssh"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/registry"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/storage"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/types"
-	"github.com/mattpainter701/graphlayer/platform/platform/reference/appid"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/api"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/base"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/ssh"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/registry"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/storage"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
+	"github.com/mattpainter701/graphlayer/platform/reference/appid"
 )
 
 // ConnectorOrchestrator orchestrates connector operations

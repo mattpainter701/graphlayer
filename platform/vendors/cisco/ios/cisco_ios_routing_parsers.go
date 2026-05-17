@@ -1,4 +1,4 @@
-package ios
+package cisco
 
 import (
 	"bufio"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 )
 
 // ========================================================================

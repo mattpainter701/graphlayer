@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 	"github.com/mattpainter701/graphlayer/platform/core/constants"
 	helper "github.com/mattpainter701/graphlayer/platform/core/helpers"
 	"github.com/mattpainter701/graphlayer/platform/core/processor"

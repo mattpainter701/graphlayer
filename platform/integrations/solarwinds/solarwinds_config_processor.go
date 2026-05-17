@@ -343,7 +343,7 @@ func (cp *ConfigProcessor) isJuniper(header, config, ncmVendor string) bool {
 	return matchCount >= 3
 }
 
-func (cp *ConfigProcessor) isArista(header, config, ncmVendor bool) bool {
+func (cp *ConfigProcessor) isArista(header, config, ncmVendor string) bool {
 	// Arista indicators
 	indicators := []string{
 		"arista",

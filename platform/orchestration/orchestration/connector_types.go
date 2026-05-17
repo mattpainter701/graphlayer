@@ -3,8 +3,8 @@ package orchestrator
 import (
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/base"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/types"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/base"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
 )
 
 // ConnectorJob represents a job configuration
