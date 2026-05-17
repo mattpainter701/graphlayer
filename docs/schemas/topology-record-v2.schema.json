@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://graphlayer.dev/schemas/topology-record-v2.schema.json",
+  "title": "GraphLayer Topology Record Model v2",
+  "description": "Universal normalized topology schema for Device, Interface, Link, VLAN, Route, SecurityPolicy, NATRule, and VPN records. Every record carries provenance evidence and confidence metadata under meta.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/device" },
+    { "$ref": "#/$defs/interface" },
+    { "$ref": "#/$defs/link" },
+    { "$ref": "#/$defs/vlan" },
+    { "$ref": "#/$defs/route" },
+    { "$ref": "#/$defs/security_policy" },
+    { "$ref": "#/$defs/nat_rule" },
+    { "$ref": "#/$defs/vpn" }
+  ],
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "required": ["schema_version", "record_kind", "record_id", "evidence", "confidence", "created_at", "updated_at"],
+      "properties": {
+        "schema_version": { "const": "topology.record.v2" },
+        "record_kind": { "enum": ["device", "interface", "link", "vlan", "route", "security_policy", "nat_rule", "vpn"] },
+        "record_id": { "type": "string", "minLength": 1 },
+        "tenant_id": { "type": "string" },
+        "device_id": { "type": "string" },
+        "virtual_context": { "type": "string" },
+        "source_vendor": { "type": "string" },
+        "source_platform": { "type": "string" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "tags": { "type": "object", "additionalProperties": { "type": "string" } },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["source_type", "source_system", "observed_at", "quality"],
+      "properties": {
+        "id": { "type": "string" },
+        "source_type": { "enum": ["config", "operational", "inferred", "connector", "manual"] },
+        "source_system": { "type": "string", "minLength": 1 },
+        "collector": { "type": "string" },
+        "parser": { "type": "string" },
+        "vendor": { "type": "string" },
+        "platform": { "type": "string" },
+        "device_name": { "type": "string" },
+        "command": { "type": "string" },
+        "file_path": { "type": "string" },
+        "source_block": { "type": "string" },
+        "source_snippet_hash": { "type": "string", "pattern": "^(sha256:)?[A-Fa-f0-9]{64}$" },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "fields": { "type": "array", "items": { "type": "string" } },
+        "quality": { "type": "number", "minimum": 0, "maximum": 1 },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "confidence": {
+      "type": "object",
+      "required": ["overall", "per_attribute", "tier", "evidence_sources", "evidence_count", "corroboration_boost", "staleness_decay", "last_updated", "computed_by"],
+      "properties": {
+        "overall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "per_attribute": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/attribute_confidence" } },
+        "tier": { "enum": ["high", "medium", "low", "none"] },
+        "evidence_sources": { "type": "array", "items": { "enum": ["config", "operational", "inferred", "connector", "manual"] } },
+        "evidence_count": { "type": "integer", "minimum": 0 },
+        "corroboration_boost": { "type": "number", "minimum": 0, "maximum": 1 },
+        "staleness_decay": { "type": "number", "minimum": 0, "maximum": 1 },
+        "last_updated": { "type": "string", "format": "date-time" },
+        "computed_by": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "attribute_confidence": {
+      "type": "object",
+      "required": ["field", "score", "source", "rationale"],
+      "properties": {
+        "field": { "type": "string" },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source": { "enum": ["config", "operational", "inferred", "connector", "manual"] },
+        "rationale": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "record_base": {
+      "type": "object",
+      "required": ["meta"],
+      "properties": { "meta": { "$ref": "#/$defs/meta" } }
+    },
+    "device": {
+      "allOf": [
+        { "$ref": "#/$defs/record_base" },
+        {
+          "type": "object",
+          "required": ["hostname"],
+          "properties": {
+            "meta": { "$ref": "#/$defs/meta" },
+            "hostname": { "type": "string", "minLength": 1 },
+            "vendor": { "type": "string" },
+            "model": { "type": "string" },
+            "os_name": { "type": "string" },
+            "os_version": { "type": "string" },
+            "serial_number": { "type": "string" },
+            "management_ips": { "type": "array", "items": { "type": "string" } },
+            "site": { "type": "string" },
+            "role": { "type": "string" },
+            "virtual_contexts": { "type": "array", "items": { "type": "string" } },
+            "interface_ids": { "type": "array", "items": { "type": "string" } },
+            "attributes": { "type": "object", "additionalProperties": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "interface": {
+      "type": "object",
+      "required": ["meta", "device_id", "name"],
+      "properties": {
+        "meta": { "$ref": "#/$defs/meta" },
+        "device_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string" },
+        "admin_status": { "type": "string" },
+        "oper_status": { "type": "string" },
+        "mac_address": { "type": "string" },
+        "mtu": { "type": "integer" },
+        "speed_mbps": { "type": "integer" },
+        "ip_addresses": { "type": "array", "items": { "$ref": "#/$defs/ip_assignment" } },
+        "vlan_ids": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 4094 } },
+        "native_vlan_id": { "type": "integer", "minimum": 1, "maximum": 4094 },
+        "parent_interface_id": { "type": "string" },
+        "aggregate_id": { "type": "string" },
+        "zone_ids": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ip_assignment": {
+      "type": "object",
+      "required": ["address"],
+      "properties": {
+        "address": { "type": "string" },
+        "prefix_length": { "type": "integer", "minimum": 0, "maximum": 128 },
+        "address_family": { "enum": ["ipv4", "ipv6"] },
+        "scope": { "type": "string" },
+        "primary": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "link": {
+      "type": "object",
+      "required": ["meta", "endpoint_a", "endpoint_b"],
+      "properties": {
+        "meta": { "$ref": "#/$defs/meta" },
+        "endpoint_a": { "$ref": "#/$defs/link_endpoint" },
+        "endpoint_b": { "$ref": "#/$defs/link_endpoint" },
+        "type": { "type": "string" },
+        "protocol": { "type": "string" },
+        "state": { "type": "string" },
+        "bandwidth_mbps": { "type": "integer" },
+        "latency_ms": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "link_endpoint": {
+      "type": "object",
+      "required": ["device_id"],
+      "properties": {
+        "device_id": { "type": "string" },
+        "interface_id": { "type": "string" },
+        "name": { "type": "string" },
+        "ip_address": { "type": "string" },
+        "mac_address": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "vlan": {
+      "type": "object",
+      "required": ["meta", "vlan_id"],
+      "properties": {
+        "meta": { "$ref": "#/$defs/meta" },
+        "vlan_id": { "type": "integer", "minimum": 1, "maximum": 4094 },
+        "name": { "type": "string" },
+        "device_ids": { "type": "array", "items": { "type": "string" } },
+        "interface_ids": { "type": "array", "items": { "type": "string" } },
+        "vni": { "type": "integer", "minimum": 1 },
+        "state": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "route": {
+      "type": "object",
+      "required": ["meta", "destination_prefix"],
+      "properties": {
+        "meta": { "$ref": "#/$defs/meta" },
+        "destination_prefix": { "type": "string" },
+        "address_family": { "enum": ["ipv4", "ipv6"] },
+        "vrf": { "type": "string" },
+        "protocol": { "type": "string" },
+        "type": { "type": "string" },
+        "next_hops": { "type": "array", "items": { "$ref": "#/$defs/route_next_hop" } },
+        "metric": { "type": "integer" },
+        "admin_distance": { "type": "integer" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "route_next_hop": {
+      "type": "object",
+      "properties": {
+        "ip_address": { "type": "string" },
+        "interface_id": { "type": "string" },
+        "interface": { "type": "string" },
+        "weight": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "security_policy": {
+      "type": "object",
+      "required": ["meta", "name", "enabled", "action", "log"],
+      "properties": {
+        "meta": { "$ref": "#/$defs/meta" },
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "action": { "type": "string" },
+        "direction": { "type": "string" },
+        "order": { "type": "integer" },
+        "source_zones": { "type": "array", "items": { "type": "string" } },
+        "destination_zones": { "type": "array", "items": { "type": "string" } },
+        "source_addresses": { "type": "array", "items": { "type": "string" } },
+        "destination_addresses": { "type": "array", "items": { "type": "string" } },
+        "services": { "type": "array", "items": { "type": "string" } },
+        "applications": { "type": "array", "items": { "type": "string" } },
+        "log": { "type": "boolean" },
+        "nat_rule_ids": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "nat_rule": {
+      "type": "object",
+      "required": ["meta", "type", "bidirectional", "enabled"],
+      "properties": {
+        "meta": { "$ref": "#/$defs/meta" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "direction": { "type": "string" },
+        "original_source": { "type": "array", "items": { "type": "string" } },
+        "original_destination": { "type": "array", "items": { "type": "string" } },
+        "translated_source": { "type": "array", "items": { "type": "string" } },
+        "translated_destination": { "type": "array", "items": { "type": "string" } },
+        "original_service": { "type": "array", "items": { "type": "string" } },
+        "translated_service": { "type": "array", "items": { "type": "string" } },
+        "inbound_interface_id": { "type": "string" },
+        "outbound_interface_id": { "type": "string" },
+        "bidirectional": { "type": "boolean" },
+        "enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "vpn": {
+      "type": "object",
+      "required": ["meta", "name", "type", "local_endpoint", "remote_endpoint"],
+      "properties": {
+        "meta": { "$ref": "#/$defs/meta" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "mode": { "type": "string" },
+        "local_endpoint": { "type": "string" },
+        "remote_endpoint": { "type": "string" },
+        "local_networks": { "type": "array", "items": { "type": "string" } },
+        "remote_networks": { "type": "array", "items": { "type": "string" } },
+        "encryption_profile": { "type": "string" },
+        "routing": { "type": "string" },
+        "state": { "type": "string" },
+        "failover_group": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
