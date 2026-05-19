@@ -3,6 +3,7 @@ package orchestration
 import (
 	"fmt"
 	"time"
+	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/scoring"
 )
 
 // TopologyNode represents a network device in the topology
@@ -115,6 +116,10 @@ func (e *Engine) QueryTopology(query TopologyQuery) (*TopologyResult, error) {
 		QueryTime:  time.Since(startTime).String(),
 	}
 
+	// Apply staleness-aware confidence decay before returning results
+	currentTime := float64(time.Now().Unix()) / 3600.0
+	decayHours := 24.0 // TODO: make configurable
+	scoring.ApplyDecayToSlice(nodes, currentTime, decayHours)
 	return result, nil
 }
 
