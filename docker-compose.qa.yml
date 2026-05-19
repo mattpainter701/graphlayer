@@ -1,0 +1,15 @@
+version: "3.9"
+
+# QA stack for GitHub Actions / Skynet smoke runs.
+# Primary container: qa-graphlayer
+services:
+  qa-graphlayer:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+      target: reference
+    container_name: qa-graphlayer
+    command: ["--self-test"]
+    ports:
+      - "8082:8082"
+    restart: "no"

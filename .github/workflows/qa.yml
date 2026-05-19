@@ -1,0 +1,29 @@
+name: QA Docker Stack
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: qa-graphlayer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate QA compose file
+        run: docker compose -f docker-compose.qa.yml config
+
+      - name: Build and run QA container
+        run: docker compose -f docker-compose.qa.yml up --build --abort-on-container-exit --exit-code-from qa-graphlayer
+
+      - name: Tear down QA stack
+        if: always()
+        run: docker compose -f docker-compose.qa.yml down -v --remove-orphans
