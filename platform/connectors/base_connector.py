@@ -17,6 +17,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
 
@@ -33,6 +34,82 @@ class NormalizedRecord:
     collected_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     raw_fingerprint: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class DeltaAction(str, Enum):
+    ADDED = "added"
+    UPDATED = "updated"
+    UNCHANGED = "unchanged"
+    STALE = "stale"
+
+
+@dataclass(frozen=True)
+class ConnectorCheckpoint:
+    """Persistable checkpoint for connector delta sync runs."""
+
+    connector: str
+    high_watermark: Optional[str] = None
+    fingerprints: Dict[str, str] = field(default_factory=dict)
+    source_ids: list[str] = field(default_factory=list)
+    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "connector": self.connector,
+            "high_watermark": self.high_watermark,
+            "fingerprints": dict(sorted(self.fingerprints.items())),
+            "source_ids": list(self.source_ids),
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "ConnectorCheckpoint":
+        data = dict(data or {})
+        return cls(
+            connector=str(data.get("connector") or ""),
+            high_watermark=data.get("high_watermark"),
+            fingerprints={str(k): str(v) for k, v in dict(data.get("fingerprints") or {}).items()},
+            source_ids=[str(v) for v in data.get("source_ids") or []],
+            updated_at=str(data.get("updated_at") or datetime.now(timezone.utc).isoformat()),
+        )
+
+
+@dataclass(frozen=True)
+class DeltaSyncRecord:
+    action: DeltaAction
+    record: NormalizedRecord
+    previous_fingerprint: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class DeltaSyncResult:
+    records: list[DeltaSyncRecord]
+    checkpoint: ConnectorCheckpoint
+
+    @property
+    def added(self) -> list[DeltaSyncRecord]:
+        return [item for item in self.records if item.action == DeltaAction.ADDED]
+
+    @property
+    def updated(self) -> list[DeltaSyncRecord]:
+        return [item for item in self.records if item.action == DeltaAction.UPDATED]
+
+    @property
+    def unchanged(self) -> list[DeltaSyncRecord]:
+        return [item for item in self.records if item.action == DeltaAction.UNCHANGED]
+
+    @property
+    def stale(self) -> list[DeltaSyncRecord]:
+        return [item for item in self.records if item.action == DeltaAction.STALE]
+
+    def summary(self) -> Dict[str, int]:
+        return {
+            "added": len(self.added),
+            "updated": len(self.updated),
+            "unchanged": len(self.unchanged),
+            "stale": len(self.stale),
+            "total": len(self.records),
+        }
 
 
 class ConnectorContract(abc.ABC):
@@ -382,6 +459,78 @@ class BaseConnector(ConnectorContract):
             "minimum_confidence": minimum_confidence,
             "records": [record.__dict__ for record in normalized_records],
         }
+
+    def build_delta_sync_result(
+        self,
+        records: Iterable[NormalizedRecord],
+        previous_checkpoint: Optional[ConnectorCheckpoint | Mapping[str, Any]] = None,
+        *,
+        high_watermark: Optional[str] = None,
+        include_stale: bool = True,
+    ) -> DeltaSyncResult:
+        """Classify connector output against a checkpoint and build the next one.
+
+        Connectors can call this after transforming raw data into normalized
+        records. A source ID absent from the prior checkpoint is ``added``; a
+        present ID with a changed fingerprint is ``updated``; an identical
+        fingerprint is ``unchanged``. IDs that existed in the previous checkpoint
+        but are missing from the current run are emitted as ``stale`` tombstones
+        so downstream graph upserts can age or remove obsolete evidence.
+        """
+
+        if isinstance(previous_checkpoint, ConnectorCheckpoint):
+            prior = previous_checkpoint
+        else:
+            prior = ConnectorCheckpoint.from_dict(previous_checkpoint)
+
+        current_records = list(records)
+        current_fingerprints = {record.source_id: record.raw_fingerprint for record in current_records}
+        prior_fingerprints = dict(prior.fingerprints)
+        delta_records: list[DeltaSyncRecord] = []
+
+        for record in current_records:
+            previous_fingerprint = prior_fingerprints.get(record.source_id)
+            if previous_fingerprint is None:
+                action = DeltaAction.ADDED
+            elif previous_fingerprint == record.raw_fingerprint:
+                action = DeltaAction.UNCHANGED
+            else:
+                action = DeltaAction.UPDATED
+            delta_records.append(
+                DeltaSyncRecord(
+                    action=action,
+                    record=record,
+                    previous_fingerprint=previous_fingerprint,
+                )
+            )
+
+        if include_stale:
+            current_source_ids = set(current_fingerprints)
+            for stale_source_id in sorted(set(prior_fingerprints) - current_source_ids):
+                stale_record = NormalizedRecord(
+                    record_type="stale",
+                    source_connector=self.connector_type or self.__class__.__name__,
+                    source_id=stale_source_id,
+                    payload={"stale": True, "last_fingerprint": prior_fingerprints[stale_source_id]},
+                    confidence=0.0,
+                    raw_fingerprint=prior_fingerprints[stale_source_id],
+                    metadata={"delta_action": DeltaAction.STALE.value},
+                )
+                delta_records.append(
+                    DeltaSyncRecord(
+                        action=DeltaAction.STALE,
+                        record=stale_record,
+                        previous_fingerprint=prior_fingerprints[stale_source_id],
+                    )
+                )
+
+        checkpoint = ConnectorCheckpoint(
+            connector=self.connector_type or self.__class__.__name__,
+            high_watermark=high_watermark if high_watermark is not None else prior.high_watermark,
+            fingerprints=current_fingerprints,
+            source_ids=sorted(current_fingerprints),
+        )
+        return DeltaSyncResult(records=delta_records, checkpoint=checkpoint)
 
     def validate_required_fields(self, fields: Iterable[str]) -> None:
         missing = [field for field in fields if not getattr(self, field, None)]

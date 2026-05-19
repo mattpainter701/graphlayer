@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from platform.connectors import NetBoxConnector, create_connector, list_connectors, register_connector
-from platform.connectors.base_connector import BaseConnector, NormalizedRecord
+from platform.connectors.base_connector import BaseConnector, ConnectorCheckpoint, DeltaAction, NormalizedRecord
 from platform.connectors.fileshare_connector import FileShareConnector
 from platform.connectors.solarwinds_ncm_connector import (
     SolarWindsNCMConnector,
@@ -396,6 +396,48 @@ class ConnectorContractTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             connector.apply_staleness_decay(0.5, collected_at, now=now, half_life_days=0)
+    def test_delta_sync_result_classifies_added_updated_unchanged_and_stale_records(self):
+        connector = DummyConnector(
+            "dummy-guid",
+            {
+                "name": "Dummy Connector",
+                "connector_type": "dummy",
+                "host": "example.local",
+                "payload": {"host": "example.local"},
+            },
+        )
+        unchanged = connector.build_normalized_record("device", "edge-01", {"hostname": "edge-01"})
+        updated = connector.build_normalized_record("device", "edge-02", {"hostname": "edge-02", "ip": "10.0.0.2"})
+        added = connector.build_normalized_record("device", "edge-03", {"hostname": "edge-03"})
+        previous = ConnectorCheckpoint(
+            connector="dummy",
+            high_watermark="2024-01-01T00:00:00+00:00",
+            fingerprints={
+                "edge-01": unchanged.raw_fingerprint,
+                "edge-02": "sha256:old",
+                "retired-01": "sha256:retired",
+            },
+            source_ids=["edge-01", "edge-02", "retired-01"],
+        )
+
+        result = connector.build_delta_sync_result(
+            [unchanged, updated, added],
+            previous,
+            high_watermark="2024-02-01T00:00:00+00:00",
+        )
+
+        self.assertEqual(result.summary(), {"added": 1, "updated": 1, "unchanged": 1, "stale": 1, "total": 4})
+        self.assertEqual([item.action for item in result.records], [
+            DeltaAction.UNCHANGED,
+            DeltaAction.UPDATED,
+            DeltaAction.ADDED,
+            DeltaAction.STALE,
+        ])
+        self.assertEqual(result.updated[0].previous_fingerprint, "sha256:old")
+        self.assertEqual(result.stale[0].record.source_id, "retired-01")
+        self.assertEqual(result.checkpoint.high_watermark, "2024-02-01T00:00:00+00:00")
+        self.assertEqual(result.checkpoint.source_ids, ["edge-01", "edge-02", "edge-03"])
+        self.assertNotIn("retired-01", result.checkpoint.fingerprints)
 
 
 if __name__ == "__main__":
