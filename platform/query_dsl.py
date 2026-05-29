@@ -200,9 +200,15 @@ def filter_graph(query: GraphQuery, graph: Mapping[str, Any]) -> dict[str, Any]:
             selected.pop("evidence")
         selected_edges.append(selected)
 
-    node_ids = {edge.get("source_id") for edge in selected_edges} | {edge.get("target_id") for edge in selected_edges}
+    node_ids = []
+    seen_node_ids = set()
+    for edge in selected_edges:
+        for node_id in (edge.get("source_id"), edge.get("target_id")):
+            if node_id in nodes and node_id not in seen_node_ids:
+                node_ids.append(node_id)
+                seen_node_ids.add(node_id)
     return {
-        "nodes": [nodes[node_id] for node_id in node_ids if node_id in nodes],
+        "nodes": [nodes[node_id] for node_id in node_ids],
         "edges": selected_edges[: query.max_hops] if query.max_hops else selected_edges,
         "selectors": list(query.selectors),
     }
