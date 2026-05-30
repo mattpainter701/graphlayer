@@ -51,23 +51,21 @@ func computeDegrees(graph *TopologyGraph) []int {
 	inDeg := make(map[string]int, len(graph.Nodes))
 
 	// Initialize all nodes to 0 so isolated nodes appear.
-	for id := range graph.Nodes {
-		outDeg[id] = 0
-		inDeg[id] = 0
+	for _, node := range graph.Nodes {
+		outDeg[node.ID] = 0
+		inDeg[node.ID] = 0
 	}
 
-	// Count outgoing edges (adjacency map).
-	for src, targets := range graph.Edges {
-		for tgt := range targets {
-			outDeg[src]++
-			inDeg[tgt]++
-		}
+	// Count outgoing edges.
+	for _, edge := range graph.Edges {
+		outDeg[edge.Source]++
+		inDeg[edge.Target]++
 	}
 
 	// Build total degree slice.
 	degrees := make([]int, 0, len(graph.Nodes))
-	for id := range graph.Nodes {
-		degrees = append(degrees, outDeg[id]+inDeg[id])
+	for _, node := range graph.Nodes {
+		degrees = append(degrees, outDeg[node.ID]+inDeg[node.ID])
 	}
 
 	return degrees
