@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+
+	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/graph"
 )
 
 // TopologyFilter represents filters for topology queries
@@ -519,6 +521,33 @@ func (e *OrchestrationEngine) QueryTopology(filter TopologyFilter) (*TopologyRes
 	result.Edges = filteredEdges
 
 	return result, nil
+}
+
+// Bridges finds all cut edges (bridges) in the topology graph identified by
+// graphID, using Tarjan's DFS-based algorithm.
+func Bridges(graphID string) ([][2]string, error) {
+	definition, err := getTopologyGraphDefinition(graphID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert the flat definition to a graph.TopologyGraph.
+	g := &graph.TopologyGraph{
+		Nodes: make(map[string]*graph.Node, len(definition.nodes)),
+		Edges: make(map[string]map[string]*graph.Edge),
+	}
+	for _, id := range definition.nodes {
+		g.Nodes[id] = &graph.Node{ID: id, Name: id}
+	}
+	for _, edge := range definition.edges {
+		src, tgt := edge[0], edge[1]
+		if g.Edges[src] == nil {
+			g.Edges[src] = make(map[string]*graph.Edge)
+		}
+		g.Edges[src][tgt] = &graph.Edge{Source: src, Target: tgt, Weight: 1.0}
+	}
+
+	return graph.FindBridges(g), nil
 }
 
 // Helper function to generate random ID (not used in mock, but available for future use)
