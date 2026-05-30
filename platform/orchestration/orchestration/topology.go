@@ -3,6 +3,7 @@ package orchestration
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 )
 
 // TopologyFilter represents filters for topology queries
@@ -45,6 +46,370 @@ type OrchestrationEngine struct{}
 // NewOrchestrationEngine creates a new orchestration engine
 func NewOrchestrationEngine() *OrchestrationEngine {
 	return &OrchestrationEngine{}
+}
+
+// topologyGraphDefinition is a small in-memory graph registry used by the CLI and tests.
+type topologyGraphDefinition struct {
+	nodes []string
+	edges [][2]string
+}
+
+var topologyGraphs = map[string]topologyGraphDefinition{
+	"tree": {
+		nodes: []string{"root", "left", "right", "left-left"},
+		edges: [][2]string{
+			{"root", "left"},
+			{"root", "right"},
+			{"left", "left-left"},
+		},
+	},
+	"triangle": {
+		nodes: []string{"A", "B", "C"},
+		edges: [][2]string{
+			{"A", "B"},
+			{"B", "C"},
+			{"C", "A"},
+		},
+	},
+	"single": {
+		nodes: []string{"solo"},
+		edges: [][2]string{},
+	},
+	"demo": {
+		nodes: []string{"node-1", "node-2", "node-3", "node-4"},
+		edges: [][2]string{
+			{"node-1", "node-2"},
+			{"node-2", "node-3"},
+			{"node-3", "node-4"},
+		},
+	},
+	"star": {
+		nodes: []string{"center", "leaf-1", "leaf-2", "leaf-3", "leaf-4"},
+		edges: [][2]string{
+			{"center", "leaf-1"},
+			{"center", "leaf-2"},
+			{"center", "leaf-3"},
+			{"center", "leaf-4"},
+		},
+	},
+	"line": {
+		nodes: []string{"n1", "n2", "n3", "n4"},
+		edges: [][2]string{
+			{"n1", "n2"},
+			{"n2", "n3"},
+			{"n3", "n4"},
+		},
+	},
+	"forest": {
+		nodes: []string{"A", "B", "C", "D", "E", "F"},
+		edges: [][2]string{
+			{"A", "B"},
+			{"B", "C"},
+			{"D", "E"},
+		},
+	},
+}
+
+func getTopologyGraphDefinition(graphID string) (topologyGraphDefinition, error) {
+	graph, ok := topologyGraphs[graphID]
+	if !ok {
+		return topologyGraphDefinition{}, fmt.Errorf("unknown graph %q", graphID)
+	}
+	return graph, nil
+}
+
+func buildTopologyAdjacency(definition topologyGraphDefinition) map[string][]string {
+	adjacency := make(map[string][]string, len(definition.nodes))
+	for _, nodeID := range definition.nodes {
+		if _, ok := adjacency[nodeID]; !ok {
+			adjacency[nodeID] = nil
+		}
+	}
+
+	for _, edge := range definition.edges {
+		source, target := edge[0], edge[1]
+		if _, ok := adjacency[source]; !ok {
+			adjacency[source] = nil
+		}
+		if _, ok := adjacency[target]; !ok {
+			adjacency[target] = nil
+		}
+		adjacency[source] = append(adjacency[source], target)
+		adjacency[target] = append(adjacency[target], source)
+	}
+
+	for nodeID := range adjacency {
+		sort.Strings(adjacency[nodeID])
+	}
+
+	return adjacency
+}
+
+// HasCycle reports whether the graph contains a cycle and returns one cycle path if found.
+func HasCycle(graphID string) (bool, []string, error) {
+	definition, err := getTopologyGraphDefinition(graphID)
+	if err != nil {
+		return false, nil, err
+	}
+
+	adjacency := buildTopologyAdjacency(definition)
+	state := make(map[string]int, len(adjacency))
+	stack := make([]string, 0, len(adjacency))
+	stackIndex := make(map[string]int, len(adjacency))
+	var cycle []string
+
+	var dfs func(nodeID, parentID string) bool
+	dfs = func(nodeID, parentID string) bool {
+		state[nodeID] = 1
+		stackIndex[nodeID] = len(stack)
+		stack = append(stack, nodeID)
+
+		for _, neighborID := range adjacency[nodeID] {
+			if neighborID == parentID {
+				continue
+			}
+
+			switch state[neighborID] {
+			case 0:
+				if dfs(neighborID, nodeID) {
+					return true
+				}
+			case 1:
+				start := stackIndex[neighborID]
+				cycle = append([]string{}, stack[start:]...)
+				cycle = append(cycle, neighborID)
+				return true
+			}
+		}
+
+		stack = stack[:len(stack)-1]
+		delete(stackIndex, nodeID)
+		state[nodeID] = 2
+		return false
+	}
+
+	nodes := make([]string, 0, len(adjacency))
+	for nodeID := range adjacency {
+		nodes = append(nodes, nodeID)
+	}
+	sort.Strings(nodes)
+
+	for _, nodeID := range nodes {
+		if state[nodeID] == 0 && dfs(nodeID, "") {
+			return true, cycle, nil
+		}
+	}
+
+	return false, nil, nil
+}
+
+// BetweennessCentrality computes normalized betweenness centrality for each node
+// in an unweighted, undirected graph using Brandes' algorithm.
+func BetweennessCentrality(graphID string) (map[string]float64, error) {
+	definition, err := getTopologyGraphDefinition(graphID)
+	if err != nil {
+		return nil, err
+	}
+
+	adjacency := make(map[string][]string, len(definition.nodes))
+	centrality := make(map[string]float64, len(definition.nodes))
+	for _, nodeID := range definition.nodes {
+		adjacency[nodeID] = nil
+		centrality[nodeID] = 0
+	}
+
+	for _, edge := range definition.edges {
+		source, target := edge[0], edge[1]
+		if _, ok := adjacency[source]; !ok {
+			adjacency[source] = nil
+			centrality[source] = 0
+		}
+		if _, ok := adjacency[target]; !ok {
+			adjacency[target] = nil
+			centrality[target] = 0
+		}
+		adjacency[source] = append(adjacency[source], target)
+		adjacency[target] = append(adjacency[target], source)
+	}
+
+	nodes := make([]string, 0, len(adjacency))
+	for nodeID := range adjacency {
+		nodes = append(nodes, nodeID)
+	}
+	sort.Strings(nodes)
+	for _, nodeID := range nodes {
+		sort.Strings(adjacency[nodeID])
+	}
+
+	if len(nodes) <= 2 {
+		return centrality, nil
+	}
+
+	for _, source := range nodes {
+		stack := make([]string, 0, len(nodes))
+		predecessors := make(map[string][]string, len(nodes))
+		sigma := make(map[string]float64, len(nodes))
+		distance := make(map[string]int, len(nodes))
+		for _, nodeID := range nodes {
+			distance[nodeID] = -1
+			sigma[nodeID] = 0
+		}
+		sigma[source] = 1
+		distance[source] = 0
+
+		queue := []string{source}
+		for len(queue) > 0 {
+			v := queue[0]
+			queue = queue[1:]
+			stack = append(stack, v)
+
+			for _, neighbor := range adjacency[v] {
+				if distance[neighbor] < 0 {
+					distance[neighbor] = distance[v] + 1
+					queue = append(queue, neighbor)
+				}
+				if distance[neighbor] == distance[v]+1 {
+					sigma[neighbor] += sigma[v]
+					predecessors[neighbor] = append(predecessors[neighbor], v)
+				}
+			}
+		}
+
+		delta := make(map[string]float64, len(nodes))
+		for i := len(stack) - 1; i >= 0; i-- {
+			w := stack[i]
+			for _, v := range predecessors[w] {
+				if sigma[w] == 0 {
+					continue
+				}
+				delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+			}
+			if w != source {
+				centrality[w] += delta[w]
+			}
+		}
+	}
+
+	for nodeID := range centrality {
+		centrality[nodeID] /= 2.0
+	}
+
+	scale := 2.0 / float64((len(nodes)-1)*(len(nodes)-2))
+	for nodeID := range centrality {
+		centrality[nodeID] *= scale
+		if centrality[nodeID] < 0 {
+			centrality[nodeID] = 0
+		}
+		if centrality[nodeID] > 1 {
+			centrality[nodeID] = 1
+		}
+	}
+
+	return centrality, nil
+}
+
+// OrphansResult holds the result of an orphan / disconnected-component analysis.
+type OrphansResult struct {
+	OrphanNodeIDs         []string `json:"orphan_node_ids"`
+	DisconnectedSubgraphs int      `json:"disconnected_subgraphs"`
+}
+
+// Orphans finds all nodes with zero edges (isolated nodes) and counts the
+// number of disconnected subgraphs (connected components beyond the main one).
+// A node is an orphan if it belongs to a connected component of size 1 — i.e.
+// it has no edges to any other node.
+func Orphans(graphID string) (*OrphansResult, error) {
+	definition, err := getTopologyGraphDefinition(graphID)
+	if err != nil {
+		return nil, err
+	}
+
+	adjacency := buildTopologyAdjacency(definition)
+
+	// Find all connected components via BFS.
+	visited := make(map[string]bool, len(adjacency))
+	var components [][]string
+
+	for _, nodeID := range definition.nodes {
+		if visited[nodeID] {
+			continue
+		}
+
+		// BFS from nodeID
+		component := []string{}
+		queue := []string{nodeID}
+		visited[nodeID] = true
+
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
+			component = append(component, cur)
+
+			for _, neighbor := range adjacency[cur] {
+				if !visited[neighbor] {
+					visited[neighbor] = true
+					queue = append(queue, neighbor)
+				}
+			}
+		}
+
+		components = append(components, component)
+	}
+
+	// Classify: size-1 components = orphans.
+	// "Disconnected subgraphs" = every component with size > 1, unless the
+	// whole graph is a single connected component (meaning the graph has no
+	// truly disconnected parts).
+	var orphanIDs []string
+	disconnectedCount := 0
+	for _, comp := range components {
+		if len(comp) == 1 {
+			orphanIDs = append(orphanIDs, comp[0])
+		} else if len(components) > 1 {
+			disconnectedCount++
+		}
+	}
+
+	if orphanIDs == nil {
+		orphanIDs = []string{}
+	}
+	sort.Strings(orphanIDs)
+
+	return &OrphansResult{
+		OrphanNodeIDs:         orphanIDs,
+		DisconnectedSubgraphs: disconnectedCount,
+	}, nil
+}
+
+// RandomWalk performs a random walk across the in-memory topology graph.
+func RandomWalk(graphID, startNodeID string, steps int) ([]string, error) {
+	if steps < 0 {
+		return nil, fmt.Errorf("steps must be non-negative")
+	}
+
+	definition, err := getTopologyGraphDefinition(graphID)
+	if err != nil {
+		return nil, err
+	}
+
+	adjacency := buildTopologyAdjacency(definition)
+	if _, ok := adjacency[startNodeID]; !ok {
+		return nil, fmt.Errorf("unknown start node %q in graph %q", startNodeID, graphID)
+	}
+
+	path := []string{startNodeID}
+	current := startNodeID
+	for i := 0; i < steps; i++ {
+		neighbors := adjacency[current]
+		if len(neighbors) == 0 {
+			break
+		}
+
+		current = neighbors[rand.Intn(len(neighbors))]
+		path = append(path, current)
+	}
+
+	return path, nil
 }
 
 // QueryTopology queries the network topology with the given filter
