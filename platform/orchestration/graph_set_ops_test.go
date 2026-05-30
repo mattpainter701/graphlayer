@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestGraphIntersection_DisjointGraphs(t *testing.T) {
+func TestGraphSetOps_Intersection_DisjointGraphs(t *testing.T) {
 	g1 := &TopologyGraph{
 		Nodes: []GraphNode{
 			{ID: "a", Attributes: map[string]string{"env": "prod"}},
@@ -36,7 +36,7 @@ func TestGraphIntersection_DisjointGraphs(t *testing.T) {
 	}
 }
 
-func TestGraphIntersection_OverlappingNodes(t *testing.T) {
+func TestGraphSetOps_Intersection_OverlappingNodes(t *testing.T) {
 	g1 := &TopologyGraph{
 		Nodes: []GraphNode{
 			{ID: "a", Attributes: map[string]string{"env": "prod", "owner": "team-a"}},
@@ -108,7 +108,7 @@ func TestGraphIntersection_OverlappingNodes(t *testing.T) {
 	}
 }
 
-func TestGraphIntersection_IdenticalGraphs(t *testing.T) {
+func TestGraphSetOps_Intersection_IdenticalGraphs(t *testing.T) {
 	g1 := &TopologyGraph{
 		Nodes: []GraphNode{
 			{ID: "a", Attributes: map[string]string{"env": "prod"}},
@@ -132,7 +132,7 @@ func TestGraphIntersection_IdenticalGraphs(t *testing.T) {
 	}
 }
 
-func TestGraphIntersection_EmptyGraphs(t *testing.T) {
+func TestGraphSetOps_Intersection_EmptyGraphs(t *testing.T) {
 	// Both nil.
 	got, err := GraphIntersection(nil, nil)
 	if err != nil {
@@ -178,7 +178,7 @@ func TestGraphIntersection_EmptyGraphs(t *testing.T) {
 	}
 }
 
-func TestGraphIntersection_EmptyNodeID(t *testing.T) {
+func TestGraphSetOps_Intersection_EmptyNodeID(t *testing.T) {
 	g1 := &TopologyGraph{
 		Nodes: []GraphNode{{ID: ""}},
 	}
