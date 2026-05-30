@@ -57,9 +57,11 @@ func computeDegrees(graph *TopologyGraph) []int {
 	}
 
 	// Count outgoing edges.
-	for _, edge := range graph.Edges {
-		outDeg[edge.Source]++
-		inDeg[edge.Target]++
+	for _, srcEdges := range graph.Edges {
+		for _, edge := range srcEdges {
+			outDeg[edge.Source]++
+			inDeg[edge.Target]++
+		}
 	}
 
 	// Build total degree slice.
