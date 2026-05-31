@@ -24,14 +24,15 @@ func totalProb(m map[string]float64) float64 {
 func TestRandomWalkWithRestart_Line3_SeedAtEnd(t *testing.T) {
 	// 3-node line: n1 -- n2 -- n3, seed at n1 (one end).
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "n1"},
-			{ID: "n2"},
-			{ID: "n3"},
+		Nodes: map[string]*Node{
+			"n1": {ID: "n1"},
+			"n2": {ID: "n2"},
+			"n3": {ID: "n3"},
 		},
-		Edges: []GraphEdge{
-			{Source: "n1", Target: "n2", Weight: 1},
-			{Source: "n2", Target: "n3", Weight: 1},
+		Edges: map[string]map[string]*Edge{
+			"n1": {"n2": {Source: "n1", Target: "n2", Weight: 1}},
+			"n2": {"n1": {Source: "n2", Target: "n1", Weight: 1}, "n3": {Source: "n2", Target: "n3", Weight: 1}},
+			"n3": {"n2": {Source: "n3", Target: "n2", Weight: 1}},
 		},
 	}
 
@@ -64,17 +65,17 @@ func TestRandomWalkWithRestart_Line3_SeedAtEnd(t *testing.T) {
 func TestRandomWalkWithRestart_Cycle4(t *testing.T) {
 	// 4-node cycle: n1 -- n2 -- n3 -- n4 -- n1.
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "n1"},
-			{ID: "n2"},
-			{ID: "n3"},
-			{ID: "n4"},
+		Nodes: map[string]*Node{
+			"n1": {ID: "n1"},
+			"n2": {ID: "n2"},
+			"n3": {ID: "n3"},
+			"n4": {ID: "n4"},
 		},
-		Edges: []GraphEdge{
-			{Source: "n1", Target: "n2", Weight: 1},
-			{Source: "n2", Target: "n3", Weight: 1},
-			{Source: "n3", Target: "n4", Weight: 1},
-			{Source: "n4", Target: "n1", Weight: 1},
+		Edges: map[string]map[string]*Edge{
+			"n1": {"n2": {Source: "n1", Target: "n2", Weight: 1}, "n4": {Source: "n1", Target: "n4", Weight: 1}},
+			"n2": {"n1": {Source: "n2", Target: "n1", Weight: 1}, "n3": {Source: "n2", Target: "n3", Weight: 1}},
+			"n3": {"n2": {Source: "n3", Target: "n2", Weight: 1}, "n4": {Source: "n3", Target: "n4", Weight: 1}},
+			"n4": {"n3": {Source: "n4", Target: "n3", Weight: 1}, "n1": {Source: "n4", Target: "n1", Weight: 1}},
 		},
 	}
 
@@ -115,8 +116,11 @@ func TestRandomWalkWithRestart_NilGraph(t *testing.T) {
 
 func TestRandomWalkWithRestart_SeedNotFound(t *testing.T) {
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "n1"}, {ID: "n2"}},
-		Edges: []GraphEdge{{Source: "n1", Target: "n2"}},
+		Nodes: map[string]*Node{"n1": {ID: "n1"}, "n2": {ID: "n2"}},
+		Edges: map[string]map[string]*Edge{
+			"n1": {"n2": {Source: "n1", Target: "n2", Weight: 1}},
+			"n2": {"n1": {Source: "n2", Target: "n1", Weight: 1}},
+		},
 	}
 	_, err := RandomWalkWithRestart(g, "nobody", 0.15, 100, 1e-8)
 	if err == nil {
@@ -126,7 +130,7 @@ func TestRandomWalkWithRestart_SeedNotFound(t *testing.T) {
 
 func TestRandomWalkWithRestart_InvalidParams(t *testing.T) {
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "n1"}},
+		Nodes: map[string]*Node{"n1": {ID: "n1"}},
 	}
 
 	// Negative restart probability.
@@ -157,8 +161,10 @@ func TestRandomWalkWithRestart_InvalidParams(t *testing.T) {
 func TestRandomWalkWithRestart_ConvergesToSteadyState(t *testing.T) {
 	// Single node with self-loop — trivial steady state.
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "n1"}},
-		Edges: []GraphEdge{{Source: "n1", Target: "n1", Weight: 1}},
+		Nodes: map[string]*Node{"n1": {ID: "n1"}},
+		Edges: map[string]map[string]*Edge{
+			"n1": {"n1": {Source: "n1", Target: "n1", Weight: 1}},
+		},
 	}
 
 	result, err := RandomWalkWithRestart(g, "n1", 0.5, 100, 1e-8)
@@ -171,8 +177,7 @@ func TestRandomWalkWithRestart_ConvergesToSteadyState(t *testing.T) {
 func TestRandomWalkWithRestart_IsolatedNode(t *testing.T) {
 	// Graph with isolated node — seed is isolated.
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "n1"}, {ID: "n2"}},
-		Edges: []GraphEdge{},
+		Nodes: map[string]*Node{"n1": {ID: "n1"}, "n2": {ID: "n2"}},
 	}
 
 	result, err := RandomWalkWithRestart(g, "n1", 0.15, 100, 1e-8)
@@ -194,27 +199,29 @@ func TestRandomWalkWithRestart_EdgeWeightInfluence(t *testing.T) {
 	// The heavy n1-n2 edge creates strong bidirectional flow, and with restart
 	// pulling back to seed n1, the seed should dominate.
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "n1"},
-			{ID: "n2"},
-			{ID: "n3"},
+		Nodes: map[string]*Node{
+			"n1": {ID: "n1"},
+			"n2": {ID: "n2"},
+			"n3": {ID: "n3"},
 		},
-		Edges: []GraphEdge{
-			{Source: "n1", Target: "n2", Weight: 10},
-			{Source: "n2", Target: "n3", Weight: 1},
+		Edges: map[string]map[string]*Edge{
+			"n1": {"n2": {Source: "n1", Target: "n2", Weight: 10}},
+			"n2": {"n1": {Source: "n2", Target: "n1", Weight: 10}, "n3": {Source: "n2", Target: "n3", Weight: 1}},
+			"n3": {"n2": {Source: "n3", Target: "n2", Weight: 1}},
 		},
 	}
 
 	// Compare with the unweighted version.
 	gUnweighted := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "n1"},
-			{ID: "n2"},
-			{ID: "n3"},
+		Nodes: map[string]*Node{
+			"n1": {ID: "n1"},
+			"n2": {ID: "n2"},
+			"n3": {ID: "n3"},
 		},
-		Edges: []GraphEdge{
-			{Source: "n1", Target: "n2", Weight: 1},
-			{Source: "n2", Target: "n3", Weight: 1},
+		Edges: map[string]map[string]*Edge{
+			"n1": {"n2": {Source: "n1", Target: "n2", Weight: 1}},
+			"n2": {"n1": {Source: "n2", Target: "n1", Weight: 1}, "n3": {Source: "n2", Target: "n3", Weight: 1}},
+			"n3": {"n2": {Source: "n3", Target: "n2", Weight: 1}},
 		},
 	}
 

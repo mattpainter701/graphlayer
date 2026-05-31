@@ -1,5 +1,7 @@
 package graph
 
+import "sort"
+
 // ArticulationPoints returns all articulation points (cut vertices) in the
 // graph using Tarjan's DFS-based algorithm. An articulation point is a node
 // whose removal increases the number of connected components in the graph.
@@ -11,16 +13,35 @@ func ArticulationPoints(g *TopologyGraph) []string {
 		return nil
 	}
 
-	nodeIDs, adjacency := buildUndirectedAdjacency(g)
-	if len(nodeIDs) == 0 {
-		return nil
+	// Build a list of all node IDs.
+	nodeIDs := make([]string, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		nodeIDs = append(nodeIDs, id)
+	}
+	sort.Strings(nodeIDs)
+
+	// Build undirected adjacency (deduplicated).
+	adj := make(map[string]map[string]struct{}, len(g.Nodes))
+	for _, id := range nodeIDs {
+		adj[id] = make(map[string]struct{})
+	}
+	for src, targets := range g.Edges {
+		for tgt := range targets {
+			if src == tgt {
+				continue // self-loops are irrelevant
+			}
+			if _, ok := adj[src]; ok {
+				adj[src][tgt] = struct{}{}
+			}
+			if _, ok := adj[tgt]; ok {
+				adj[tgt][src] = struct{}{}
+			}
+		}
 	}
 
-	// Discard nodes that are absent from the adjacency map (not reachable
-	// from any edge). Single isolated nodes have zero neighbors and are not
-	// articulation points.
+	// Check if any node has at least one neighbor.
 	hasEdges := false
-	for _, neighbors := range adjacency {
+	for _, neighbors := range adj {
 		if len(neighbors) > 0 {
 			hasEdges = true
 			break
@@ -30,12 +51,12 @@ func ArticulationPoints(g *TopologyGraph) []string {
 		return nil
 	}
 
+	// --- Tarjan's DFS ------------------------------------------------------
 	disc := make(map[string]int, len(nodeIDs))
 	low := make(map[string]int, len(nodeIDs))
 	parent := make(map[string]string, len(nodeIDs))
 	visited := make(map[string]bool, len(nodeIDs))
 	artPoints := make(map[string]bool)
-	// Use a pointer to a time counter so the inner closure can mutate it.
 	time := 0
 
 	var dfs func(u string)
@@ -46,7 +67,7 @@ func ArticulationPoints(g *TopologyGraph) []string {
 		low[u] = time
 		childCount := 0
 
-		for v := range adjacency[u] {
+		for v := range adj[u] {
 			if !visited[v] {
 				childCount++
 				parent[v] = u

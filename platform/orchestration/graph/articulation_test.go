@@ -14,16 +14,19 @@ import (
 // (A-B-C-A and B-D-E-B). Removing B splits the graph into two components.
 func buildBowTieGraph() *TopologyGraph {
 	return &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "A"}, {ID: "B"}, {ID: "C"}, {ID: "D"}, {ID: "E"},
+		Nodes: map[string]*Node{
+			"A": {ID: "A"},
+			"B": {ID: "B"},
+			"C": {ID: "C"},
+			"D": {ID: "D"},
+			"E": {ID: "E"},
 		},
-		Edges: []GraphEdge{
-			{Source: "A", Target: "B"},
-			{Source: "B", Target: "C"},
-			{Source: "C", Target: "A"},
-			{Source: "B", Target: "D"},
-			{Source: "D", Target: "E"},
-			{Source: "E", Target: "B"},
+		Edges: map[string]map[string]*Edge{
+			"A": {"B": {Source: "A", Target: "B", Weight: 1}, "C": {Source: "A", Target: "C", Weight: 1}},
+			"B": {"A": {Source: "B", Target: "A", Weight: 1}, "C": {Source: "B", Target: "C", Weight: 1}, "D": {Source: "B", Target: "D", Weight: 1}, "E": {Source: "B", Target: "E", Weight: 1}},
+			"C": {"A": {Source: "C", Target: "A", Weight: 1}, "B": {Source: "C", Target: "B", Weight: 1}},
+			"D": {"B": {Source: "D", Target: "B", Weight: 1}, "E": {Source: "D", Target: "E", Weight: 1}},
+			"E": {"B": {Source: "E", Target: "B", Weight: 1}, "D": {Source: "E", Target: "D", Weight: 1}},
 		},
 	}
 }
@@ -31,13 +34,15 @@ func buildBowTieGraph() *TopologyGraph {
 // buildCycleGraph creates a simple cycle: A - B - C - A
 func buildCycleGraph() *TopologyGraph {
 	return &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "A"}, {ID: "B"}, {ID: "C"},
+		Nodes: map[string]*Node{
+			"A": {ID: "A"},
+			"B": {ID: "B"},
+			"C": {ID: "C"},
 		},
-		Edges: []GraphEdge{
-			{Source: "A", Target: "B"},
-			{Source: "B", Target: "C"},
-			{Source: "C", Target: "A"},
+		Edges: map[string]map[string]*Edge{
+			"A": {"B": {Source: "A", Target: "B", Weight: 1}, "C": {Source: "A", Target: "C", Weight: 1}},
+			"B": {"A": {Source: "B", Target: "A", Weight: 1}, "C": {Source: "B", Target: "C", Weight: 1}},
+			"C": {"A": {Source: "C", Target: "A", Weight: 1}, "B": {Source: "C", Target: "B", Weight: 1}},
 		},
 	}
 }
@@ -88,7 +93,7 @@ func TestArticulationPoints_EmptyGraph(t *testing.T) {
 
 func TestArticulationPoints_SingleNode(t *testing.T) {
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "A"}},
+		Nodes: map[string]*Node{"A": {ID: "A"}},
 	}
 	points := ArticulationPoints(g)
 	if points != nil {
@@ -98,19 +103,13 @@ func TestArticulationPoints_SingleNode(t *testing.T) {
 
 func TestArticulationPoints_TwoConnectedNodes(t *testing.T) {
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "A"}, {ID: "B"}},
-		Edges: []GraphEdge{{Source: "A", Target: "B"}},
+		Nodes: map[string]*Node{"A": {ID: "A"}, "B": {ID: "B"}},
+		Edges: map[string]map[string]*Edge{
+			"A": {"B": {Source: "A", Target: "B", Weight: 1}},
+			"B": {"A": {Source: "B", Target: "A", Weight: 1}},
+		},
 	}
 	points := ArticulationPoints(g)
-	// A single edge: removing either node leaves a single isolated node,
-	// BUT an articulation point definition says that a node whose removal
-	// increases the number of connected components. Removing A from A-B
-	// leaves just B (1 component), same as before when the graph had
-	// 2 nodes and 1 edge = 1 component. So neither is an articulation point.
-	// Actually: The classic Tarjan algorithm does NOT report nodes in a
-	// 2-node graph as articulation points because the root (first visited)
-	// has only 1 child (so childCount <= 1), and the other node has a parent
-	// but no grandchildren, so low[v] >= disc[u] won't trigger.
 	if points != nil {
 		t.Errorf("expected no articulation points for 2-node edge, got %v", points)
 	}
@@ -120,13 +119,14 @@ func TestArticulationPoints_LineGraph(t *testing.T) {
 	// A — B — C — D
 	// B and C are articulation points.
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "A"}, {ID: "B"}, {ID: "C"}, {ID: "D"},
+		Nodes: map[string]*Node{
+			"A": {ID: "A"}, "B": {ID: "B"}, "C": {ID: "C"}, "D": {ID: "D"},
 		},
-		Edges: []GraphEdge{
-			{Source: "A", Target: "B"},
-			{Source: "B", Target: "C"},
-			{Source: "C", Target: "D"},
+		Edges: map[string]map[string]*Edge{
+			"A": {"B": {Source: "A", Target: "B", Weight: 1}},
+			"B": {"A": {Source: "B", Target: "A", Weight: 1}, "C": {Source: "B", Target: "C", Weight: 1}},
+			"C": {"B": {Source: "C", Target: "B", Weight: 1}, "D": {Source: "C", Target: "D", Weight: 1}},
+			"D": {"C": {Source: "D", Target: "C", Weight: 1}},
 		},
 	}
 	points := ArticulationPoints(g)
@@ -154,14 +154,15 @@ func TestArticulationPoints_StarGraph(t *testing.T) {
 	// Center "C" connected to leaves L1, L2, L3, L4.
 	// Center is an articulation point; leaves are not.
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "C"}, {ID: "L1"}, {ID: "L2"}, {ID: "L3"}, {ID: "L4"},
+		Nodes: map[string]*Node{
+			"C": {ID: "C"}, "L1": {ID: "L1"}, "L2": {ID: "L2"}, "L3": {ID: "L3"}, "L4": {ID: "L4"},
 		},
-		Edges: []GraphEdge{
-			{Source: "C", Target: "L1"},
-			{Source: "C", Target: "L2"},
-			{Source: "C", Target: "L3"},
-			{Source: "C", Target: "L4"},
+		Edges: map[string]map[string]*Edge{
+			"C":  {"L1": {Source: "C", Target: "L1", Weight: 1}, "L2": {Source: "C", Target: "L2", Weight: 1}, "L3": {Source: "C", Target: "L3", Weight: 1}, "L4": {Source: "C", Target: "L4", Weight: 1}},
+			"L1": {"C": {Source: "L1", Target: "C", Weight: 1}},
+			"L2": {"C": {Source: "L2", Target: "C", Weight: 1}},
+			"L3": {"C": {Source: "L3", Target: "C", Weight: 1}},
+			"L4": {"C": {Source: "L4", Target: "C", Weight: 1}},
 		},
 	}
 	points := ArticulationPoints(g)
@@ -174,15 +175,17 @@ func TestArticulationPoints_DisconnectedWithArticulation(t *testing.T) {
 	// Component 1: A — B — C — D  (B and C are articulation points)
 	// Component 2: E — F  (neither is articulation point)
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "A"}, {ID: "B"}, {ID: "C"}, {ID: "D"},
-			{ID: "E"}, {ID: "F"},
+		Nodes: map[string]*Node{
+			"A": {ID: "A"}, "B": {ID: "B"}, "C": {ID: "C"}, "D": {ID: "D"},
+			"E": {ID: "E"}, "F": {ID: "F"},
 		},
-		Edges: []GraphEdge{
-			{Source: "A", Target: "B"},
-			{Source: "B", Target: "C"},
-			{Source: "C", Target: "D"},
-			{Source: "E", Target: "F"},
+		Edges: map[string]map[string]*Edge{
+			"A": {"B": {Source: "A", Target: "B", Weight: 1}},
+			"B": {"A": {Source: "B", Target: "A", Weight: 1}, "C": {Source: "B", Target: "C", Weight: 1}},
+			"C": {"B": {Source: "C", Target: "B", Weight: 1}, "D": {Source: "C", Target: "D", Weight: 1}},
+			"D": {"C": {Source: "D", Target: "C", Weight: 1}},
+			"E": {"F": {Source: "E", Target: "F", Weight: 1}},
+			"F": {"E": {Source: "F", Target: "E", Weight: 1}},
 		},
 	}
 	points := ArticulationPoints(g)
@@ -208,8 +211,8 @@ func TestArticulationPoints_DisconnectedWithArticulation(t *testing.T) {
 
 func TestArticulationPoints_IsolatedNodesOnly(t *testing.T) {
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "X"}, {ID: "Y"}, {ID: "Z"},
+		Nodes: map[string]*Node{
+			"X": {ID: "X"}, "Y": {ID: "Y"}, "Z": {ID: "Z"},
 		},
 	}
 	points := ArticulationPoints(g)
@@ -220,27 +223,23 @@ func TestArticulationPoints_IsolatedNodesOnly(t *testing.T) {
 
 func TestArticulationPoints_SelfLoopOnly(t *testing.T) {
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "A"}},
-		Edges: []GraphEdge{{Source: "A", Target: "A"}},
+		Nodes: map[string]*Node{"A": {ID: "A"}},
+		Edges: map[string]map[string]*Edge{
+			"A": {"A": {Source: "A", Target: "A", Weight: 1}},
+		},
 	}
 	points := ArticulationPoints(g)
-	// A self-loop does not connect A to any other node, so A is isolated from
-	// the perspective of articulation point analysis.
 	if points != nil {
 		t.Errorf("expected nil for self-loop-only graph, got %v", points)
 	}
 }
 
 func TestArticulationPoints_BidirectionalEdge(t *testing.T) {
-	// A ↔ B — the bidirectional edges create a 2-node graph that is
-	// effectively equivalent to a single undirected edge.
-	// Neither node is an articulation point (same reasoning as
-	// TestArticulationPoints_TwoConnectedNodes).
 	g := &TopologyGraph{
-		Nodes: []GraphNode{{ID: "A"}, {ID: "B"}},
-		Edges: []GraphEdge{
-			{Source: "A", Target: "B"},
-			{Source: "B", Target: "A"},
+		Nodes: map[string]*Node{"A": {ID: "A"}, "B": {ID: "B"}},
+		Edges: map[string]map[string]*Edge{
+			"A": {"B": {Source: "A", Target: "B", Weight: 1}},
+			"B": {"A": {Source: "B", Target: "A", Weight: 1}},
 		},
 	}
 	points := ArticulationPoints(g)
@@ -250,27 +249,22 @@ func TestArticulationPoints_BidirectionalEdge(t *testing.T) {
 }
 
 func TestArticulationPoints_TwoTrianglesConnectedByEdge(t *testing.T) {
-	// A — B — C     D — E — F
-	// |         |   |         |
-	// +----B----+   +----E----+
-	//
-	// Triangle 1: A-B-C (with cross edge C-A making it a triangle)
-	// Triangle 2: D-E-F (with cross edge F-D making it a triangle)
+	// Triangle 1: A-B-C with all connections
+	// Triangle 2: D-E-F with all connections
 	// Connected by: C — D
 	// C and D are articulation points.
 	g := &TopologyGraph{
-		Nodes: []GraphNode{
-			{ID: "A"}, {ID: "B"}, {ID: "C"},
-			{ID: "D"}, {ID: "E"}, {ID: "F"},
+		Nodes: map[string]*Node{
+			"A": {ID: "A"}, "B": {ID: "B"}, "C": {ID: "C"},
+			"D": {ID: "D"}, "E": {ID: "E"}, "F": {ID: "F"},
 		},
-		Edges: []GraphEdge{
-			{Source: "A", Target: "B"},
-			{Source: "B", Target: "C"},
-			{Source: "C", Target: "A"},
-			{Source: "D", Target: "E"},
-			{Source: "E", Target: "F"},
-			{Source: "F", Target: "D"},
-			{Source: "C", Target: "D"},
+		Edges: map[string]map[string]*Edge{
+			"A": {"B": {Source: "A", Target: "B", Weight: 1}, "C": {Source: "A", Target: "C", Weight: 1}},
+			"B": {"A": {Source: "B", Target: "A", Weight: 1}, "C": {Source: "B", Target: "C", Weight: 1}},
+			"C": {"A": {Source: "C", Target: "A", Weight: 1}, "B": {Source: "C", Target: "B", Weight: 1}, "D": {Source: "C", Target: "D", Weight: 1}},
+			"D": {"C": {Source: "D", Target: "C", Weight: 1}, "E": {Source: "D", Target: "E", Weight: 1}, "F": {Source: "D", Target: "F", Weight: 1}},
+			"E": {"D": {Source: "E", Target: "D", Weight: 1}, "F": {Source: "E", Target: "F", Weight: 1}},
+			"F": {"D": {Source: "F", Target: "D", Weight: 1}, "E": {Source: "F", Target: "E", Weight: 1}},
 		},
 	}
 	points := ArticulationPoints(g)

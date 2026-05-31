@@ -36,15 +36,15 @@ func RandomWalkWithRestart(g *TopologyGraph, seedNodeID string, restartProbabili
 	// Build node index.
 	nodeIDs := make([]string, 0, len(g.Nodes))
 	nodeIndex := make(map[string]int, len(g.Nodes))
-	for _, node := range g.Nodes {
-		if node.ID == "" {
+	for id := range g.Nodes {
+		if id == "" {
 			continue
 		}
-		if _, exists := nodeIndex[node.ID]; exists {
+		if _, exists := nodeIndex[id]; exists {
 			continue
 		}
-		nodeIndex[node.ID] = len(nodeIDs)
-		nodeIDs = append(nodeIDs, node.ID)
+		nodeIndex[id] = len(nodeIDs)
+		nodeIDs = append(nodeIDs, id)
 	}
 
 	seedIdx, ok := nodeIndex[seedNodeID]
@@ -64,30 +64,35 @@ func RandomWalkWithRestart(g *TopologyGraph, seedNodeID string, restartProbabili
 		weight float64
 	}, n)
 
-	for _, edge := range g.Edges {
-		if edge.Source == "" || edge.Target == "" || edge.Source == edge.Target {
+	for src, targets := range g.Edges {
+		srcIdx, srcOK := nodeIndex[src]
+		if !srcOK {
 			continue
 		}
-		srcIdx, srcOK := nodeIndex[edge.Source]
-		tgtIdx, tgtOK := nodeIndex[edge.Target]
-		if !srcOK || !tgtOK {
-			continue
-		}
+		for tgt, edge := range targets {
+			if src == "" || tgt == "" || src == tgt {
+				continue
+			}
+			tgtIdx, tgtOK := nodeIndex[tgt]
+			if !tgtOK {
+				continue
+			}
 
-		w := edge.Weight
-		if w <= 0 {
-			w = 1.0
-		}
+			w := edge.Weight
+			if w <= 0 {
+				w = 1.0
+			}
 
-		// Undirected: add edge in both directions.
-		adj[srcIdx] = append(adj[srcIdx], struct {
-			idx    int
-			weight float64
-		}{tgtIdx, w})
-		adj[tgtIdx] = append(adj[tgtIdx], struct {
-			idx    int
-			weight float64
-		}{srcIdx, w})
+			// Undirected: add edge in both directions.
+			adj[srcIdx] = append(adj[srcIdx], struct {
+				idx    int
+				weight float64
+			}{tgtIdx, w})
+			adj[tgtIdx] = append(adj[tgtIdx], struct {
+				idx    int
+				weight float64
+			}{srcIdx, w})
+		}
 	}
 
 	// Precompute column sums for normalisation and handle dangling nodes.

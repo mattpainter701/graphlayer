@@ -12,20 +12,20 @@ import (
 // The graph is treated as undirected for topology analysis so that a simple
 // chain or star topology produces the expected centrality values regardless of
 // edge direction in the source data.
-func (graph *TopologyGraph) BetweennessCentrality() map[string]float64 {
-	return BetweennessCentrality(graph)
+func (g *TopologyGraph) BetweennessCentrality() map[string]float64 {
+	return BetweennessCentrality(g)
 }
 
 // ApproximateBetweennessCentrality computes betweenness centrality by sampling
 // a subset of source nodes and scaling the accumulated result.
-func (graph *TopologyGraph) ApproximateBetweennessCentrality(sampleSize int) (map[string]float64, error) {
-	return ApproximateBetweennessCentrality(graph, sampleSize)
+func (g *TopologyGraph) ApproximateBetweennessCentrality(sampleSize int) (map[string]float64, error) {
+	return ApproximateBetweennessCentrality(g, sampleSize)
 }
 
 // BetweennessCentrality computes betweenness centrality for every node in the
 // topology graph using Brandes' algorithm.
-func BetweennessCentrality(graph *TopologyGraph) map[string]float64 {
-	nodeIDs, adjacency := buildUndirectedAdjacency(graph)
+func BetweennessCentrality(g *TopologyGraph) map[string]float64 {
+	nodeIDs, adjacency := buildUndirectedAdjacency(g)
 	centrality := make(map[string]float64, len(nodeIDs))
 	for _, nodeID := range nodeIDs {
 		centrality[nodeID] = 0
@@ -39,12 +39,12 @@ func BetweennessCentrality(graph *TopologyGraph) map[string]float64 {
 
 // ApproximateBetweennessCentrality computes betweenness centrality by sampling
 // source nodes and scaling the accumulated score by N/sampleSize.
-func ApproximateBetweennessCentrality(graph *TopologyGraph, sampleSize int) (map[string]float64, error) {
+func ApproximateBetweennessCentrality(g *TopologyGraph, sampleSize int) (map[string]float64, error) {
 	if sampleSize <= 0 {
 		return nil, fmt.Errorf("sampleSize must be positive")
 	}
 
-	nodeIDs, adjacency := buildUndirectedAdjacency(graph)
+	nodeIDs, adjacency := buildUndirectedAdjacency(g)
 	centrality := make(map[string]float64, len(nodeIDs))
 	for _, nodeID := range nodeIDs {
 		centrality[nodeID] = 0
@@ -73,47 +73,46 @@ func ApproximateBetweennessCentrality(graph *TopologyGraph, sampleSize int) (map
 	return centrality, nil
 }
 
-func buildUndirectedAdjacency(graph *TopologyGraph) ([]string, map[string]map[string]struct{}) {
-	if graph == nil {
+// buildUndirectedAdjacency builds a sorted list of node IDs and a deduplicated
+// undirected adjacency map from the topology graph.
+func buildUndirectedAdjacency(g *TopologyGraph) ([]string, map[string]map[string]struct{}) {
+	if g == nil {
 		return nil, map[string]map[string]struct{}{}
 	}
 
-	nodeSet := make(map[string]struct{}, len(graph.Nodes))
-	for _, node := range graph.Nodes {
-		if node.ID == "" {
-			continue
-		}
-		nodeSet[node.ID] = struct{}{}
-	}
-	for _, edge := range graph.Edges {
-		if edge.Source != "" {
-			nodeSet[edge.Source] = struct{}{}
-		}
-		if edge.Target != "" {
-			nodeSet[edge.Target] = struct{}{}
-		}
-	}
-
-	nodeIDs := make([]string, 0, len(nodeSet))
-	adjacency := make(map[string]map[string]struct{}, len(nodeSet))
-	for nodeID := range nodeSet {
-		nodeIDs = append(nodeIDs, nodeID)
-		adjacency[nodeID] = make(map[string]struct{})
+	// Collect all node IDs from the map-based Nodes field.
+	nodeIDs := make([]string, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		nodeIDs = append(nodeIDs, id)
 	}
 	sort.Strings(nodeIDs)
 
-	for _, edge := range graph.Edges {
-		if edge.Source == "" || edge.Target == "" || edge.Source == edge.Target {
-			continue
-		}
-		if _, ok := adjacency[edge.Source]; ok {
-			adjacency[edge.Source][edge.Target] = struct{}{}
-		}
-		if _, ok := adjacency[edge.Target]; ok {
-			adjacency[edge.Target][edge.Source] = struct{}{}
+	// Build adjacency sets.
+	adjacency := make(map[string]map[string]struct{}, len(nodeIDs))
+	for _, id := range nodeIDs {
+		adjacency[id] = make(map[string]struct{})
+	}
+
+	// Also collect any node IDs referenced in edges but not in Nodes.
+	for src, targets := range g.Edges {
+		for tgt := range targets {
+			if src == tgt {
+				continue
+			}
+			if _, ok := adjacency[src]; !ok {
+				adjacency[src] = make(map[string]struct{})
+				nodeIDs = append(nodeIDs, src)
+			}
+			if _, ok := adjacency[tgt]; !ok {
+				adjacency[tgt] = make(map[string]struct{})
+				nodeIDs = append(nodeIDs, tgt)
+			}
+			adjacency[src][tgt] = struct{}{}
+			adjacency[tgt][src] = struct{}{}
 		}
 	}
 
+	sort.Strings(nodeIDs)
 	return nodeIDs, adjacency
 }
 
