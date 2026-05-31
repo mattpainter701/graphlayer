@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    {"id": "A"},
+    {"id": "B"},
+    {"id": "C"},
+    {"id": "D"},
+    {"id": "E"}
+  ],
+  "edges": [
+    {"source": "A", "target": "B"},
+    {"source": "A", "target": "C"},
+    {"source": "A", "target": "D"},
+    {"source": "A", "target": "E"},
+    {"source": "B", "target": "C"},
+    {"source": "D", "target": "E"}
+  ]
+}
