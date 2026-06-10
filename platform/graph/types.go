@@ -10,6 +10,7 @@ const (
 	FormatGEXF      ExportFormat = "gexf"
 	FormatCytoscape ExportFormat = "cytoscape"
 	FormatD3        ExportFormat = "d3"
+	FormatDOT        ExportFormat = "dot"
 )
 
 // ViewFilter controls which device types appear in the output.

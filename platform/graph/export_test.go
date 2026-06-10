@@ -583,16 +583,143 @@ func TestExportToHTML_WrongFormat(t *testing.T) {
 
 func TestSupportedFormats(t *testing.T) {
 	fmts := SupportedFormats()
-	if len(fmts) != 4 {
-		t.Errorf("expected 4 supported formats, got %d", len(fmts))
+	if len(fmts) != 5 {
+		t.Errorf("expected 5 supported formats, got %d", len(fmts))
 	}
 	seen := make(map[ExportFormat]bool)
 	for _, f := range fmts {
 		seen[f] = true
 	}
-	for _, want := range []ExportFormat{FormatGraphML, FormatGEXF, FormatCytoscape, FormatD3} {
+	for _, want := range []ExportFormat{FormatGraphML, FormatGEXF, FormatCytoscape, FormatD3, FormatDOT} {
 		if !seen[want] {
 			t.Errorf("missing format %s", want)
+		}
+	}
+}
+
+func TestDOTExport(t *testing.T) {
+	b := NewGraphBuilder(ExportOptions{Format: FormatDOT, Title: "DOT Test"})
+
+	b.AddDevice(models.Device{ID: "d1", Hostname: "router01", Vendor: "cisco", Role: "router"})
+	b.AddDevice(models.Device{ID: "d2", Hostname: "switch01", Vendor: "arista", Role: "switch"})
+	b.AddLink(models.Link{Id: "l1", FromID: "d1", ToID: "d2", EdgeName: "GE1/0/1", Protocol: "OSPF"})
+
+	graph := b.Build()
+	data, err := ExportDOT(graph)
+	if err != nil {
+		t.Fatalf("DOT export failed: %v", err)
+	}
+
+	dot := string(data)
+	if !strings.Contains(dot, "digraph G {") {
+		t.Error("DOT output should contain 'digraph G {'")
+	}
+	if !strings.Contains(dot, "router01") {
+		t.Error("DOT output should contain router01")
+	}
+	if !strings.Contains(dot, "switch01") {
+		t.Error("DOT output should contain switch01")
+	}
+	if !strings.Contains(dot, "->") {
+		t.Error("DOT output should contain edge arrows")
+	}
+	if !strings.Contains(dot, "}") {
+		t.Error("DOT output should close with }")
+	}
+}
+
+func TestDOTExportEmpty(t *testing.T) {
+	b := NewGraphBuilder(ExportOptions{Format: FormatDOT, Title: "Empty DOT"})
+	graph := b.Build()
+	data, err := ExportDOT(graph)
+	if err != nil {
+		t.Fatalf("DOT export of empty graph failed: %v", err)
+	}
+	dot := string(data)
+	if !strings.Contains(dot, "digraph G {") {
+		t.Error("empty DOT should still have digraph header")
+	}
+}
+
+func TestDOTExportNilGraph(t *testing.T) {
+	_, err := ExportToDOTCustom(nil, nil, nil)
+	if err == nil {
+		t.Error("expected error for nil graph")
+	}
+}
+
+func TestDOTCustomAttrs(t *testing.T) {
+	b := NewGraphBuilder(ExportOptions{Format: FormatDOT, Title: "Custom"})
+	b.AddDevice(models.Device{ID: "r1", Hostname: "core", Vendor: "cisco", Role: "router"})
+	b.AddDevice(models.Device{ID: "s1", Hostname: "edge", Vendor: "juniper", Role: "switch"})
+	b.AddLink(models.Link{Id: "e1", FromID: "r1", ToID: "s1", EdgeName: "uplink"})
+
+	graph := b.Build()
+
+	nodeAttrs := map[string]map[string]string{
+		"r1": {"color": "blue", "shape": "circle"},
+	}
+	edgeAttrs := map[string]map[string]string{
+		"r1->s1": {"style": "dashed", "color": "green"},
+	}
+
+	data, err := ExportToDOTCustom(&graph, nodeAttrs, edgeAttrs)
+	if err != nil {
+		t.Fatalf("DOT custom export failed: %v", err)
+	}
+
+	dot := string(data)
+	if !strings.Contains(dot, `color="blue"`) {
+		t.Error("custom node color should be applied")
+	}
+	if !strings.Contains(dot, `style="dashed"`) {
+		t.Error("custom edge style should be applied")
+	}
+}
+
+func TestDOTVendorColors(t *testing.T) {
+	b := NewGraphBuilder(ExportOptions{Format: FormatDOT})
+	b.AddDevice(models.Device{ID: "d1", Hostname: "fw01", Vendor: "paloalto", Role: "firewall"})
+	b.AddDevice(models.Device{ID: "d2", Hostname: "rtr01", Vendor: "juniper", Role: "router"})
+
+	graph := b.Build()
+	data, err := ExportDOT(graph)
+	if err != nil {
+		t.Fatalf("DOT export failed: %v", err)
+	}
+
+	dot := string(data)
+	// Should contain vendor colors as fillcolor
+	if !strings.Contains(dot, "fillcolor") {
+		t.Error("DOT output should contain vendor-based fillcolor")
+	}
+	// Firewall should be doubleoctagon shape
+	if !strings.Contains(dot, "doubleoctagon") {
+		t.Error("firewall should have doubleoctagon shape")
+	}
+	// Router should be diamond shape
+	if !strings.Contains(dot, "diamond") {
+		t.Error("router should have diamond shape")
+	}
+}
+
+func TestDOTIDQuoting(t *testing.T) {
+	ids := []struct {
+		input    string
+		shouldQ  bool // should be quoted
+	}{
+		{"simple", false},
+		{"node-1", true},  // hyphen
+		{"node.1", true},  // dot
+		{"digraph", true}, // keyword
+		{"123", false},
+	}
+
+	for _, tt := range ids {
+		result := dotID(tt.input)
+		quoted := strings.HasPrefix(result, "\"")
+		if quoted != tt.shouldQ {
+			t.Errorf("dotID(%q): expected quoted=%v, got %q", tt.input, tt.shouldQ, result)
 		}
 	}
 }

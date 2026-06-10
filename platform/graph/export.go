@@ -15,6 +15,8 @@ func Export(g TopologyGraph) ([]byte, error) {
 		return ExportCytoscape(g, true) // vendor-colored by default
 	case FormatD3:
 		return ExportD3(g)
+	case FormatDOT:
+		return ExportDOT(g)
 	default:
 		return nil, fmt.Errorf("graph: unsupported export format %q", g.Options.Format)
 	}
@@ -45,7 +47,7 @@ func QuickExport(builder *GraphBuilder, format ExportFormat, title string) ([]by
 
 // SupportedFormats returns the list of supported export formats.
 func SupportedFormats() []ExportFormat {
-	return []ExportFormat{FormatGraphML, FormatGEXF, FormatCytoscape, FormatD3}
+	return []ExportFormat{FormatGraphML, FormatGEXF, FormatCytoscape, FormatD3, FormatDOT}
 }
 
 // SupportedViewFilters returns the list of supported view filters.
