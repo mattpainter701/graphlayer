@@ -178,3 +178,88 @@ func TestQueryCommandEmptyFilter(t *testing.T) {
 		t.Errorf("Expected 0 edges with nonexistent filter, got %d", len(topology.Edges))
 	}
 }
+
+func TestQueryCommandDeviceTypeFilter(t *testing.T) {
+	engine := orchestration.NewOrchestrationEngine()
+	filter := orchestration.TopologyFilter{
+		DeviceType: "router",
+	}
+	results, err := engine.QueryTopology(filter)
+	if err != nil {
+		t.Fatalf("QueryTopology failed: %v", err)
+	}
+
+	// Should return only router devices
+	if len(results) == 0 {
+		t.Fatal("Expected at least one router device")
+	}
+	for _, result := range results {
+		if result.DeviceType != "router" {
+			t.Errorf("Expected device type router, got %s for device %s", result.DeviceType, result.DeviceName)
+		}
+	}
+}
+
+func TestQueryCommandDeviceTypeFilterFirewall(t *testing.T) {
+	engine := orchestration.NewOrchestrationEngine()
+	filter := orchestration.TopologyFilter{
+		DeviceType: "firewall",
+	}
+	results, err := engine.QueryTopology(filter)
+	if err != nil {
+		t.Fatalf("QueryTopology failed: %v", err)
+	}
+
+	// Should return only firewall devices
+	if len(results) == 0 {
+		t.Fatal("Expected at least one firewall device")
+	}
+	for _, result := range results {
+		if result.DeviceType != "firewall" {
+			t.Errorf("Expected device type firewall, got %s for device %s", result.DeviceType, result.DeviceName)
+		}
+	}
+}
+
+func TestQueryCommandDeviceTypeCaseInsensitive(t *testing.T) {
+	engine := orchestration.NewOrchestrationEngine()
+	filter := orchestration.TopologyFilter{
+		DeviceType: "Router",
+	}
+	results, err := engine.QueryTopology(filter)
+	if err != nil {
+		t.Fatalf("QueryTopology failed: %v", err)
+	}
+
+	// Should match "router" devices (case-insensitive)
+	if len(results) == 0 {
+		t.Fatal("Expected at least one router device with case-insensitive match")
+	}
+	for _, result := range results {
+		if result.DeviceType != "router" {
+			t.Errorf("Expected device type router, got %s", result.DeviceType)
+		}
+	}
+}
+
+func TestQueryCommandDeviceTypeCombined(t *testing.T) {
+	engine := orchestration.NewOrchestrationEngine()
+	filter := orchestration.TopologyFilter{
+		Source:     "cisco",
+		DeviceType: "switch",
+	}
+	results, err := engine.QueryTopology(filter)
+	if err != nil {
+		t.Fatalf("QueryTopology failed: %v", err)
+	}
+
+	// Should return only Cisco switches
+	for _, result := range results {
+		if result.Source != "cisco" {
+			t.Errorf("Expected source cisco, got %s", result.Source)
+		}
+		if result.DeviceType != "switch" {
+			t.Errorf("Expected device type switch, got %s", result.DeviceType)
+		}
+	}
+}

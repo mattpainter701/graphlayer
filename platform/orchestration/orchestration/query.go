@@ -10,6 +10,7 @@ import (
 type TopologyFilter struct {
 	Source     string  `json:"source,omitempty" yaml:"source,omitempty"`
 	DeviceName string  `json:"device_name,omitempty" yaml:"device_name,omitempty"`
+	DeviceType string  `json:"device_type,omitempty" yaml:"device_type,omitempty"`
 	Confidence float64 `json:"confidence,omitempty" yaml:"confidence,omitempty"`
 }
 
@@ -57,6 +58,11 @@ func (e *OrchestrationEngine) QueryTopology(filter TopologyFilter) ([]TopologyRe
 
 		// Apply device name filter (substring match)
 		if filter.DeviceName != "" && !strings.Contains(strings.ToLower(entry.DeviceName), strings.ToLower(filter.DeviceName)) {
+			continue
+		}
+
+		// Apply device type filter (case-insensitive)
+		if filter.DeviceType != "" && !strings.EqualFold(entry.DeviceType, filter.DeviceType) {
 			continue
 		}
 

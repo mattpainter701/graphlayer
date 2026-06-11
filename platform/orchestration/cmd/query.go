@@ -13,6 +13,7 @@ import (
 var (
 	querySource          string
 	queryDeviceName      string
+	queryDeviceType      string
 	queryConfidence      float64
 	queryOutputFormat    string
 )
@@ -21,11 +22,13 @@ var (
 var queryCmd = &cobra.Command{
 	Use:   "query",
 	Short: "Query network topology",
-	Long: `Query the network topology with optional filters for source, device name, and confidence threshold.
+	Long: `Query the network topology with optional filters for source, device name, device type, and confidence threshold.
 
 Examples:
   graphlayer query --source cisco --device-name router1 --confidence 0.8
   graphlayer query --source paloalto --output yaml
+  graphlayer query --type router --output json
+  graphlayer query --type switch --source cisco
   graphlayer query --confidence 0.5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runQuery()
@@ -37,6 +40,7 @@ func init() {
 
 	queryCmd.Flags().StringVarP(&querySource, "source", "s", "", "Filter by source vendor (e.g., cisco, paloalto, fortinet)")
 	queryCmd.Flags().StringVarP(&queryDeviceName, "device-name", "d", "", "Filter by device name")
+	queryCmd.Flags().StringVarP(&queryDeviceType, "type", "t", "", "Filter by device type (router, switch, firewall)")
 	queryCmd.Flags().Float64VarP(&queryConfidence, "confidence", "c", 0.0, "Minimum confidence threshold (0.0 - 1.0)")
 	queryCmd.Flags().StringVarP(&queryOutputFormat, "output", "o", "json", "Output format (json or yaml)")
 }
@@ -49,6 +53,7 @@ func runQuery() error {
 	filter := orchestration.TopologyFilter{
 		Source:     querySource,
 		DeviceName: queryDeviceName,
+		DeviceType: queryDeviceType,
 		Confidence: queryConfidence,
 	}
 
