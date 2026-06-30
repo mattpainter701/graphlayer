@@ -1,7 +1,6 @@
 package solarwinds
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -14,29 +13,29 @@ type ConfigProcessor struct {
 type VendorType string
 
 const (
-	VendorCiscoIOS      VendorType = "cisco_ios"
-	VendorCiscoASA      VendorType = "cisco_asa"
-	VendorCiscoNXOS     VendorType = "cisco_nxos"
-	VendorPaloAlto      VendorType = "palo_alto"
-	VendorFortinet      VendorType = "fortinet"
-	VendorJuniper       VendorType = "juniper"
-	VendorArista        VendorType = "arista"
-	VendorAruba         VendorType = "aruba"
-	VendorCheckPoint    VendorType = "checkpoint"
-	VendorF5            VendorType = "f5"
-	VendorUnknown       VendorType = "unknown"
+	VendorCiscoIOS   VendorType = "cisco_ios"
+	VendorCiscoASA   VendorType = "cisco_asa"
+	VendorCiscoNXOS  VendorType = "cisco_nxos"
+	VendorPaloAlto   VendorType = "palo_alto"
+	VendorFortinet   VendorType = "fortinet"
+	VendorJuniper    VendorType = "juniper"
+	VendorArista     VendorType = "arista"
+	VendorAruba      VendorType = "aruba"
+	VendorCheckPoint VendorType = "checkpoint"
+	VendorF5         VendorType = "f5"
+	VendorUnknown    VendorType = "unknown"
 )
 
 // ProcessedConfig represents a processed configuration ready for parsing
 type ProcessedConfig struct {
-	NodeID       int
-	NodeName     string
-	NodeIP       string
-	Vendor       VendorType
-	ConfigText   string
-	ConfigType   string
-	DetectedOS   string
-	Confidence   float64    // 0.0 to 1.0 confidence in vendor detection
+	NodeID     int
+	NodeName   string
+	NodeIP     string
+	Vendor     VendorType
+	ConfigText string
+	ConfigType string
+	DetectedOS string
+	Confidence float64 // 0.0 to 1.0 confidence in vendor detection
 }
 
 // NewConfigProcessor creates a new configuration processor
