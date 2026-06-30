@@ -1,6 +1,8 @@
-# Demo Data Repository
+# GraphLayer
 
-This repository contains network device sample data, configurations, and the multi-vendor network topology platform.
+GraphLayer is a multi-vendor network topology graph engine. It ingests network
+device configurations and operational state, normalizes topology data, builds
+graph representations, and exports them for visualization and comparison.
 
 ## 📁 Repository Structure
 
@@ -62,16 +64,28 @@ The platform supports multiple network vendors:
 # Navigate to platform
 cd platform
 
-# Initialize Go module (if needed)
-go mod tidy
+# Run the currently stable Go package checks
+go test ./graph ./integrations/solarwinds ./reference/appid
 
-# Run tests
-go test ./...
-
-# Import platform code
-import "github.com/mattpainter701/graphlayer/platform/platform/orchestration/orchestration"
-import "github.com/mattpainter701/graphlayer/platform/platform/vendors/cisco/ios"
+# From the repository root, run non-benchmark Python tests
+cd ..
+python -m pytest -q -m "not benchmark"
 ```
+
+> Note: `go test ./...` still includes experimental vendor/scoring/reference
+> packages that are being remediated toward a green full-repo baseline.
+
+```go
+# Import platform code
+import "github.com/mattpainter701/graphlayer/platform/orchestration/orchestration"
+import "github.com/mattpainter701/graphlayer/platform/vendors/cisco/ios"
+```
+
+### Graph Engine Direction
+
+GraphLayer is evaluating a focused Rust graph-engine refactor for graph
+construction, validation, algorithms, and high-volume exports. See
+[`docs/graph_rust_migration_plan.md`](docs/graph_rust_migration_plan.md).
 
 ## 📊 Sample Data
 

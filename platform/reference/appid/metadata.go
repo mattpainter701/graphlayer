@@ -1,6 +1,9 @@
 package appid
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 /*
 Metadata structures for tracking cache state, fetch history, and health.
@@ -22,18 +25,18 @@ type CacheMetadata struct {
 	ContentVersion  string `json:"content_version"`  // e.g., "8595-8012" for App-ID
 
 	// Timestamps
-	CreatedAt       string `json:"created_at"`        // When cache was first created
-	LastFullFetch   string `json:"last_full_fetch"`   // Last successful full fetch
+	CreatedAt        string `json:"created_at"`         // When cache was first created
+	LastFullFetch    string `json:"last_full_fetch"`    // Last successful full fetch
 	LastPartialFetch string `json:"last_partial_fetch"` // Last partial/incomplete fetch
-	LastUpdated     string `json:"last_updated"`      // Last modification (full or partial)
+	LastUpdated      string `json:"last_updated"`       // Last modification (full or partial)
 
 	// Size metrics
 	TotalApplications int `json:"total_applications,omitempty"` // For App-ID caches
 	TotalServices     int `json:"total_services,omitempty"`     // For ISDB caches
 
 	// Health and staleness
-	Health        string `json:"health"`         // Current health status
-	StalnessDays  int    `json:"staleness_days"` // Days since last update
+	Health       string `json:"health"`         // Current health status
+	StalnessDays int    `json:"staleness_days"` // Days since last update
 
 	// Fetch history (last N fetches)
 	FetchHistory []FetchRecord `json:"fetch_history"`
@@ -55,10 +58,10 @@ type FetchRecord struct {
 	Status FetchStatus `json:"status"` // "full_success", "partial_success", etc.
 
 	// Metrics
-	EntriesFetched int `json:"entries_fetched"` // Number of entries fetched this attempt
-	EntriesAdded   int `json:"entries_added"`   // Number of new entries added
-	EntriesUpdated int `json:"entries_updated"` // Number of existing entries updated
-	EntriesRemoved int `json:"entries_removed"` // Number of entries removed (full fetch only)
+	EntriesFetched   int `json:"entries_fetched"`   // Number of entries fetched this attempt
+	EntriesAdded     int `json:"entries_added"`     // Number of new entries added
+	EntriesUpdated   int `json:"entries_updated"`   // Number of existing entries updated
+	EntriesRemoved   int `json:"entries_removed"`   // Number of entries removed (full fetch only)
 	EntriesUnchanged int `json:"entries_unchanged"` // Number of entries that didn't change
 
 	// Error information
@@ -82,10 +85,10 @@ type MergeReport struct {
 	FullReplace bool `json:"full_replace"` // true if existing cache was empty
 
 	// Change counts
-	Added       []string `json:"added"`        // Names of added entries
-	Updated     []string `json:"updated"`      // Names of updated entries
-	Removed     []string `json:"removed"`      // Names of removed entries
-	Unchanged   int      `json:"unchanged"`    // Count of unchanged entries
+	Added     []string `json:"added"`     // Names of added entries
+	Updated   []string `json:"updated"`   // Names of updated entries
+	Removed   []string `json:"removed"`   // Names of removed entries
+	Unchanged int      `json:"unchanged"` // Count of unchanged entries
 
 	// Conflicts
 	Conflicts []ConflictRecord `json:"conflicts,omitempty"` // Conflicts encountered
@@ -127,7 +130,7 @@ type CollectionResult struct {
 	ISDBCache  *ISDBCache  `json:"-"` // Don't serialize (too large)
 
 	// Errors
-	Errors []error `json:"-"` // Runtime errors
+	Errors        []error  `json:"-"`                // Runtime errors
 	ErrorMessages []string `json:"errors,omitempty"` // Serializable error messages
 
 	// Metadata for storage
@@ -181,7 +184,7 @@ func (m *CacheMetadata) AddFetchRecord(record FetchRecord) {
 	if record.Status == FetchStatusFullSuccess {
 		m.LastFullFetch = record.Timestamp
 	} else if record.Status == FetchStatusPartialSuccess ||
-	          record.Status == FetchStatusPartialIncomplete {
+		record.Status == FetchStatusPartialIncomplete {
 		m.LastPartialFetch = record.Timestamp
 	}
 
@@ -238,7 +241,7 @@ func (m *CacheMetadata) CountRecentErrors(n int) int {
 	errorCount := 0
 	for i := len(m.FetchHistory) - n; i < len(m.FetchHistory); i++ {
 		if m.FetchHistory[i].Status == FetchStatusFailed ||
-		   m.FetchHistory[i].Error != "" {
+			m.FetchHistory[i].Error != "" {
 			errorCount++
 		}
 	}
@@ -321,18 +324,18 @@ func (r *CollectionResult) AddError(err error) {
 // IsSuccess returns true if collection was successful (full or partial)
 func (r *CollectionResult) IsSuccess() bool {
 	return r.Status == FetchStatusFullSuccess ||
-	       r.Status == FetchStatusPartialSuccess
+		r.Status == FetchStatusPartialSuccess
 }
 
 // ToFetchRecord converts collection result to a fetch record
 func (r *CollectionResult) ToFetchRecord() FetchRecord {
 	record := FetchRecord{
-		Timestamp:      r.Metadata.Timestamp,
-		Duration:       r.Duration,
-		Status:         r.Status,
-		Source:         r.Metadata.Source,
-		ExpectedTotal:  r.Metadata.ExpectedTotal,
-		Completeness:   r.Metadata.Completeness,
+		Timestamp:     r.Metadata.Timestamp,
+		Duration:      r.Duration,
+		Status:        r.Status,
+		Source:        r.Metadata.Source,
+		ExpectedTotal: r.Metadata.ExpectedTotal,
+		Completeness:  r.Metadata.Completeness,
 	}
 
 	if r.AppIDCache != nil {

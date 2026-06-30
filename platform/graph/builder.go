@@ -97,7 +97,11 @@ func (b *GraphBuilder) AddNetwork(n models.NetworkNode) {
 		node.Meta.VLANName = n.VLANName
 		node.Attributes["vlan_name"] = n.VLANName
 	}
-	node.Meta.Segment = segmentFromVLAN(*n.VLANID, n.VLANName, n.Subnet)
+	if n.VLANID != nil {
+		node.Meta.Segment = segmentFromVLAN(*n.VLANID, n.VLANName, n.Subnet)
+	} else {
+		node.Meta.Segment = segmentFromVLAN(0, n.VLANName, n.Subnet)
+	}
 	node.Meta.Color = "#4CAF50" // green for networks
 	b.nodes[id] = node
 }
@@ -125,8 +129,8 @@ func (b *GraphBuilder) AddLink(l models.Link) {
 			Confidence: confidenceFromLifecycle(l.Lifecycle),
 		},
 		Attributes: map[string]string{
-			"protocol":  l.Protocol,
-			"port":      l.Port,
+			"protocol": l.Protocol,
+			"port":     l.Port,
 		},
 	}
 	edge.Meta.Thickness = confidenceToThickness(edge.Meta.Confidence)

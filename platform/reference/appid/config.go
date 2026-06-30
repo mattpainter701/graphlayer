@@ -39,9 +39,9 @@ const (
 	// App-ID/ISDB don't change frequently, so 90 days is reasonable.
 	StaleDays = 90
 
-	// CriticallyStaleD days defines when a cache is critically outdated
+	// CriticallyStaleDays defines when a cache is critically outdated
 	// and should trigger stronger warnings or force refresh
-	CriticallyStale Days = 180
+	CriticallyStaleDays = 180
 
 	// ========================================
 	// Backup Configuration
@@ -130,24 +130,25 @@ const (
 type HealthStatus string
 
 const (
-	HealthStatusHealthy           HealthStatus = "healthy"             // Cache is fresh and complete
-	HealthStatusStale             HealthStatus = "stale"               // Cache is old but usable
-	HealthStatusCriticallyStale   HealthStatus = "critically_stale"   // Cache is very old
-	HealthStatusIncomplete        HealthStatus = "incomplete"          // Cache has incomplete data
-	HealthStatusUnhealthy         HealthStatus = "unhealthy"           // Cache has errors or corruption
-	HealthStatusEmpty             HealthStatus = "empty"               // No cache exists
+	HealthStatusHealthy         HealthStatus = "healthy"          // Cache is fresh and complete
+	HealthStatusStale           HealthStatus = "stale"            // Cache is old but usable
+	HealthStatusCriticallyStale HealthStatus = "critically_stale" // Cache is very old
+	HealthStatusIncomplete      HealthStatus = "incomplete"       // Cache has incomplete data
+	HealthStatusUnhealthy       HealthStatus = "unhealthy"        // Cache has errors or corruption
+	HealthStatusEmpty           HealthStatus = "empty"            // No cache exists
+	HealthStatusUnknown         HealthStatus = "unknown"          // Health has not been assessed
 )
 
 // FetchStatus represents the outcome of a collection attempt
 type FetchStatus string
 
 const (
-	FetchStatusFullSuccess       FetchStatus = "full_success"        // Complete fetch with no errors
-	FetchStatusPartialSuccess    FetchStatus = "partial_success"     // Partial fetch due to timeout
-	FetchStatusPartialIncomplete FetchStatus = "partial_incomplete"  // Incomplete data returned
-	FetchStatusPartialTimeout    FetchStatus = "partial_timeout"     // Timed out mid-fetch
-	FetchStatusFailed            FetchStatus = "failed"              // Complete failure
-	FetchStatusUnknown           FetchStatus = "unknown"             // Status not determined
+	FetchStatusFullSuccess       FetchStatus = "full_success"       // Complete fetch with no errors
+	FetchStatusPartialSuccess    FetchStatus = "partial_success"    // Partial fetch due to timeout
+	FetchStatusPartialIncomplete FetchStatus = "partial_incomplete" // Incomplete data returned
+	FetchStatusPartialTimeout    FetchStatus = "partial_timeout"    // Timed out mid-fetch
+	FetchStatusFailed            FetchStatus = "failed"             // Complete failure
+	FetchStatusUnknown           FetchStatus = "unknown"            // Status not determined
 )
 
 // CollectionMode represents how data is collected
@@ -163,11 +164,11 @@ const (
 type LoadSource string
 
 const (
-	LoadSourceDeviceCache          LoadSource = "device_cache"            // Device-specific cache
-	LoadSourceVersionedBaseline    LoadSource = "versioned_baseline"      // Version-matched baseline
-	LoadSourceLatestBaseline       LoadSource = "latest_baseline"         // Latest available baseline
-	LoadSourceEmbeddedSample       LoadSource = "embedded_sample"         // Built-in sample data
-	LoadSourceUnknown              LoadSource = "unknown"                 // Source not determined
+	LoadSourceDeviceCache       LoadSource = "device_cache"       // Device-specific cache
+	LoadSourceVersionedBaseline LoadSource = "versioned_baseline" // Version-matched baseline
+	LoadSourceLatestBaseline    LoadSource = "latest_baseline"    // Latest available baseline
+	LoadSourceEmbeddedSample    LoadSource = "embedded_sample"    // Built-in sample data
+	LoadSourceUnknown           LoadSource = "unknown"            // Source not determined
 )
 
 // GetCacheDirectory returns the cache directory for a given device type

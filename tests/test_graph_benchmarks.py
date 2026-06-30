@@ -8,6 +8,8 @@ performance regressions.
 import pytest
 from platform.graph import eccentricity, graph_radius, graph_diameter
 
+pytestmark = pytest.mark.benchmark
+
 
 def _make_graph(adj: dict) -> dict:
     """Convert adjacency lists (with lists as values) to sets."""

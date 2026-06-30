@@ -108,6 +108,31 @@ func TestGraphBuilder_Networks(t *testing.T) {
 	}
 }
 
+func TestGraphBuilder_NetworkWithoutVLANID(t *testing.T) {
+	b := NewGraphBuilder(ExportOptions{Format: FormatGraphML})
+
+	b.AddNetwork(models.NetworkNode{
+		Id:          "net-no-vlan",
+		NetworkName: "Transit_Network",
+		Subnet:      "10.2.0.0/24",
+		VLANName:    "Transit",
+	})
+
+	graph := b.Build()
+
+	if len(graph.Nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(graph.Nodes))
+	}
+
+	n := graph.Nodes[0]
+	if n.Meta.Segment == "" {
+		t.Error("expected a segment identifier for a network without VLAN ID")
+	}
+	if _, exists := n.Attributes["vlan_id"]; exists {
+		t.Error("did not expect vlan_id attribute for a network without VLAN ID")
+	}
+}
+
 func TestGraphBuilder_Links(t *testing.T) {
 	b := NewGraphBuilder(ExportOptions{
 		Format: FormatGraphML,
@@ -120,9 +145,9 @@ func TestGraphBuilder_Links(t *testing.T) {
 	b.AddDevice(models.Device{ID: "dev-2", Hostname: "rtr02", Vendor: "juniper", Role: "router"})
 
 	b.AddLink(models.Link{
-		Id:      "link-1",
-		FromID:  "dev-1",
-		ToID:    "dev-2",
+		Id:       "link-1",
+		FromID:   "dev-1",
+		ToID:     "dev-2",
 		EdgeName: "OSPF adjacency",
 		Protocol: "OSPF",
 	})
@@ -705,8 +730,8 @@ func TestDOTVendorColors(t *testing.T) {
 
 func TestDOTIDQuoting(t *testing.T) {
 	ids := []struct {
-		input    string
-		shouldQ  bool // should be quoted
+		input   string
+		shouldQ bool // should be quoted
 	}{
 		{"simple", false},
 		{"node-1", true},  // hyphen
