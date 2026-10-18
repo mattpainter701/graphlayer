@@ -32,7 +32,7 @@ Consumers of the old JSON confidence model should account for the added corrobor
 
 Small pytest and embedded reference text inputs are ordinary Git text instead of missing LFS objects. The IANA/IEEE directory intentionally contains bounded common defaults and schema placeholders, not a full synchronized registry. Unknown protocol/EtherType lookups remain unknown. See [reference-data limitations](../platform/reference/iana/data/README.md). Full registry acquisition/versioning remains work in the plan.
 
-CI reads the Go module version, installs declared Python test dependencies, runs valid scoped vet/fuzz commands and records benchmark output. The unsupported comparator `--bench-compare` invocation is removed; benchmark artifacts are informational until a calibrated regression baseline is implemented. Docker QA remains a comparator CLI self-test. It does not validate a running application server. Normal compose/connector-service packaging remains a separate repair item.
+CI reads the Go module version, installs declared Python test dependencies, runs valid scoped vet/fuzz commands and records benchmark output. Python tests run with `python -m pytest` so the repository's legacy `platform` package is resolved before the standard-library module with the same name; renaming that package remains cleanup work. The unsupported comparator `--bench-compare` invocation is removed; benchmark artifacts are informational until a calibrated regression baseline is implemented. Docker QA remains a comparator CLI self-test. It does not validate a running application server. Normal compose/connector-service packaging remains a separate repair item.
 
 ## Verification scope
 

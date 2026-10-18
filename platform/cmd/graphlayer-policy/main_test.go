@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mattpainter701/graphlayer/platform/policy"
 )
 
 func TestReadStrict(t *testing.T) {
@@ -56,4 +58,36 @@ func TestReadStrict(t *testing.T) {
 			t.Fatal("expected size limit error")
 		}
 	})
+}
+
+func TestReadStrictBundleRequiredFields(t *testing.T) {
+	valid := `{"scope":{"snapshot_id":"s","device_id":"d","context":"default"},"complete":true,"default_action":"deny","rules":[{"id":"r","position":0,"enabled":false,"action":"deny","source":"any","destination":"any","protocol":"tcp"}]}`
+	tests := []struct {
+		name, data string
+		wantErr    bool
+	}{
+		{"missing complete", strings.Replace(valid, `"complete":true,`, "", 1), true},
+		{"null complete", strings.Replace(valid, `"complete":true`, `"complete":null`, 1), true},
+		{"missing rules", strings.Replace(valid, `"rules":[{"id":"r","position":0,"enabled":false,"action":"deny","source":"any","destination":"any","protocol":"tcp"}]`, "", 1), true},
+		{"null rules", strings.Replace(valid, `"rules":[{"id":"r","position":0,"enabled":false,"action":"deny","source":"any","destination":"any","protocol":"tcp"}]`, `"rules":null`, 1), true},
+		{"missing enabled", strings.Replace(valid, `"enabled":false,`, "", 1), true},
+		{"null enabled", strings.Replace(valid, `"enabled":false`, `"enabled":null`, 1), true},
+		{"missing position", strings.Replace(valid, `"position":0,`, "", 1), true},
+		{"null position", strings.Replace(valid, `"position":0`, `"position":null`, 1), true},
+		{"explicit false and zero accepted", valid, false},
+		{"explicit empty rules accepted", strings.Replace(valid, `"rules":[{"id":"r","position":0,"enabled":false,"action":"deny","source":"any","destination":"any","protocol":"tcp"}]`, `"rules":[]`, 1), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "bundle.json")
+			if err := os.WriteFile(p, []byte(tt.data), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var bundle policy.Bundle
+			err := readStrict(p, &bundle)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error=%v wantErr=%v", err, tt.wantErr)
+			}
+		})
+	}
 }

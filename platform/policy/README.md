@@ -16,4 +16,4 @@ From the `platform` directory, replay the sample with:
 go run ./cmd/graphlayer-policy --bundle ./policy/fixtures/allow-https.bundle.json --flow ./policy/fixtures/allow-https.flow.json
 ```
 
-The CLI accepts strict JSON only, rejects unknown fields and trailing JSON, limits each input to 8 MiB, emits JSON to stdout, and exits nonzero for malformed input. JSON parser errors omit input contents; domain validation errors may identify the offending rule ID. Predicate strings are not copied into validation errors.
+The CLI accepts strict JSON only, rejects unknown fields and trailing JSON, limits each input to 8 MiB, emits JSON to stdout, and exits nonzero for malformed input. Bundle JSON must explicitly provide `complete`, a `rules` array (which may be empty), and each rule's `enabled` and `position` fields; explicit `false` and position `0` are valid. JSON parser errors omit input contents; domain validation errors may identify the offending rule ID. Predicate strings are not copied into validation errors.

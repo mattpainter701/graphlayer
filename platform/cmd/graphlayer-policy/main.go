@@ -71,5 +71,48 @@ func readStrict(path string, dst any) error {
 	if err = d.Decode(&extra); err != io.EOF {
 		return errors.New("trailing JSON data")
 	}
+	if _, ok := dst.(*policy.Bundle); ok {
+		if err := validateBundleJSONPresence(data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateBundleJSONPresence checks fields whose zero values are meaningful
+// to policy evaluation. Keep DisallowUnknownFields above as the shape guard.
+func validateBundleJSONPresence(data []byte) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil || object == nil {
+		return errors.New("invalid bundle JSON object")
+	}
+	complete, ok := object["complete"]
+	if !ok || bytes.Equal(bytes.TrimSpace(complete), []byte("null")) {
+		return errors.New("bundle complete field is required")
+	}
+	rulesRaw, ok := object["rules"]
+	if !ok || len(bytes.TrimSpace(rulesRaw)) == 0 || bytes.TrimSpace(rulesRaw)[0] != '[' {
+		return errors.New("bundle rules array is required")
+	}
+	var rules []json.RawMessage
+	if err := json.Unmarshal(rulesRaw, &rules); err != nil {
+		return errors.New("invalid bundle rules array")
+	}
+	for i, raw := range rules {
+		trimmed := bytes.TrimSpace(raw)
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			return fmt.Errorf("bundle rule %d must be an object", i)
+		}
+		var rule map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &rule); err != nil || rule == nil {
+			return fmt.Errorf("bundle rule %d must be an object", i)
+		}
+		for _, field := range []string{"enabled", "position"} {
+			value, exists := rule[field]
+			if !exists || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				return fmt.Errorf("bundle rule %d %s field is required", i, field)
+			}
+		}
+	}
 	return nil
 }
