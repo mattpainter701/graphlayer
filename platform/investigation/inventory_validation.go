@@ -33,7 +33,7 @@ func validateInventory(s *Snapshot) error {
 		}
 		return nil
 	}
-	if s.ParserVersion != firewall.ParserVersion {
+	if s.ParserVersion != firewall.ParserVersion && s.ParserVersion != "asa-config-v2" {
 		return errors.New("unsupported snapshot parser version")
 	}
 	evidence := map[string]bool{}

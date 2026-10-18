@@ -57,6 +57,8 @@ The next [policy workspace slice](POLICY_WORKSPACE.md) adds service/object depen
 
 ## M3 — Topology, identity and end-to-end paths
 
+The [local routing/NAT slice](ROUTING_NAT_INVESTIGATIONS.md) begins G07/G08/G11 with single-ASA configured IPv4 routes, bounded static object NAT and evidence-backed path stages. It preserves older records and tests the complete local workflow. This does not close dynamic routing, full NAT, state/return paths, tunnels, multi-vendor or multi-hop acceptance below.
+
 | ID | Package / owner | Depends on | Acceptance |
 |---|---|---|---|
 | G01 | Scoped stable entity IDs / backend | F10 | Overlapping IP/VLAN/zone names across sites/VRFs coexist; parser re-run identity stable |

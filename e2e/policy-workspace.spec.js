@@ -56,7 +56,7 @@ async function evaluate(page, snapshot, flow, disposition) {
 
 test('service workspace searches and inspects inventory, explains decisions, and restores history', async ({ page }, testInfo) => {
   const snapshot = await importServiceSample(page, true);
-  expect(snapshot.parser_version).toBe('asa-config-v2');
+  expect(snapshot.parser_version).toBe('asa-config-v3');
   expect(snapshot.objects.length).toBeGreaterThan(0);
   expect(snapshot.rule_origins.length).toBe(snapshot.chains[0].rules.length);
   await page.locator('#chain-select').selectOption(snapshot.chains[0].id);

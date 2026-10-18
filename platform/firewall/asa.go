@@ -12,7 +12,7 @@ import (
 	asa "github.com/mattpainter701/graphlayer/platform/vendors/cisco/asa"
 )
 
-const ParserVersion = "asa-config-v2"
+const ParserVersion = "asa-config-v3"
 
 //go:embed testdata/enterprise.asa.txt
 var sampleASA []byte
@@ -209,6 +209,7 @@ func ParseASAConfig(input []byte) (*Config, error) {
 		}
 	}
 	addASAInventory(c, parsed)
+	addASAPathInventory(c, parsed)
 	return c, nil
 }
 
