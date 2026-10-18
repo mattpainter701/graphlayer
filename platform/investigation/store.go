@@ -23,7 +23,8 @@ const maxSnapshots = 32
 const maxInvestigations = 256
 const maxRecordBytes = 8 << 20
 
-const workspaceVersion = "graphlayer-workspace-v6"
+const workspaceVersion = "graphlayer-workspace-v7"
+const workspaceV6Version = "graphlayer-workspace-v6"
 const vendorWorkspaceVersion = "graphlayer-workspace-v5"
 const networkWorkspaceVersion = "graphlayer-workspace-v4"
 const routingWorkspaceVersion = "graphlayer-workspace-v3"
@@ -36,6 +37,8 @@ var ErrInvalidConfig = errors.New("invalid or unsupported firewall configuration
 var ErrInvalidFlow = errors.New("invalid policy flow")
 var ErrRecordTooLarge = errors.New("expanded artifact exceeds the storage budget")
 var ErrPathUnavailable = errors.New("snapshot has no supported path metadata")
+var ErrWorkspaceConflict = errors.New("workspace revision or name conflict")
+var ErrWorkspaceInvalid = errors.New("invalid workspace metadata")
 
 type Snapshot struct {
 	ID              string    `json:"id"`
@@ -78,6 +81,10 @@ type Store struct {
 	paths          map[string][]byte
 	networks       map[string][]byte
 	explorations   map[string][]byte
+	workspace      Workspace
+	sets           map[string]SnapshotSet
+	transactions   int
+	workspaceHead  string
 }
 
 type diskRecord struct {
@@ -130,6 +137,9 @@ func NewStore(dir string) (*Store, error) {
 	for _, entry := range entries {
 		name := entry.Name()
 		known := name == ".workspace.lock" || strings.HasPrefix(name, ".pending-")
+		if strings.HasPrefix(name, "workspace-transaction-") && strings.HasSuffix(name, ".json") && validID(strings.TrimSuffix(strings.TrimPrefix(name, "workspace-transaction-"), ".json")) {
+			known = true
+		}
 		for _, kind := range []string{"snapshot-", "investigation-", "path-investigation-", "network-investigation-", "network-exploration-"} {
 			if strings.HasPrefix(name, kind) && strings.HasSuffix(name, ".json") && validID(strings.TrimSuffix(strings.TrimPrefix(name, kind), ".json")) {
 				known = true
@@ -160,6 +170,7 @@ func NewStore(dir string) (*Store, error) {
 	}
 	s.lock = lock
 	legacyInvestigations := map[string]bool{}
+	transactionRecords := map[string][]byte{}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -180,7 +191,7 @@ func NewStore(dir string) (*Store, error) {
 			return nil, errors.New("invalid workspace record size")
 		}
 		var record diskRecord
-		if json.Unmarshal(data, &record) != nil || (record.Version != workspaceVersion && record.Version != vendorWorkspaceVersion && record.Version != networkWorkspaceVersion && record.Version != routingWorkspaceVersion && record.Version != priorWorkspaceVersion && record.Version != legacyWorkspaceVersion) || record.SHA256 != digest(record.Data) {
+		if json.Unmarshal(data, &record) != nil || (record.Version != workspaceVersion && record.Version != workspaceV6Version && record.Version != vendorWorkspaceVersion && record.Version != networkWorkspaceVersion && record.Version != routingWorkspaceVersion && record.Version != priorWorkspaceVersion && record.Version != legacyWorkspaceVersion) || record.SHA256 != digest(record.Data) {
 			return nil, errors.New("workspace record is corrupt or incompatible")
 		}
 		switch record.Kind {
@@ -202,31 +213,40 @@ func NewStore(dir string) (*Store, error) {
 			s.investigations[inv.ID] = append([]byte(nil), record.Data...)
 		case "path-investigation":
 			var inv PathInvestigation
-			if (record.Version != workspaceVersion && record.Version != vendorWorkspaceVersion && record.Version != networkWorkspaceVersion && record.Version != routingWorkspaceVersion) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "path-investigation-"+inv.ID+".json" {
+			if (record.Version != workspaceVersion && record.Version != workspaceV6Version && record.Version != vendorWorkspaceVersion && record.Version != networkWorkspaceVersion && record.Version != routingWorkspaceVersion) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "path-investigation-"+inv.ID+".json" {
 				return nil, errors.New("invalid stored path investigation")
 			}
-			if record.Version != workspaceVersion && record.Version != vendorWorkspaceVersion && inv.Result.EngineContractVersion != "graphlayer-path-v1" {
+			if record.Version != workspaceVersion && record.Version != workspaceV6Version && record.Version != vendorWorkspaceVersion && inv.Result.EngineContractVersion != "graphlayer-path-v1" {
 				return nil, errors.New("path contract does not match workspace format")
 			}
 			s.paths[inv.ID] = append([]byte(nil), record.Data...)
 		case "network-investigation":
 			var inv NetworkInvestigation
-			if (record.Version != workspaceVersion && record.Version != vendorWorkspaceVersion && record.Version != networkWorkspaceVersion) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "network-investigation-"+inv.ID+".json" {
+			if (record.Version != workspaceVersion && record.Version != workspaceV6Version && record.Version != vendorWorkspaceVersion && record.Version != networkWorkspaceVersion) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "network-investigation-"+inv.ID+".json" {
 				return nil, errors.New("invalid stored network investigation")
 			}
-			if record.Version != workspaceVersion && record.Version != vendorWorkspaceVersion && inv.Result.EngineContractVersion != "graphlayer-network-path-v1" {
+			if record.Version != workspaceVersion && record.Version != workspaceV6Version && record.Version != vendorWorkspaceVersion && inv.Result.EngineContractVersion != "graphlayer-network-path-v1" {
 				return nil, errors.New("network contract does not match workspace format")
 			}
 			s.networks[inv.ID] = append([]byte(nil), record.Data...)
 		case "network-exploration":
 			var inv NetworkExploration
-			if record.Version != workspaceVersion || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "network-exploration-"+inv.ID+".json" {
+			if (record.Version != workspaceVersion && record.Version != workspaceV6Version) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "network-exploration-"+inv.ID+".json" {
 				return nil, errors.New("invalid stored network exploration")
 			}
 			s.explorations[inv.ID] = append([]byte(nil), record.Data...)
+		case "workspace-transaction":
+			if record.Version != workspaceVersion {
+				return nil, errors.New("workspace transaction format is incompatible")
+			}
+			// Transactions are applied after scanning so directory order cannot affect the chain.
+			transactionRecords[strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "workspace-transaction-"), ".json")] = append([]byte(nil), record.Data...)
 		default:
 			return nil, errors.New("unknown workspace record type")
 		}
+	}
+	if err := s.loadWorkspaceTransactions(transactionRecords); err != nil {
+		return nil, err
 	}
 	if len(s.snapshots) > maxSnapshots || s.investigationCount() > maxInvestigations {
 		return nil, ErrQuota

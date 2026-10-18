@@ -5,10 +5,12 @@ const path = require('node:path');
 async function main() {
   const root = path.resolve(__dirname, '..');
   const args = process.argv.slice(2);
-  if (args.length && (args.length !== 1 || args[0] !== '--exploration')) throw new Error('Unknown E2E server mode.');
-  const exploration = args[0] === '--exploration';
-  const runtime = exploration ? '.e2e-exploration-runtime' : '.e2e-runtime';
-  const listen = exploration ? '127.0.0.1:8089' : '127.0.0.1:8088';
+  const modes = {
+    '--exploration': { runtime: '.e2e-exploration-runtime', listen: '127.0.0.1:8089' },
+    '--workspace': { runtime: '.e2e-workspace-runtime', listen: '127.0.0.1:8090' },
+  };
+  if (args.length && (args.length !== 1 || !Object.hasOwn(modes, args[0]))) throw new Error('Unknown E2E server mode.');
+  const { runtime, listen } = args.length ? modes[args[0]] : { runtime: '.e2e-runtime', listen: '127.0.0.1:8088' };
   const dataDir = path.join(root, runtime);
   const binaryDir = path.join(root, 'platform', runtime);
   for (const target of [dataDir, binaryDir]) {

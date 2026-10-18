@@ -10,7 +10,9 @@ The [multi-firewall increment](MULTI_FIREWALL_INVESTIGATIONS.md) adds explicit t
 
 The [multi-vendor increment](MULTI_VENDOR_INVESTIGATIONS.md) introduced native PAN-OS and FortiOS configuration adapters, vendor-specific policy/NAT semantics and a three-vendor forward/return sample under workspace-v5.
 
-The [path exploration increment](PATH_EXPLORATION.md) adds bounded route alternatives, independent asymmetric return candidates and an evidence-backed topology view. It records the current workspace-v6 format; earlier guides describe their released contracts.
+The [path exploration increment](PATH_EXPLORATION.md) adds bounded route alternatives, independent asymmetric return candidates and an evidence-backed topology view under workspace-v6.
+
+The [workspace/import increment](WORKSPACE_IMPORTS.md) adds the local workspace profile, sites, reviewed mixed-vendor batches and named snapshot sets. It records the current workspace-v7 transaction format and preserves released v1–v6 evidence without rewriting it.
 
 ## Run it
 
