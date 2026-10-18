@@ -224,6 +224,12 @@ test('direct inventory and objects routes keep one navigation selection and pres
   await page.goBack();
   await expect(page.locator('#batch-set-name')).toHaveValue('Draft retained across routes');
   await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('link', { name: 'Workspace home', exact: true }).click();
+  await expect(page.locator('[data-app-page="workspace"]')).toBeVisible();
+  await page.getByRole('link', { name: 'Sources & imports', exact: true }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
+  await expect(page.locator('#batch-set-name')).toHaveValue('Draft retained across routes');
 });
 
 test('invalid and duplicate files preserve the published baseline and sanitized preview never renders credentials', async ({ page }) => {
