@@ -47,6 +47,20 @@ async function readDownload(download) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+async function expectResponsive(page, widths) {
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    const bounds = await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      overflowing: [...document.querySelectorAll('body *')].map((element) => {
+        const box = element.getBoundingClientRect();
+        return { id: element.id, className: element.getAttribute('class'), left: box.left, right: box.right, width: box.width };
+      }).filter((box) => box.width && box.right > window.innerWidth + 1).slice(0, 25),
+    }));
+    expect(bounds.width, JSON.stringify(bounds.overflowing)).toBeLessThanOrEqual(width);
+  }
+}
+
 test('onboards a site and mixed-vendor baseline, investigates pinned members, and reopens workspace and evidence', async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await enterWorkspace(page);
@@ -76,6 +90,8 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   expect(unpublished.snapshots.map((item) => item.id)).toEqual(before.snapshots.map((item) => item.id));
   await fs.mkdir(screenshots, { recursive: true });
   await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-preview.png') });
+  await expectResponsive(page, [320,390,768]);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('#batch-site-select').selectOption(site.id);
   const setName = `Branch baseline ${info.retry}`;
   const set = await publish(page, setName);
@@ -133,17 +149,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-mobile.png') });
-  for (const width of [320,390,768,1440]) {
-    await page.setViewportSize({ width, height: 900 });
-    const bounds = await page.evaluate(() => ({
-      width: document.documentElement.scrollWidth,
-      overflowing: [...document.querySelectorAll('body *')].map((element) => {
-        const box = element.getBoundingClientRect();
-        return { id: element.id, className: element.getAttribute('class'), left: box.left, right: box.right, width: box.width };
-      }).filter((box) => box.width && box.right > window.innerWidth + 1).slice(0, 25),
-    }));
-    expect(bounds.width, JSON.stringify(bounds.overflowing)).toBeLessThanOrEqual(width);
-  }
+  await expectResponsive(page, [320,390,768,1440]);
 });
 
 test('invalid and duplicate files preserve the published baseline and sanitized preview never renders credentials', async ({ page }) => {
