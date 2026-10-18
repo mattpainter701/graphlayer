@@ -3,8 +3,15 @@ package firewall
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	asa "github.com/mattpainter701/graphlayer/platform/vendors/cisco/asa"
 )
@@ -22,7 +29,9 @@ func parsePathInventoryForTest(t *testing.T, input []byte) *Config {
 	for i, line := range parsed.Lines {
 		c.SourceLines[i] = SourceLine{Number: line.Number, Text: "[OMITTED NON-POLICY CONFIGURATION]"}
 	}
-	addASAPathInventory(c, parsed)
+	if err := addASAPathInventory(c, parsed); err != nil {
+		t.Fatal(err)
+	}
 	return c
 }
 
@@ -199,5 +208,223 @@ func assertPathEvidence(t *testing.T, c *Config) {
 	}
 	for _, nat := range c.Path.NATRules {
 		checkRefs("NAT "+nat.ID, nat.EvidenceRefs)
+	}
+}
+
+const fakeASAEngineResponse = `{"protocol_version":"graphlayer-engine-v1","operation":"parse_asa_path","result":{"path":{"version":"asa-path-v1","interfaces":[],"routes":[],"nat_rules":[],"routing_complete":true,"nat_complete":true,"inter_interface":false,"warnings":[],"evidence_refs":[]},"evidence":[],"source_line_updates":[]}}`
+
+func TestASAEngineFakeWorker(t *testing.T) {
+	mode := os.Getenv("GRAPH_LAYER_ASA_FAKE_MODE")
+	if mode == "" {
+		return
+	}
+	switch mode {
+	case "valid":
+		var request asaPathEngineRequest
+		if err := json.NewDecoder(os.Stdin).Decode(&request); err != nil || request.ProtocolVersion != asaEngineProtocolVersion || request.Operation != asaEngineOperation {
+			fmt.Fprintln(os.Stderr, "invalid fake worker request")
+			os.Exit(31)
+		}
+		_, _ = io.WriteString(os.Stdout, fakeASAEngineResponse)
+	case "timeout":
+		time.Sleep(5 * time.Second)
+	case "overflow":
+		chunk := strings.Repeat("x", 1<<20)
+		for i := 0; i < 9; i++ {
+			_, _ = io.WriteString(os.Stdout, chunk)
+		}
+	case "malformed":
+		_, _ = io.WriteString(os.Stdout, `{"protocol_version":`)
+	case "trailing":
+		_, _ = io.WriteString(os.Stdout, fakeASAEngineResponse+` {}`)
+	case "duplicate_protocol":
+		response := strings.Replace(fakeASAEngineResponse, `"protocol_version":"graphlayer-engine-v1"`, `"protocol_version":"wrong","protocol_version":"graphlayer-engine-v1"`, 1)
+		_, _ = io.WriteString(os.Stdout, response)
+	case "duplicate_nested":
+		response := strings.Replace(fakeASAEngineResponse, `"version":"asa-path-v1"`, `"version":"wrong","version":"asa-path-v1"`, 1)
+		_, _ = io.WriteString(os.Stdout, response)
+	case "wrong_protocol":
+		_, _ = io.WriteString(os.Stdout, strings.Replace(fakeASAEngineResponse, asaEngineProtocolVersion, "wrong-version", 1))
+	case "nonzero":
+		_, _ = io.WriteString(os.Stderr, "sensitive-worker-canary")
+		os.Exit(42)
+	default:
+		fmt.Fprintln(os.Stderr, "unknown fake mode")
+		os.Exit(43)
+	}
+	os.Exit(0)
+}
+
+func useFakeASAEngine(t *testing.T, mode string) {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal("could not locate test binary")
+	}
+	t.Setenv("GRAPHLAYER_ENGINE", executable)
+	t.Setenv("GRAPH_LAYER_ASA_FAKE_MODE", mode)
+	asaEngineTestArgs = []string{"-test.run=^TestASAEngineFakeWorker$"}
+	t.Cleanup(func() { asaEngineTestArgs = nil })
+}
+
+func TestASAPathEngineMissingWorkerFailsClosedWithoutPathLookup(t *testing.T) {
+	t.Setenv("GRAPHLAYER_ENGINE", "graphlayer-engine")
+	if _, err := asaPathEnginePath(); err == nil {
+		t.Fatal("relative worker path should fail instead of searching PATH or falling back")
+	}
+	t.Setenv("GRAPHLAYER_ENGINE", filepath.Join(t.TempDir(), "missing-worker.exe"))
+	if _, err := asaPathEnginePath(); err == nil {
+		t.Fatal("missing explicitly configured worker should fail closed")
+	}
+	config, err := ParseASAConfig([]byte("hostname edge\n"))
+	if err == nil || config != nil || !errors.Is(err, ErrAnalysisEngine) {
+		t.Fatalf("ASA parse silently fell back without the Rust worker: config=%#v err=%v", config, err)
+	}
+}
+
+func TestASAPathEngineRejectsNonRegularAndNonExecutableFiles(t *testing.T) {
+	t.Setenv("GRAPHLAYER_ENGINE", t.TempDir())
+	if _, err := asaPathEnginePath(); err == nil {
+		t.Fatal("worker directory was accepted as an executable")
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	worker := filepath.Join(t.TempDir(), "worker")
+	if err := os.WriteFile(worker, []byte("not executable"), 0600); err != nil {
+		t.Fatal("could not create worker fixture")
+	}
+	t.Setenv("GRAPHLAYER_ENGINE", worker)
+	if _, err := asaPathEnginePath(); err == nil {
+		t.Fatal("non-executable regular file was accepted as a worker")
+	}
+}
+
+func TestASAPathEngineAcceptsOneStrictResponse(t *testing.T) {
+	useFakeASAEngine(t, "valid")
+	parsed, err := asa.ParseRunningConfig([]byte("hostname edge\n"))
+	if err != nil {
+		t.Fatal("could not parse ASA input")
+	}
+	response, err := callASAPathEngine(asaPathEngineRequest{
+		ProtocolVersion: asaEngineProtocolVersion,
+		Operation:       asaEngineOperation,
+		Input: asaPathEngineInput{
+			ArtifactSHA256: parsed.ArtifactSHA256,
+			Lines:          []asaPathEngineLine{{Number: 1, Text: "hostname edge"}},
+			NetworkObjects: map[string]asaPathEngineNetworkObject{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("valid worker response rejected: %v", err)
+	}
+	if response.ProtocolVersion != asaEngineProtocolVersion || response.Operation != asaEngineOperation {
+		t.Fatalf("worker protocol was not preserved: %#v", response)
+	}
+}
+
+func TestASAPathInventoryWrapsWorkerFailuresWithSentinel(t *testing.T) {
+	useFakeASAEngine(t, "malformed")
+	parsed, err := asa.ParseRunningConfig([]byte("hostname edge\n"))
+	if err != nil {
+		t.Fatal("could not parse ASA input")
+	}
+	c := &Config{
+		ArtifactSHA256: parsed.ArtifactSHA256,
+		SourceLines:    []SourceLine{{Number: 1, Text: "[OMITTED NON-POLICY CONFIGURATION]"}},
+		Evidence:       []Evidence{},
+	}
+	err = addASAPathInventory(c, parsed)
+	if !errors.Is(err, ErrAnalysisEngine) {
+		t.Fatalf("worker failure was not identifiable: %v", err)
+	}
+}
+
+func TestASAPathEngineRejectsInvalidAndUnboundedWorkerResponses(t *testing.T) {
+	cases := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{"timeout", "timeout", "timed out"},
+		{"output overflow", "overflow", "size limit"},
+		{"malformed JSON", "malformed", "malformed output"},
+		{"trailing JSON", "trailing", "malformed output"},
+		{"duplicate protocol field", "duplicate_protocol", "malformed output"},
+		{"duplicate nested field", "duplicate_nested", "malformed output"},
+		{"protocol mismatch", "wrong_protocol", "protocol mismatch"},
+		{"nonzero exit hides stderr", "nonzero", "failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			useFakeASAEngine(t, tc.mode)
+			if tc.mode == "timeout" {
+				asaEngineTimeout = 40 * time.Millisecond
+				t.Cleanup(func() { asaEngineTimeout = 10 * time.Second })
+			}
+			_, err := callASAPathEngine(asaPathEngineRequest{
+				ProtocolVersion: asaEngineProtocolVersion,
+				Operation:       asaEngineOperation,
+				Input:           asaPathEngineInput{Lines: []asaPathEngineLine{}, NetworkObjects: map[string]asaPathEngineNetworkObject{}},
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("worker failure was not rejected safely: err=%v", err)
+			}
+			if strings.Contains(err.Error(), "sensitive-worker-canary") {
+				t.Fatalf("worker stderr leaked into public error: %v", err)
+			}
+		})
+	}
+}
+
+func TestASAEngineOutputLimitCannotBeBypassedByIOCopy(t *testing.T) {
+	buffer := &asaEngineOutputBuffer{limit: 32}
+	_, err := io.Copy(buffer, io.LimitReader(strings.NewReader(strings.Repeat("x", 64)), 64))
+	if err == nil || !buffer.overflow || len(buffer.Bytes()) != 32 {
+		t.Fatalf("stdout copy bypassed the size limit: error=%v overflow=%v bytes=%d", err, buffer.overflow, len(buffer.Bytes()))
+	}
+}
+
+func TestASAPathOutputMergeDeduplicatesEvidenceAndAppliesLineUpdates(t *testing.T) {
+	parsed, err := asa.ParseRunningConfig([]byte("hostname edge\nroute outside 0 0 192.0.2.1\n"))
+	if err != nil {
+		t.Fatal("could not parse ASA input")
+	}
+	firstID := evidenceID(parsed.ArtifactSHA256, []int{1})
+	secondID := evidenceID(parsed.ArtifactSHA256, []int{2})
+	c := &Config{
+		ArtifactSHA256: parsed.ArtifactSHA256,
+		SourceLines:    []SourceLine{{Number: 1, Text: "[OMITTED NON-POLICY CONFIGURATION]"}, {Number: 2, Text: "[OMITTED NON-POLICY CONFIGURATION]"}},
+		Evidence:       []Evidence{{ID: firstID, StartLine: 1, EndLine: 1, Kind: "legacy", Summary: "retained"}},
+	}
+	path := PathConfig{Version: asaPathVersion, Interfaces: []PathInterface{}, Routes: []PathRoute{}, NATRules: []PathNATRule{}, Warnings: []Warning{}, EvidenceRefs: []string{secondID}}
+	result := asaPathEngineResult{
+		Evidence: []Evidence{
+			{ID: firstID, StartLine: 1, EndLine: 1, Kind: "path_interface", Summary: "duplicate"},
+			{ID: secondID, StartLine: 2, EndLine: 2, Kind: "static_route", Summary: "new evidence"},
+		},
+		SourceLineUpdates: []SourceLine{{Number: 2, Text: "[OMITTED UNSUPPORTED PATH CONFIGURATION]"}},
+	}
+	if err := mergeASAPathEngineOutput(c, parsed, path, result); err != nil {
+		t.Fatalf("valid Rust output rejected: %v", err)
+	}
+	if len(c.Evidence) != 2 || c.Evidence[0].Summary != "retained" || c.Evidence[1].ID != secondID {
+		t.Fatalf("evidence merge changed existing order or failed to deduplicate: %#v", c.Evidence)
+	}
+	if c.SourceLines[1].Text != "[OMITTED UNSUPPORTED PATH CONFIGURATION]" || c.Path == nil || c.Path.Version != asaPathVersion {
+		t.Fatalf("path output was not merged: source=%#v path=%#v", c.SourceLines, c.Path)
+	}
+}
+
+func TestASAPathOutputMergeRejectsInvalidLineUpdates(t *testing.T) {
+	parsed, err := asa.ParseRunningConfig([]byte("hostname edge\n"))
+	if err != nil {
+		t.Fatal("could not parse ASA input")
+	}
+	c := &Config{SourceLines: []SourceLine{{Number: 1, Text: "redacted"}}}
+	path := PathConfig{Version: asaPathVersion}
+	err = mergeASAPathEngineOutput(c, parsed, path, asaPathEngineResult{Evidence: []Evidence{}, SourceLineUpdates: []SourceLine{{Number: 1, Text: "one"}, {Number: 1, Text: "duplicate"}}})
+	if err == nil {
+		t.Fatal("duplicate source line updates were accepted")
 	}
 }

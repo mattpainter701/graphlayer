@@ -402,6 +402,9 @@ func (s *Store) Import(name string, raw []byte) (*Snapshot, bool, error) {
 func (s *Store) ImportVendor(name string, raw []byte, vendor string) (*Snapshot, bool, error) {
 	parsed, err := firewall.ParseConfig(raw, vendor)
 	if err != nil {
+		if errors.Is(err, firewall.ErrAnalysisEngine) {
+			return nil, false, firewall.ErrAnalysisEngine
+		}
 		return nil, false, ErrInvalidConfig
 	}
 	if len(parsed.Chains) == 0 || len(parsed.SourceLines) == 0 {

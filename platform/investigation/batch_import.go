@@ -156,6 +156,10 @@ func (a *App) previewItem(name, raw, vendor string, seen map[string]bool) (impor
 		return out, nil
 	}
 	parsed, err := firewall.ParseConfig([]byte(raw), vendor)
+	if errors.Is(err, firewall.ErrAnalysisEngine) {
+		out.ErrorCode = "analysis_engine_unavailable"
+		return out, nil
+	}
 	if err != nil || parsed == nil || len(parsed.Chains) == 0 || len(parsed.SourceLines) == 0 || parsed.ArtifactSHA256 != digest([]byte(raw)) {
 		out.ErrorCode = "invalid_config"
 		return out, nil

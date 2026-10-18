@@ -1,0 +1,14 @@
+name: Build required Rust engine
+description: Build the production Rust worker and expose its absolute path to integration tests.
+runs:
+  using: composite
+  steps:
+    - name: Build Rust engine
+      shell: bash
+      run: cargo build --locked --release -p graphlayer-engine
+    - name: Locate Rust engine
+      shell: bash
+      run: |
+        suffix=""
+        if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
+        echo "GRAPHLAYER_ENGINE=$GITHUB_WORKSPACE/target/release/graphlayer-engine$suffix" >> "$GITHUB_ENV"

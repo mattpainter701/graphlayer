@@ -16,6 +16,12 @@ The [workspace/import increment](WORKSPACE_IMPORTS.md) adds the local workspace 
 
 ## Run it
 
+The current application requires its Rust forwarding parser. Build it first
+and set `GRAPHLAYER_ENGINE` to the absolute worker path when using `go run` or
+`go test`; packaged builds include the worker beside the application. See
+[Rust build and packaging](RUST_WORKER.md). The remaining Go/Python domain
+components are legacy migration work under the [language policy](RUST_ARCHITECTURE.md).
+
 Use the Go version in `platform/go.mod`. From the repository root:
 
 ```powershell

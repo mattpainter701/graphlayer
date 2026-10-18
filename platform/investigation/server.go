@@ -436,6 +436,10 @@ func (a *App) importConfig(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 429, "workspace_full", "The local workspace has reached its snapshot limit.")
 		return
 	}
+	if errors.Is(err, firewall.ErrAnalysisEngine) {
+		apiError(w, 503, "analysis_engine_unavailable", "The local analysis engine is unavailable. Check the application installation and retry. Earlier snapshots are unchanged.")
+		return
+	}
 	if errors.Is(err, ErrInvalidConfig) {
 		apiError(w, 422, "import_failed", "Use supported ASA running-config, PAN-OS set-format or FortiOS single-VDOM CLI configuration. Earlier snapshots are unchanged.")
 		return

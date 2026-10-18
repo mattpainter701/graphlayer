@@ -30,8 +30,8 @@ var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b(password|passwd|secret|community|pre-shared-key|key-string|private-key|ldap-login-password|radius-common-pw|enable-password|username|crypto\s+ca\s+authenticate)\b`),
 }
 
-// ParseASAConfig parses an exported ASA running-config into evidence-linked
-// access-group chains. It supports a deliberately bounded ACL subset.
+// ParseASAConfig uses the frozen legacy Go ASA ACL parser for evidence-linked
+// access-group chains and requires the Rust worker for forwarding path data.
 func ParseASAConfig(input []byte) (*Config, error) {
 	parsed, err := asa.ParseRunningConfig(input)
 	if err != nil {
@@ -209,7 +209,9 @@ func ParseASAConfig(input []byte) (*Config, error) {
 		}
 	}
 	addASAInventory(c, parsed)
-	addASAPathInventory(c, parsed)
+	if err := addASAPathInventory(c, parsed); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
