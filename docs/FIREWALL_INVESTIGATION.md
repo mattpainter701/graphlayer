@@ -6,7 +6,9 @@ The subsequent [policy workspace increment](POLICY_WORKSPACE.md) adds service ob
 
 The [routing/NAT increment](ROUTING_NAT_INVESTIGATIONS.md) adds a separate explicit-ingress path workflow and records its original parser/storage versions. Existing ACL-only investigations retain their original scope.
 
-The [multi-firewall increment](MULTI_FIREWALL_INVESTIGATIONS.md) adds explicit topology, routing/NAT composition and configured return traces under an established-session assumption. It records the current workspace-v4 format and upgrade behavior.
+The [multi-firewall increment](MULTI_FIREWALL_INVESTIGATIONS.md) adds explicit topology, routing/NAT composition and configured return traces under an established-session assumption. It records that release's workspace-v4 format and upgrade behavior.
+
+The [multi-vendor increment](MULTI_VENDOR_INVESTIGATIONS.md) adds native PAN-OS and FortiOS configuration adapters, vendor-specific policy/NAT semantics and a three-vendor forward/return sample. It records the current workspace-v5 format and supported limits.
 
 ## Run it
 

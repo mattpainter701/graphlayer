@@ -8,6 +8,7 @@ import (
 )
 
 const ContractVersion = "graphlayer-network-path-v1"
+const VendorContractVersion = "graphlayer-network-path-v2"
 
 type Endpoint struct {
 	NodeID    string `json:"node_id"`

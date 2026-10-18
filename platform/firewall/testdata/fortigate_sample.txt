@@ -1,0 +1,61 @@
+config system interface
+    edit "port1"
+        set vdom "root"
+        set ip 172.16.0.2 255.255.255.252
+        set status up
+    next
+    edit "port2"
+        set vdom "root"
+        set ip 10.2.0.1 255.255.255.0
+        set status up
+    next
+end
+config router static
+    edit 1
+        set dst 198.51.100.42 255.255.255.255
+        set gateway 172.16.0.1
+        set device "port1"
+    next
+end
+config firewall address
+    edit "REMOTE_HOST"
+        set subnet 198.51.100.42 255.255.255.255
+    next
+end
+config firewall service custom
+    edit "HTTPS"
+        set protocol TCP/UDP/SCTP
+        set tcp-portrange 443
+    next
+end
+config firewall vip
+    edit "WEB"
+        set extintf "port1"
+        set extip 203.0.113.15
+        set mappedip "10.2.0.15"
+    next
+end
+config firewall policy
+    edit 10
+        set name "web-in"
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "REMOTE_HOST"
+        set dstaddr "WEB"
+        set service "HTTPS"
+        set schedule "always"
+        set action accept
+        set status enable
+    next
+    edit 20
+        set name "return-deny"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set schedule "always"
+        set action deny
+        set status enable
+    next
+end

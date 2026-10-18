@@ -49,14 +49,17 @@
 
       <div class="workspace-grid">
         <section class="panel import-panel" id="imports" aria-labelledby="import-title">
-          <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">01</span><div><h2 id="import-title">Configuration source</h2><p>Import a sanitized Cisco ASA running configuration.</p></div></div><span class="panel-kicker">INPUT</span></div>
+          <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">01</span><div><h2 id="import-title">Configuration source</h2><p>Import ASA running-config, PAN-OS set-format or FortiOS CLI configuration.</p></div></div><span class="panel-kicker">INPUT</span></div>
+          <label class="field vendor-format" for="config-vendor"><span>CONFIGURATION FORMAT</span><select id="config-vendor"><option value="auto">Detect native format</option><option value="cisco-asa">Cisco ASA running-config</option><option value="paloalto-panos">Palo Alto PAN-OS set-format</option><option value="fortinet-fortigate">FortiGate FortiOS CLI</option></select></label>
           <div class="import-actions">
             <label class="button button-secondary file-button" for="file-input"><span aria-hidden="true">＋</span> Choose config file</label>
             <input id="file-input" data-testid="file-input" type="file" accept=".txt,.cfg,.conf,.config,text/plain" class="visually-hidden">
             <button class="text-button" id="load-sample" data-testid="load-sample" type="button">Load labeled ASA sample <span aria-hidden="true">↗</span></button>
             <button class="text-button" id="load-service-sample" type="button">Load service-group sample <span aria-hidden="true">↗</span></button>
+            <button class="text-button" id="load-panos-sample" type="button">Load Palo Alto sample ↗</button>
+            <button class="text-button" id="load-fortigate-sample" type="button">Load FortiGate sample ↗</button>
           </div>
-          <label class="sr-only" for="config-input">Paste ASA running configuration</label>
+          <label class="sr-only" for="config-input">Paste firewall configuration</label>
           <textarea id="config-input" data-testid="config-input" class="config-input" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Paste running configuration…&#10;&#10;Example:&#10;access-list OUTSIDE_IN extended permit tcp any host 10.20.4.15 eq 443"></textarea>
           <div class="config-footer"><span id="config-meta">Paste text or choose a local file</span><button class="button button-primary button-small" id="import-button" data-testid="import-button" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Import configuration</span><span aria-hidden="true">→</span></button></div>
           <div id="import-report" class="import-report empty-report" aria-live="polite"><span class="report-icon" aria-hidden="true">⌁</span><span>Imported configuration details will appear here.</span></div>
@@ -77,10 +80,10 @@
       </div>
 
       <section class="panel path-panel" aria-labelledby="path-title">
-        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">03</span><div><h2 id="path-title">Routing &amp; NAT path</h2><p>Trace one concrete flow through the selected snapshot’s bounded ASA forwarding model.</p></div></div><span class="panel-kicker">PATH QUERY</span></div>
+        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">03</span><div><h2 id="path-title">Routing &amp; NAT path</h2><p>Trace one concrete flow through the selected snapshot’s vendor forwarding model.</p></div></div><span class="panel-kicker">PATH QUERY</span></div>
         <div id="path-unavailable" class="path-notice" role="status">Import a snapshot with routing and NAT configuration to investigate a path.</div>
         <div id="path-controls" hidden>
-          <div class="path-scope-row"><div class="field"><label for="path-ingress">INGRESS INTERFACE <span class="required">*</span></label><select id="path-ingress" data-testid="path-ingress"></select></div><div id="path-interface-meta" class="path-interface-meta">Select the interface where this flow enters the ASA.</div></div>
+          <div class="path-scope-row"><div class="field"><label for="path-ingress">INGRESS INTERFACE <span class="required">*</span></label><select id="path-ingress" data-testid="path-ingress"></select></div><div id="path-interface-meta" class="path-interface-meta">Select the interface where this flow enters the firewall.</div></div>
           <div class="tuple-grid path-tuple-grid">
             <div class="field"><label for="path-source">SOURCE ADDRESS <span class="required">*</span></label><input id="path-source" data-testid="path-source" type="text" inputmode="decimal" value="192.0.2.42" autocomplete="off"></div>
             <div class="field"><label for="path-destination">DESTINATION ADDRESS <span class="required">*</span></label><input id="path-destination" data-testid="path-destination" type="text" inputmode="decimal" value="10.20.4.15" autocomplete="off"></div>
@@ -100,8 +103,8 @@
       </section>
 
       <section class="panel network-panel" id="network-path" aria-labelledby="network-title">
-        <div class="panel-heading"><div class="panel-title-wrap"><div><h2 id="network-title">Multi-firewall investigation</h2><p>Model a path across imported ASA snapshots and operator supplied links.</p></div></div><span class="panel-kicker">NETWORK PATH</span></div>
-        <div class="network-actions"><button class="button button-secondary button-small" id="network-load-sample" data-testid="network-load-sample" type="button">Load multi-firewall sample</button><span id="network-status" role="status" aria-live="polite">Select a snapshot for each device, then supply the links and endpoints.</span></div>
+        <div class="panel-heading"><div class="panel-title-wrap"><div><h2 id="network-title">Multi-firewall investigation</h2><p>Model a path across imported ASA, Palo Alto and FortiGate snapshots and operator supplied links.</p></div></div><span class="panel-kicker">NETWORK PATH</span></div>
+        <div class="network-actions"><button class="button button-secondary button-small" id="network-load-sample" data-testid="network-load-sample" type="button">Load multi-firewall sample</button><button class="button button-secondary button-small" id="network-load-vendor-sample" type="button">Load multi-vendor sample</button><span id="network-status" role="status" aria-live="polite">Select a snapshot for each device, then supply the links and endpoints.</span></div>
         <p class="network-boundary">Links are operator supplied, checked against configuration, and not discovered automatically.</p>
         <div class="network-layout">
           <section class="network-subpanel"><div class="network-subheading"><h3>Devices</h3><button class="text-button" id="network-add-node" type="button">Add device</button></div><div id="network-nodes" class="network-rows"></div></section>
@@ -158,7 +161,7 @@
       <section class="panel history-panel path-history-panel" aria-labelledby="path-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⇢</span><div><h2 id="path-history-title">Recent path investigations</h2><p>Saved routing and NAT traces for review and replay.</p></div></div><button class="text-button" id="refresh-path-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="path-history-list" class="history-list"><div class="history-empty">No saved path investigations yet.</div></div></section>
       <section class="panel history-panel" aria-labelledby="network-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⇢</span><div><h2 id="network-history-title">Recent multi-firewall investigations</h2><p>Saved network paths for review and replay.</p></div></div><button class="text-button" id="refresh-network-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="network-history-list" class="history-list"><div class="history-empty">No saved multi-firewall investigations yet.</div></div></section>
 
-      <footer class="footer"><span><span class="footer-mark">G</span> GraphLayer <span class="footer-sep">·</span> Local investigation workspace</span><span>Policy analysis · Cisco ASA</span></footer>
+      <footer class="footer"><span><span class="footer-mark">G</span> GraphLayer <span class="footer-sep">·</span> Local investigation workspace</span><span>ASA · PAN-OS · FortiOS</span></footer>
     </main>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

@@ -1,0 +1,27 @@
+set deviceconfig system hostname edge-fw
+set address client-10-1-0-42 ip-netmask 10.1.0.42/32
+set address public-198-51-100-42 ip-netmask 198.51.100.42/32
+set address backend-203-0-113-15 ip-netmask 203.0.113.15/32
+set service svc-https protocol tcp port 443
+set network interface ethernet ethernet1/1 layer3 ip 10.1.0.1/24
+set network interface ethernet ethernet1/2 layer3 ip 172.16.0.1/30
+set zone trust network layer3 ethernet1/1
+set zone untrust network layer3 ethernet1/2
+set network virtual-router default interface ethernet1/1
+set network virtual-router default interface ethernet1/2
+set network virtual-router default routing-table ip static-route backend destination 203.0.113.15/32
+set network virtual-router default routing-table ip static-route backend interface ethernet1/2
+set network virtual-router default routing-table ip static-route backend nexthop ip-address 172.16.0.2
+set rulebase nat rules client-static from trust
+set rulebase nat rules client-static to untrust
+set rulebase nat rules client-static source client-10-1-0-42
+set rulebase nat rules client-static destination any
+set rulebase nat rules client-static service any
+set rulebase nat rules client-static source-translation static-ip translated-address 198.51.100.42
+set rulebase security rules allow-https from trust
+set rulebase security rules allow-https to untrust
+set rulebase security rules allow-https source client-10-1-0-42
+set rulebase security rules allow-https destination backend-203-0-113-15
+set rulebase security rules allow-https application any
+set rulebase security rules allow-https service svc-https
+set rulebase security rules allow-https action allow

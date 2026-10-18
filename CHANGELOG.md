@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add native PAN-OS set-format and FortiOS CLI imports to multi-vendor path investigations, with vendor-specific zone/interface policy, configured static routing/NAT, established-session return analysis and snapshot-qualified source evidence.
+- Add a parsed Palo Alto → ASA → FortiGate workflow, vendor format selection, mixed-vendor replay/export and end-to-end coverage. Preserve released workspace-v1 through v4 artifacts while introducing validated workspace-v5 vendor models; unsupported controls remain indeterminate.
+
 - Add multi-firewall ASA path investigations with explicit snapshot-pinned topology, routing and NAT at each hop, configured return-path checks under a stated TCP/UDP session assumption, source evidence, saved history and export. Missing or asymmetric topology and unsupported semantics remain indeterminate.
 - Preserve released workspace-v1/v2/v3 records while adding exact multi-snapshot replay in workspace-v4, shared history quotas, parser-to-browser forward/return tests and new engine coverage in Linux/Windows gates.
 
@@ -16,4 +19,4 @@
 - Begin the offline policy-evaluation foundation with explicit scope, ordered matching and an indeterminate outcome for unsupported or unresolved conditions. This evaluates policy bundles and does not establish end-to-end network reachability.
 - Repair confidence propagation, corroboration accounting and staleness handling, plus reference lookup and build/test configuration defects identified during the baseline audit.
 
-The first operator UI and ASA adapter are available locally. Multi-vendor investigation, broader routing/NAT and enterprise service deployment remain planned work. See `docs/FIREWALL_INVESTIGATION.md` for current supported scope.
+The local operator UI supports bounded ASA, PAN-OS and FortiOS configuration investigations. Broader vendor syntax, routing/NAT and enterprise service deployment remain planned work. See `docs/MULTI_VENDOR_INVESTIGATIONS.md` for current supported scope.

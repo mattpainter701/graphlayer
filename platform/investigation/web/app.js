@@ -37,8 +37,8 @@
         path_unavailable: 'This snapshot does not include a usable routing and NAT model. Reimport the configuration after checking its supported path settings.',
         invalid_network_path: 'Check that each device has a unique ID and snapshot, that every supplied link and endpoint uses a modeled interface, and that the flow is a concrete IPv4 tuple.',
         path_too_large: 'The path investigation exceeds the local artifact budget. No partial result was saved.',
-        invalid_import: 'Provide an ASA configuration and a display name of at most 128 characters.',
-        import_failed: 'The configuration could not be imported as a supported ASA policy snapshot. Earlier snapshots are unchanged.',
+        invalid_import: 'Provide a supported firewall configuration and a display name of at most 128 characters.',
+        import_failed: 'Use ASA running-config, PAN-OS set-format or FortiOS single-VDOM CLI configuration. XML, inherited rules and unsupported formats require a supported export.',
         config_too_large: 'The configuration exceeds the 2 MiB local import limit.',
         input_too_large: 'The request exceeds the local import size limit.',
         snapshot_too_large: 'The expanded snapshot exceeds the 8 MiB artifact budget. Earlier snapshots are unchanged.',
@@ -83,8 +83,11 @@
   }
 
   function summaryName(snapshot) {
-    return [snapshot.hostname || snapshot.name || 'ASA device', snapshot.context || 'default', snapshot.created_at ? new Date(snapshot.created_at).toLocaleString() : snapshot.id].filter(Boolean).join(' · ');
+    return [snapshot.hostname || snapshot.name || 'Firewall', vendorName(snapshot.vendor), snapshot.context || 'default', snapshot.created_at ? new Date(snapshot.created_at).toLocaleString() : snapshot.id].filter(Boolean).join(' · ');
   }
+
+  function vendorName(vendor) { return ({ 'cisco-asa': 'Cisco ASA', 'paloalto-panos': 'Palo Alto PAN-OS', 'fortinet-fortigate': 'FortiGate FortiOS' })[vendor] || vendor || 'Firewall'; }
+  function supportedPath(config) { return Boolean(config && ['asa-path-v1','panos-path-v1','fortios-path-v1'].includes(config.version)); }
 
   function hashLabel(value) {
     if (!value) return 'Hash unavailable';
@@ -134,13 +137,15 @@
     $('flow-source-port').disabled = state.busy || !usesPorts;
     $('flow-destination-port').disabled = state.busy || !usesPorts;
     $('export-button').disabled = state.busy || !state.investigation;
-    const pathAvailable = Boolean(hasSnapshot && state.snapshot.path && state.snapshot.path.version === 'asa-path-v1');
+    const pathAvailable = Boolean(hasSnapshot && supportedPath(state.snapshot.path));
     const pathReady = Boolean(pathAvailable && $('path-ingress').value);
     $('path-evaluate-button').disabled = state.busy || !pathReady;
     $('path-export-button').disabled = state.busy || !state.pathInvestigation;
     $('network-evaluate').disabled = state.busy || !networkFormValid();
     $('network-export').disabled = state.busy || !state.networkInvestigation;
     $('network-load-sample').disabled = state.busy;
+    $('network-load-vendor-sample').disabled = state.busy || !state.csrf;
+    ['config-vendor','load-panos-sample','load-fortigate-sample'].forEach((id) => { $(id).disabled = state.busy; });
     $('network-add-node').disabled = state.busy || document.querySelectorAll('.network-node-row').length >= 16;
     $('network-add-link').disabled = state.busy || document.querySelectorAll('.network-link-row').length >= 32;
     document.querySelectorAll('.network-history-open,.network-remove-row').forEach((button) => { button.disabled = state.busy; });
@@ -156,7 +161,7 @@
 
   function renderPathAvailability(snapshot) {
     const config = snapshot && snapshot.path;
-    const valid = Boolean(config && config.version === 'asa-path-v1');
+    const valid = supportedPath(config);
     $('path-controls').hidden = !valid;
     $('path-result').hidden = true;
     $('path-unavailable').hidden = valid;
@@ -188,7 +193,7 @@
     const config = state.snapshot && state.snapshot.path;
     const item = config && (config.interfaces || []).find((candidate) => candidate.name === $('path-ingress').value);
     if (!item) return;
-    const pieces = [item.name, item.physical, item.address, item.security_level === undefined ? '' : `security level ${item.security_level}`].filter(Boolean);
+    const pieces = [item.name, item.physical, item.address, item.zone ? `zone ${item.zone}` : '', item.security_level === undefined ? '' : `security level ${item.security_level}`].filter(Boolean);
     $('path-interface-meta').textContent = `${pieces.join(' · ')} · ${item.resolved ? 'resolved' : 'unresolved'}${item.shutdown ? ' · shutdown' : ''}${config.routing_complete ? '' : ' · route coverage incomplete'}${config.nat_complete ? '' : ' · NAT coverage incomplete'}`;
   }
 
@@ -407,7 +412,7 @@
     list.replaceChildren();
     const snapshot = state.snapshot;
     $('object-scope').textContent = snapshot ? `${snapshot.name || snapshot.hostname || snapshot.id} · ${snapshot.id}` : 'No snapshot selected';
-    if (!snapshot || (!Array.isArray(snapshot.objects) && !['asa-config-v2', 'asa-config-v3'].includes(snapshot.parser_version))) {
+    if (!snapshot || (!Array.isArray(snapshot.objects) && !['asa-config-v2', 'asa-config-v3','panos-config-v1','fortios-config-v1'].includes(snapshot.parser_version))) {
       list.append(el('div', 'inventory-empty', snapshot ? 'Named object inventory is unavailable in this older snapshot.' : 'Import a snapshot to browse named objects.'));
       $('object-count').textContent = '0 filtered · unavailable total · page 1 of 1';
       $('object-page').textContent = 'Page 1 of 1';
@@ -887,7 +892,8 @@
     (hops || []).forEach((hop, index) => {
       const card = el('article', 'path-stage'); const heading = el('div', 'path-stage-heading');
       heading.append(el('span', 'path-stage-number', String(index + 1).padStart(2, '0')));
-      const label = el('div', 'path-stage-title'); label.append(el('strong', '', hop.node_id || 'Firewall'), el('span', '', hop.path && hop.path.disposition || 'unknown')); heading.append(label); card.append(heading);
+      const owner = state.networkSnapshots.get(hop.snapshot_id);
+      const label = el('div', 'path-stage-title'); label.append(el('strong', '', `${hop.node_id || 'Firewall'} · ${vendorName(owner && owner.vendor)}`), el('span', '', hop.path && hop.path.disposition || 'unknown')); heading.append(label); card.append(heading);
       const path = hop.path || {}; const route = path.selected_route;
       card.append(el('p', 'path-stage-detail', `Snapshot ${hop.snapshot_id || 'unknown'} · ingress ${path.ingress_interface || path.ingress || 'unavailable'} · egress ${path.egress_interface || 'unavailable'}${route ? ` · route ${route.prefix || 'unknown'} via ${route.interface || 'unknown'}${route.next_hop ? ` · next hop ${route.next_hop}` : ''}${route.kind ? ` · ${route.kind}` : ''}` : ''}`));
       const snapshot = state.networkSnapshots.get(hop.snapshot_id); const warnings = snapshot && snapshot.path && snapshot.path.warnings || [];
@@ -960,13 +966,13 @@
     } catch (error) { showToast(error.message, 'error'); } finally { state.busy = false; refreshControls(); }
   }
 
-  async function loadNetworkSample() {
-    const button = $('network-load-sample'); setBusy(button, true, 'Importing sample…');
+  async function loadNetworkSample(endpoint = '/sample/network') {
+    const button = $(endpoint === '/sample/network' ? 'network-load-sample' : 'network-load-vendor-sample'); setBusy(button, true, 'Importing sample…');
     try {
-      const sample = await request('/sample/network'); if (!Array.isArray(sample.configs) || sample.configs.length < 2) throw new Error('The multi-firewall sample was incomplete.');
+      const sample = await request(endpoint); if (!Array.isArray(sample.configs) || sample.configs.length < 2) throw new Error('The multi-firewall sample was incomplete.');
       const imported = [];
       for (const device of sample.configs) {
-        const response = await request('/imports', { method: 'POST', body: JSON.stringify({ name: device.name || `${device.node_id}.cfg`, config: device.config }) });
+        const response = await request('/imports', { method: 'POST', body: JSON.stringify({ name: device.name || `${device.node_id}.cfg`, config: device.config, vendor: device.vendor || 'auto' }) });
         if (!response.snapshot || !response.snapshot.id) throw new Error(`The ${device.node_id || 'sample'} configuration did not return a snapshot.`);
         state.networkSnapshots.set(response.snapshot.id, response.snapshot);
         imported.push({ node_id: device.node_id, snapshot_id: response.snapshot.id });
@@ -1247,6 +1253,7 @@
     try {
       const body = await request('/sample');
       $('config-input').value = body.config || '';
+      $('config-vendor').value = 'cisco-asa';
       $('config-meta').textContent = body.name ? `Labeled sample · ${body.name}` : 'Labeled ASA sample loaded';
       $('config-meta').dataset.name = body.name || 'labeled-asa-sample.txt';
       $('file-input').value = '';
@@ -1261,6 +1268,7 @@
     try {
       const body = await request('/sample/services');
       $('config-input').value = body.config || '';
+      $('config-vendor').value = 'cisco-asa';
       $('config-meta').textContent = body.name ? `Service-group sample · ${body.name}` : 'Labeled service-group sample loaded';
       $('config-meta').dataset.name = body.name || 'service-group-sample.txt';
       $('file-input').value = '';
@@ -1270,13 +1278,19 @@
     finally { button.disabled = false; }
   }
 
+  async function loadVendorSample(kind) {
+    const button = $(`load-${kind}-sample`); button.disabled = true;
+    try { const sample = await request(`/sample/${kind}`); $('config-input').value = sample.config || ''; $('config-vendor').value = sample.vendor; $('config-meta').textContent = `${vendorName(sample.vendor)} sample · ${sample.name}`; $('config-meta').dataset.name = sample.name; $('file-input').value = ''; refreshControls(); }
+    catch (error) { showToast(error.message, 'error'); } finally { button.disabled = false; }
+  }
+
   async function importConfig() {
     const config = $('config-input').value;
     if (!config.trim()) return;
     const button = $('import-button'); setBusy(button, true, 'Parsing configuration…');
     try {
-      const name = $('config-meta').dataset.name || 'pasted-asa-config.txt';
-      const body = await request('/imports', { method: 'POST', body: JSON.stringify({ name, config }) });
+      const name = $('config-meta').dataset.name || 'pasted-firewall-config.txt';
+      const body = await request('/imports', { method: 'POST', body: JSON.stringify({ name, config, vendor: $('config-vendor').value }) });
       const snapshot = body.snapshot;
       if (!snapshot || !snapshot.id) throw new Error('Import response did not include a snapshot. Refresh and try again.');
       const existing = state.snapshots.some((item) => item.id === snapshot.id);
@@ -1366,7 +1380,10 @@
   }
 
   function wireEvents() {
-    $('network-load-sample').addEventListener('click', loadNetworkSample);
+    $('network-load-sample').addEventListener('click', () => loadNetworkSample());
+    $('network-load-vendor-sample').addEventListener('click', () => loadNetworkSample('/sample/network-multivendor'));
+    $('load-panos-sample').addEventListener('click', () => loadVendorSample('panos'));
+    $('load-fortigate-sample').addEventListener('click', () => loadVendorSample('fortigate'));
     $('network-add-node').addEventListener('click', () => addNetworkNode());
     $('network-add-link').addEventListener('click', () => addNetworkLink());
     $('network-evaluate').addEventListener('click', evaluateNetwork);

@@ -23,14 +23,15 @@ const maxSnapshots = 32
 const maxInvestigations = 256
 const maxRecordBytes = 8 << 20
 
-const workspaceVersion = "graphlayer-workspace-v4"
+const workspaceVersion = "graphlayer-workspace-v5"
+const networkWorkspaceVersion = "graphlayer-workspace-v4"
 const routingWorkspaceVersion = "graphlayer-workspace-v3"
 const priorWorkspaceVersion = "graphlayer-workspace-v2"
 const legacyWorkspaceVersion = "graphlayer-workspace-v1"
 
 var ErrNotFound = errors.New("resource not found")
 var ErrQuota = errors.New("workspace quota reached")
-var ErrInvalidConfig = errors.New("invalid or unsupported ASA configuration")
+var ErrInvalidConfig = errors.New("invalid or unsupported firewall configuration")
 var ErrInvalidFlow = errors.New("invalid policy flow")
 var ErrRecordTooLarge = errors.New("expanded artifact exceeds the storage budget")
 var ErrPathUnavailable = errors.New("snapshot has no supported path metadata")
@@ -177,7 +178,7 @@ func NewStore(dir string) (*Store, error) {
 			return nil, errors.New("invalid workspace record size")
 		}
 		var record diskRecord
-		if json.Unmarshal(data, &record) != nil || (record.Version != workspaceVersion && record.Version != routingWorkspaceVersion && record.Version != priorWorkspaceVersion && record.Version != legacyWorkspaceVersion) || record.SHA256 != digest(record.Data) {
+		if json.Unmarshal(data, &record) != nil || (record.Version != workspaceVersion && record.Version != networkWorkspaceVersion && record.Version != routingWorkspaceVersion && record.Version != priorWorkspaceVersion && record.Version != legacyWorkspaceVersion) || record.SHA256 != digest(record.Data) {
 			return nil, errors.New("workspace record is corrupt or incompatible")
 		}
 		switch record.Kind {
@@ -186,7 +187,7 @@ func NewStore(dir string) (*Store, error) {
 			if json.Unmarshal(record.Data, &snap) != nil || validateSnapshot(&snap) != nil || entry.Name() != "snapshot-"+snap.ID+".json" {
 				return nil, errors.New("invalid stored snapshot")
 			}
-			if record.Version == legacyWorkspaceVersion && snap.ParserVersion != "asa-config-v1" || record.Version == priorWorkspaceVersion && snap.ParserVersion != "asa-config-v2" || (record.Version == workspaceVersion || record.Version == routingWorkspaceVersion) && snap.ParserVersion != firewall.ParserVersion {
+			if record.Version == legacyWorkspaceVersion && snap.ParserVersion != "asa-config-v1" || record.Version == priorWorkspaceVersion && snap.ParserVersion != "asa-config-v2" || (record.Version == networkWorkspaceVersion || record.Version == routingWorkspaceVersion) && (snap.ParserVersion != firewall.ParserVersion || snap.Vendor != "cisco-asa") {
 				return nil, errors.New("snapshot format and parser version are incompatible")
 			}
 			s.snapshots[snap.ID] = append([]byte(nil), record.Data...)
@@ -199,14 +200,20 @@ func NewStore(dir string) (*Store, error) {
 			s.investigations[inv.ID] = append([]byte(nil), record.Data...)
 		case "path-investigation":
 			var inv PathInvestigation
-			if (record.Version != workspaceVersion && record.Version != routingWorkspaceVersion) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "path-investigation-"+inv.ID+".json" {
+			if (record.Version != workspaceVersion && record.Version != networkWorkspaceVersion && record.Version != routingWorkspaceVersion) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "path-investigation-"+inv.ID+".json" {
 				return nil, errors.New("invalid stored path investigation")
+			}
+			if record.Version != workspaceVersion && inv.Result.EngineContractVersion != "graphlayer-path-v1" {
+				return nil, errors.New("path contract does not match workspace format")
 			}
 			s.paths[inv.ID] = append([]byte(nil), record.Data...)
 		case "network-investigation":
 			var inv NetworkInvestigation
-			if record.Version != workspaceVersion || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "network-investigation-"+inv.ID+".json" {
+			if (record.Version != workspaceVersion && record.Version != networkWorkspaceVersion) || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "network-investigation-"+inv.ID+".json" {
 				return nil, errors.New("invalid stored network investigation")
+			}
+			if record.Version != workspaceVersion && inv.Result.EngineContractVersion != "graphlayer-network-path-v1" {
+				return nil, errors.New("network contract does not match workspace format")
 			}
 			s.networks[inv.ID] = append([]byte(nil), record.Data...)
 		default:
@@ -252,6 +259,9 @@ func (s *Store) Close() error {
 }
 
 func validateSnapshot(s *Snapshot) error {
+	if !firewall.SupportedParser(s.Vendor, s.ParserVersion) {
+		return errors.New("unsupported vendor/parser pairing")
+	}
 	if !validID(s.ID) || !validID(s.ArtifactSHA256) || s.ParserVersion == "" || s.Hostname == "" || s.Context == "" || s.ID != snapshotID(s.Config) || s.CreatedAt.IsZero() || len(s.Chains) == 0 || len(s.SourceLines) == 0 {
 		return errors.New("invalid snapshot identity")
 	}
@@ -302,7 +312,15 @@ func validateSnapshot(s *Snapshot) error {
 }
 
 func bundle(s *Snapshot, chain firewall.Chain) policy.Bundle {
-	return policy.Bundle{Scope: policy.Scope{SnapshotID: s.ID, DeviceID: "asa-" + digest([]byte(s.Hostname))[:16], Context: s.Context + "/" + chain.ID}, Complete: chain.Complete, DefaultAction: "deny", Rules: chain.Rules}
+	return policy.Bundle{Scope: policy.Scope{SnapshotID: s.ID, DeviceID: snapshotDeviceID(s), Context: s.Context + "/" + chain.ID}, Complete: chain.Complete, DefaultAction: "deny", Rules: chain.Rules}
+}
+
+func snapshotDeviceID(s *Snapshot) string {
+	prefix := s.Vendor
+	if prefix == "cisco-asa" {
+		prefix = "asa"
+	}
+	return prefix + "-" + digest([]byte(s.Hostname))[:16]
 }
 
 func (s *Store) write(kind, id string, data []byte) error {
@@ -344,7 +362,11 @@ func (s *Store) write(kind, id string, data []byte) error {
 }
 
 func (s *Store) Import(name string, raw []byte) (*Snapshot, bool, error) {
-	parsed, err := firewall.ParseASAConfig(raw)
+	return s.ImportVendor(name, raw, "auto")
+}
+
+func (s *Store) ImportVendor(name string, raw []byte, vendor string) (*Snapshot, bool, error) {
+	parsed, err := firewall.ParseConfig(raw, vendor)
 	if err != nil {
 		return nil, false, ErrInvalidConfig
 	}
@@ -360,7 +382,7 @@ func (s *Store) Import(name string, raw []byte) (*Snapshot, bool, error) {
 	}
 	snap := &Snapshot{ID: snapshotID(*parsed), CreatedAt: time.Now().UTC(), Name: name, SanitizedSHA256: digest(lines), Config: *parsed}
 	if err = validateSnapshot(snap); err != nil {
-		return nil, false, err
+		return nil, false, ErrInvalidConfig
 	}
 	data, err := json.Marshal(snap)
 	if err != nil {

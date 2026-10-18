@@ -2,10 +2,33 @@ package investigation
 
 import (
 	"errors"
+	"github.com/mattpainter701/graphlayer/platform/firewall"
 	"net/http"
 )
 
 func (a *App) networkAPI(w http.ResponseWriter, r *http.Request, parts []string) bool {
+	if len(parts) == 3 && parts[1] == "sample" {
+		switch parts[2] {
+		case "network-multivendor":
+			if r.Method != http.MethodGet {
+				methodError(w)
+			} else {
+				writeJSON(w, 200, vendorNetworkSample())
+			}
+			return true
+		case "panos", "fortigate":
+			if r.Method != http.MethodGet {
+				methodError(w)
+				return true
+			}
+			name, vendor, config := "edge.panos.set.txt", "paloalto-panos", string(firewall.SamplePANOS())
+			if parts[2] == "fortigate" {
+				name, vendor, config = "core.fortios.conf", "fortinet-fortigate", string(firewall.SampleFortiGate())
+			}
+			writeJSON(w, 200, map[string]string{"name": name, "vendor": vendor, "config": config})
+			return true
+		}
+	}
 	if len(parts) == 3 && parts[1] == "sample" && parts[2] == "network" {
 		if r.Method != http.MethodGet {
 			methodError(w)

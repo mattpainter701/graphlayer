@@ -1,5 +1,7 @@
 # Multi-firewall path investigations
 
+This guide records the released ASA composition milestone and workspace-v4 format. The [multi-vendor milestone](MULTI_VENDOR_INVESTIGATIONS.md) adds PAN-OS/FortiOS adapters and workspace-v5 while preserving these results and workflows.
+
 GraphLayer can compose its supported ASA IPv4 path model across explicitly linked configuration snapshots. The investigation shows forward and return hops, original/policy/egress tuples, ACL decisions, selected routes, NAT translations and physical source evidence. This is a configuration model with an explicit established-session assumption, not a live connectivity test.
 
 ## Run the workflow

@@ -209,7 +209,7 @@ func (s *Store) NetworkSummaries() []NetworkSummary {
 }
 
 func (s *Store) validateNetworkInvestigation(inv *NetworkInvestigation) error {
-	if !validID(inv.ID) || inv.CreatedAt.IsZero() || inv.Result.EngineContractVersion != networkpath.ContractVersion {
+	if !validID(inv.ID) || inv.CreatedAt.IsZero() || (inv.Result.EngineContractVersion != networkpath.ContractVersion && inv.Result.EngineContractVersion != networkpath.VendorContractVersion) {
 		return errors.New("invalid network investigation identity or version")
 	}
 	in, err := s.networkInput(inv.Request)
