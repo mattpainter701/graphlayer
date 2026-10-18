@@ -354,7 +354,10 @@ func exploreEstablishedReturn(in Input, forward Result) ([]Candidate, bool, erro
 			}
 		}
 		status := "established"
-		if candidate.Disposition != "modeled_forward" || !strings.EqualFold(candidate.EgressInterface, forward.IngressInterface) || candidate.EgressFlow != reverseFlow(forward.OriginalFlow, in.Scope) {
+		if candidate.Disposition == "blocked" {
+			// The forward session is known and complete routing evidence proves
+			// this return leg has no supported route.
+		} else if candidate.Disposition != "modeled_forward" || !strings.EqualFold(candidate.EgressInterface, forward.IngressInterface) || candidate.EgressFlow != reverseFlow(forward.OriginalFlow, in.Scope) {
 			status = "asymmetric_unknown"
 			candidate.Disposition = "indeterminate"
 			candidate.Reasons = append(candidate.Reasons, "return route candidate does not prove symmetry or exact reverse translation")

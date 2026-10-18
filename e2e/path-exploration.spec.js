@@ -104,7 +104,8 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   const northIndex = result.branches.indexOf(north);
   await branchSelect.selectOption(String(northIndex));
   await page.locator('#exploration-return').selectOption(String(north.returns.indexOf(northReturn)));
-  await expect(page.locator('#exploration-return-status')).toContainText(/asymmetric route candidate/i);
+  await expect(page.locator('#exploration-return-status')).toContainText(/asymmetric route/i);
+  await expect(page.locator('#exploration-return-status')).toContainText(/session unproven/i);
   await expect(page.locator('#exploration-forward-hops')).toContainText('north');
   await expect(page.locator('#exploration-return-hops')).toContainText('south');
   await expect(page.locator('#exploration-forward-hops .path-stage').first()).toContainText('10.1.0.42');
@@ -125,8 +126,7 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#exploration-export').click()]);
   expect(download.suggestedFilename()).toMatch(/^network-exploration-.*\.json$/i);
   const exported = JSON.parse(await readDownload(download));
-  expect(exported.request).toEqual(exploration.request);
-  expect(exported.result.branches.map((branch) => branch.id)).toEqual(result.branches.map((branch) => branch.id));
+  expect(exported).toEqual(exploration);
   await expect(page.locator('#exploration-history-list .exploration-history-open').first()).toBeVisible();
   await page.locator('#exploration-history-list .exploration-history-open').first().click();
   await expect(page.locator('#exploration-result')).toBeVisible();
@@ -144,6 +144,37 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   expect(dimensions.body, JSON.stringify(dimensions)).toBeLessThanOrEqual(390);
 });
 
+test('keeps independently selected return route alternatives visible', async ({ page }) => {
+  await loadSample(page, (sample) => {
+    const core = sample.configs.find((config) => config.node_id === 'core');
+    core.config = core.config.replace(/\r\n/g, '\n').replace('config router static\n', `config router static
+ edit 999
+  set dst 198.51.100.42 255.255.255.255
+  set gateway 172.16.1.2
+  set device "port1"
+ next
+`);
+  });
+  const exploration = await explore(page);
+  const northIndex = exploration.result.branches.findIndex((branch) => branch.forward.hops.some((hop) => hop.node_id === 'north'));
+  expect(northIndex).toBeGreaterThanOrEqual(0);
+  const branch = exploration.result.branches[northIndex];
+  expect(branch.returns).toHaveLength(2);
+  await page.locator('#exploration-branch').selectOption(String(northIndex));
+  await expect(page.locator('#exploration-return option')).toHaveCount(2);
+  for (let index = 0; index < branch.returns.length; index++) {
+    const candidate = branch.returns[index];
+    await page.locator('#exploration-return').selectOption(String(index));
+    await expect(page.locator('#exploration-return')).toHaveValue(String(index));
+    await expect(page.locator('#exploration-return-hops .path-stage')).toHaveCount(candidate.direction.hops.length);
+    await expect(page.locator('#exploration-return-hops .path-stage').nth(1)).toHaveAttribute('data-node-id', candidate.direction.hops[1].node_id);
+    await expect(page.locator('#exploration-return-status')).toContainText(`session ${candidate.session_status}`);
+    await expect(page.locator('#exploration-topology .topology-edge.topology-return')).toHaveCount(candidate.direction.hops.filter((hop) => hop.link).length);
+  }
+  expect(branch.returns.some((candidate) => candidate.asymmetric)).toBe(true);
+  expect(branch.returns.some((candidate) => !candidate.asymmetric && candidate.session_status === 'established')).toBe(true);
+});
+
 test('shows a blocked candidate within the mixed branch result', async ({ page }) => {
   await loadSample(page, (sample) => {
     const north = sample.configs.find((config) => config.node_id === 'north');
@@ -158,7 +189,7 @@ test('shows a blocked candidate within the mixed branch result', async ({ page }
   await expect(page.locator('#exploration-forward-hops')).toContainText(/blocked/i);
 });
 
-test('reports unresolved return coverage when the core has no route to the translated source', async ({ page }) => {
+test('reports blocked returns when the core has no route to the translated source', async ({ page }) => {
   await loadSample(page, (sample) => {
     const core = sample.configs.find((config) => config.node_id === 'core');
     expect(core.config).toContain('set dst 198.51.100.42 255.255.255.255');
@@ -166,10 +197,11 @@ test('reports unresolved return coverage when the core has no route to the trans
   });
   const exploration = await explore(page);
   expect(exploration.result.branches).toHaveLength(2);
-  expect(exploration.result.disposition).toMatch(/indeterminate|blocked/);
+  expect(exploration.result.disposition).toBe('blocked');
   for (const branch of exploration.result.branches) {
     expect(branch.returns.length).toBeGreaterThan(0);
-    expect(branch.returns.some((candidate) => candidate.direction.disposition === 'blocked' || candidate.direction.disposition === 'indeterminate')).toBe(true);
+    expect(branch.disposition).toBe('blocked');
+    expect(branch.returns.every((candidate) => candidate.disposition === 'blocked' && candidate.direction.disposition === 'blocked')).toBe(true);
   }
 });
 

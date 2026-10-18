@@ -199,6 +199,30 @@ func TestExploreReturnPreservesSingleAsymmetricRouteTuple(t *testing.T) {
 	}
 }
 
+func TestExploreReturnMissingRouteKeepsBlock(t *testing.T) {
+	in := explorationBaseInput()
+	in.Config.Path.Routes = []firewall.PathRoute{
+		{ID: "outside-connected", Kind: "connected", Prefix: "198.51.100.0/24", Interface: "outside"},
+		{ID: "forward-host", Kind: "static", Prefix: "203.0.113.10/32", Interface: "outside", NextHop: "198.51.100.1", Distance: 1},
+	}
+	forwardCandidates, _, err := Explore(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forward := forwardCandidates[0].Result
+	if forward.Disposition != "modeled_forward" {
+		t.Fatalf("forward setup failed: %#v", forward)
+	}
+	ret := Input{Scope: in.Scope, Config: in.Config, IngressInterface: forward.EgressInterface, Flow: reverseFlow(forward.EgressFlow, in.Scope)}
+	candidates, _, err := ExploreReturn(ret, &forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Result.Disposition != "blocked" || candidates[0].SessionStatus != "established" || candidates[0].Resolved {
+		t.Fatalf("missing return route was not kept as a known block: %#v", candidates)
+	}
+}
+
 func explorationBaseInput() Input {
 	in := baseInput()
 	in.IngressInterface = "inside"
