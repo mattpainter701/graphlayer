@@ -21,6 +21,8 @@ Read with [the product/architecture plan](ENTERPRISE_OVERHAUL_PLAN.md). IDs are 
 
 ## M1 — One real enterprise investigation
 
+The [workspace/import foundation](WORKSPACE_IMPORTS.md) advances I03/I08/I09/I12 with explicit local workspace/site context, reviewed batch parsing, atomic named snapshot-set publication and a redesigned onboarding shell. Unpublished previews are ephemeral; durable collection jobs, network connectors, credential providers and shared-service authorization remain open. Sites organize evidence and do not create an account boundary.
+
 The first local delivery slice is implemented in the [ASA investigation application](FIREWALL_INVESTIGATION.md). It covers the parser-to-evidence-to-browser path and its automated tests. The guide records each delivered boundary and the remaining enterprise acceptance work; durable jobs, enterprise identity, migrations and generated API clients below are still open.
 
 The next [policy workspace slice](POLICY_WORKSPACE.md) adds service/object dependencies, a paged local inventory and saved predicate explanations. Released v1 records remain readable with verified legacy replay. This does not close the wider vendor corpus, generalized migrations/restore, generated clients or enterprise service acceptance items.

@@ -63,3 +63,5 @@ sample_data/
 /platform/.e2e-runtime/
 /.e2e-exploration-runtime/
 /platform/.e2e-exploration-runtime/
+/.e2e-workspace-runtime/
+/platform/.e2e-workspace-runtime/

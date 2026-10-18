@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mattpainter701/graphlayer/platform/firewall"
@@ -31,12 +32,15 @@ const maxRequestBytes = 4 << 20
 const sessionCookie = "graphlayer_local_session"
 
 type App struct {
-	store     *Store
-	host      string
-	session   string
-	csrf      string
-	importing chan struct{}
-	static    fs.FS
+	store           *Store
+	host            string
+	session         string
+	csrf            string
+	importing       chan struct{}
+	previewMu       sync.Mutex
+	previews        map[string]*importPreview
+	expiredPreviews map[string]time.Time
+	static          fs.FS
 }
 
 // ValidateListenAddress accepts explicit numeric loopback addresses only.
@@ -81,7 +85,7 @@ func NewHandler(store *Store, host string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{store: store, host: host, session: session, csrf: csrf, importing: make(chan struct{}, 1), static: static}, nil
+	return &App{store: store, host: host, session: session, csrf: csrf, importing: make(chan struct{}, 1), previews: make(map[string]*importPreview), expiredPreviews: make(map[string]time.Time), static: static}, nil
 }
 
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -182,6 +186,9 @@ func (a *App) trustedRequest(r *http.Request) bool {
 
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if a.workspaceAPI(w, r, parts) || a.batchImportAPI(w, r, parts) {
+		return
+	}
 	if a.networkAPI(w, r, parts) {
 		return
 	}

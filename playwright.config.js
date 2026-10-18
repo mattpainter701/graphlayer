@@ -22,5 +22,10 @@ module.exports = defineConfig({
     url: 'http://127.0.0.1:8089/api/session',
     reuseExistingServer: false,
     timeout: 120_000,
+  }, {
+    command: 'node ./e2e/start-server.js --workspace',
+    url: 'http://127.0.0.1:8090/api/session',
+    reuseExistingServer: false,
+    timeout: 120_000,
   }],
 });

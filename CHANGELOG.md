@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add named local workspaces, sites and snapshot sets with reviewed multi-vendor batch imports, sanitized previews, revision conflict checks and atomic publication that preserves the previous baseline on failure.
+- Redesign the workspace shell around onboarding, active datasets and source inspection, with persisted baseline selection, exact investigation replay and desktop/mobile end-to-end coverage. Preserve released workspace-v1 through v6 records while adding validated workspace-v7 transactions.
+
 - Add multi-vendor configured path exploration with bounded equal-best route branches, independent asymmetric return candidates, per-branch routing/policy/NAT source evidence and explicit session uncertainty.
 - Add an interactive topology view, branch selection, saved exploration replay/export and a native four-firewall diamond sample. Preserve released workspace-v1 through v5 records while adding validated workspace-v6 exploration artifacts.
 

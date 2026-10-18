@@ -17,7 +17,8 @@
       </a>
       <div class="rail-label">WORKSPACE</div>
       <nav class="nav-list">
-        <a class="nav-item active" href="#investigation" aria-current="page"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Investigations</span><span class="nav-current" aria-hidden="true"></span></a>
+        <a class="nav-item active" href="#workspace-home" aria-current="page"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Workspace home</span><span class="nav-current" aria-hidden="true"></span></a>
+        <a class="nav-item" href="#investigation"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Investigations</span><span class="nav-current" aria-hidden="true"></span></a>
         <a class="nav-item" href="#imports"><span class="nav-icon icon-upload" aria-hidden="true"></span><span>Sources &amp; imports</span></a>
         <a class="nav-item" href="#policy-inventory"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Policy inventory</span></a>
         <a class="nav-item" href="#network-path"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Network path</span></a>
@@ -29,9 +30,45 @@
 
     <main class="main" id="workspace">
       <header class="topbar">
-        <div class="crumb"><span class="crumb-muted">Workspace</span><span class="crumb-slash">/</span><strong>Investigations</strong></div>
-        <div class="topbar-right"><span class="session-pill"><span class="session-dot"></span>Local session</span><button class="icon-button" id="refresh-button" type="button" aria-label="Refresh snapshots and history" title="Refresh">↻</button></div>
+        <div class="crumb"><span class="crumb-muted">Workspace</span><span class="crumb-slash">/</span><strong id="workspace-title">Loading workspace…</strong></div>
+        <div class="topbar-right"><span class="session-pill"><span class="session-dot"></span>Local session</span><button class="icon-button" id="workspace-refresh" type="button" aria-label="Refresh workspace" title="Refresh">↻</button><button class="icon-button legacy-refresh" id="refresh-button" type="button" aria-label="Refresh snapshots and history" title="Refresh">↻</button></div>
       </header>
+
+      <section class="workspace-home" id="workspace-home" aria-labelledby="workspace-home-title">
+        <div class="workspace-welcome">
+          <div><div class="eyebrow">NETWORK POLICY WORKSPACE <span class="eyebrow-line"></span></div><h1 id="workspace-home-title">A clear place to investigate network policy</h1><p>Choose a saved dataset, review configuration files, then publish a named set for analysis.</p></div>
+          <div class="workspace-identity"><span class="workspace-avatar" aria-hidden="true">GL</span><div><span id="workspace-name" class="sr-only">Local workspace</span><label class="scope-label" for="workspace-name-input">WORKSPACE NAME</label><input id="workspace-name-input" type="text" maxlength="80" aria-label="Workspace name" value="Local workspace"></div><button id="workspace-rename" class="text-button" type="button">Save</button></div>
+        </div>
+        <div class="active-set-card" aria-labelledby="active-set-name">
+          <div class="active-set-top"><div class="dataset-mark" aria-hidden="true">◈</div><div class="active-set-copy"><span class="scope-label">CURRENT DATASET</span><h2 id="active-set-name">No active dataset</h2><p id="active-set-site">Choose a saved set or import configurations to get started.</p></div><span class="dataset-status" id="active-set-status">EMPTY</span></div>
+          <div id="active-set-members" class="active-set-members"><div class="dataset-empty">Your active dataset will appear here with its firewall snapshots.</div></div>
+          <div class="active-set-actions"><button class="button button-primary" id="active-set-open-network" type="button" disabled>Investigate this dataset <span aria-hidden="true">→</span></button><label class="field set-picker" for="snapshot-set-list"><span>SAVED DATASETS</span><select id="snapshot-set-list"><option value="">No saved datasets</option></select></label></div>
+        </div>
+        <p id="active-set-scope-note" class="active-set-scope-note" hidden></p>
+        <div class="workspace-flow-heading"><div><span class="scope-label">WORKSPACE FLOW</span><h2>Bring configurations into a dataset</h2></div><span class="workspace-revision" id="workspace-revision">Workspace · loading</span></div>
+        <div class="import-steps">
+          <section class="import-step" aria-labelledby="step-files-title"><div class="step-heading"><span class="step-number">01</span><div><span class="scope-label">CHOOSE</span><h3 id="step-files-title">Add configuration files</h3><p>Up to 8 files · 2 MiB total</p></div></div>
+            <div class="batch-drop"><span class="drop-icon" aria-hidden="true">↑</span><div><strong>Choose firewall configurations</strong><small>ASA, PAN-OS or FortiOS · files stay in this workspace</small></div><label for="batch-file-input" class="button button-secondary button-small">Browse files</label><input id="batch-file-input" class="visually-hidden" type="file" multiple accept=".txt,.cfg,.conf,.config,text/plain"></div>
+            <div class="batch-tools"><button id="batch-load-sample" class="text-button" type="button">Load network exploration sample <span aria-hidden="true">↗</span></button><label class="field vendor-format" for="batch-vendor"><span>FORMAT</span><select id="batch-vendor"><option value="auto">Detect each file</option><option value="cisco-asa">Cisco ASA</option><option value="paloalto-panos">Palo Alto PAN-OS</option><option value="fortinet-fortigate">FortiGate FortiOS</option></select></label></div>
+            <div id="batch-items" class="batch-items" aria-live="polite"><div class="batch-empty">No files added yet. Select one or load the labeled network sample.</div></div>
+            <p class="batch-limit" id="batch-limit">Choose 1–8 files, with a combined size of at most 2 MiB.</p>
+          </section>
+          <section class="import-step" aria-labelledby="step-review-title"><div class="step-heading"><span class="step-number">02</span><div><span class="scope-label">REVIEW</span><h3 id="step-review-title">Validate the batch</h3><p>Review parser results before saving anything.</p></div></div>
+            <div class="review-explainer"><span aria-hidden="true">◎</span><p>Validation shows the detected device, supported policy features and a short sanitized source preview. Invalid files stay out of the published dataset.</p></div>
+            <button class="button button-secondary" id="batch-preview" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Validate configurations</span><span aria-hidden="true">→</span></button>
+            <div id="batch-status" class="batch-status" role="status" aria-live="polite">Add configurations to begin validation.</div>
+            <div id="batch-preview-results" class="batch-preview-results" aria-live="polite"></div>
+          </section>
+          <section class="import-step publish-step" aria-labelledby="step-publish-title"><div class="step-heading"><span class="step-number">03</span><div><span class="scope-label">PUBLISH</span><h3 id="step-publish-title">Save a named dataset</h3><p>Sets group snapshots for a focused investigation.</p></div></div>
+            <label class="field" for="batch-set-name"><span>DATASET NAME <span class="required">*</span></span><input id="batch-set-name" type="text" maxlength="80" placeholder="e.g. Branch network · October"></label>
+            <label class="field" for="batch-site-select"><span>SITE <span class="field-optional">OPTIONAL</span></span><select id="batch-site-select"><option value="">Unassigned</option></select></label>
+            <div class="site-create-box"><strong>Workspace sites</strong><p>Group related firewall configurations by location.</p><div class="site-create-fields"><label class="field" for="site-name"><span>SITE NAME</span><input id="site-name" type="text" maxlength="80" placeholder="e.g. Austin office"></label><label class="field" for="site-description"><span>DESCRIPTION <span class="field-optional">OPTIONAL</span></span><input id="site-description" type="text" maxlength="240" placeholder="Office, region or purpose"></label></div><button class="text-button" id="site-create" type="button">＋ Add site</button></div>
+            <div id="workspace-sites" class="workspace-sites" aria-live="polite"></div>
+            <button class="button button-primary publish-button" id="batch-publish" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Publish dataset</span><span aria-hidden="true">→</span></button>
+            <div class="publish-note">Publishing saves validated snapshots together and activates the new dataset.</div>
+          </section>
+        </div>
+      </section>
 
       <section class="page-heading" id="investigation">
         <div><div class="eyebrow">POLICY ANALYSIS <span class="eyebrow-line"></span></div><h1>Firewall investigation</h1><p class="heading-copy">Trace one concrete flow through an imported, ordered access policy.</p></div>

@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const state = { csrf: '', snapshots: [], snapshot: null, investigation: null, pathInvestigation: null, networkInvestigation: null, networkExploration: null, networkSnapshots: new Map(), busy: false, scopeRequest: 0, toastTimer: 0, selectedObjectID: '', selectedRuleID: '', inventoryPage: 0, objectPage: 0, evidenceTrigger: null };
+  const state = { csrf: '', snapshots: [], snapshot: null, investigation: null, pathInvestigation: null, networkInvestigation: null, networkExploration: null, networkSnapshots: new Map(), busy: false, scopeRequest: 0, toastTimer: 0, selectedObjectID: '', selectedRuleID: '', inventoryPage: 0, objectPage: 0, evidenceTrigger: null, workspace: null, workspaceRequest: 0, workspaceBusy: false, snapshotSets: [], activeSet: null, batch: [], batchBytes: 0, batchDraftVersion: 0, preview: null, previewDraftVersion: -1, previewBusy: false, publishing: false, fileLoading: false };
   const inventoryPageSize = 100;
   const objectPageSize = 50;
   const apiRoot = '/api';
@@ -32,6 +32,11 @@
     if (!response.ok) {
       const code = body && body.error && body.error.code;
       const messages = {
+        workspace_conflict: 'The workspace changed in another view. It has been reloaded; review your changes and try again.',
+        invalid_workspace: 'Use a workspace and dataset name of at most 80 characters.',
+        preview_not_found: 'This validation preview has expired or is unavailable. Validate the configurations again.',
+        preview_expired: 'This validation preview expired. Validate the configurations again before publishing.',
+        invalid_preview: 'The batch has invalid or duplicate configurations. Review the results and validate again.',
         invalid_flow: 'Use concrete IP addresses and valid protocol/port values for this investigation.',
         invalid_path: 'Use a supported ingress interface and a concrete IPv4 flow with valid protocol/port values.',
         path_unavailable: 'This snapshot does not include a usable routing and NAT model. Reimport the configuration after checking its supported path settings.',
@@ -55,7 +60,10 @@
         request_verification: 'Request verification failed. Reload the page and try again.',
         local_access: 'Open this app using its exact loopback URL.'
       };
-      throw new Error(messages[code] || `The request could not be completed (${response.status}).`);
+      const error = new Error(messages[code] || `The request could not be completed (${response.status}).`);
+      error.code = code || '';
+      error.status = response.status;
+      throw error;
     }
     return body || {};
   }
@@ -123,6 +131,7 @@
       : '';
     $('scope-snapshot').title = s ? s.id : '';
     $('scope-device').title = s ? `${s.vendor || 'Cisco ASA'} · ${s.parser_version || 'parser version unavailable'}` : '';
+    if (state.workspace) renderWorkspace();
   }
 
   function refreshControls() {
@@ -161,6 +170,7 @@
     const pathUsesPorts = $('path-protocol').value === 'tcp' || $('path-protocol').value === 'udp';
     ['path-source-port', 'path-destination-port'].forEach((id) => { $(id).disabled = state.busy || !pathAvailable || !pathUsesPorts; });
     document.querySelectorAll('.history-open').forEach((button) => { button.disabled = state.busy; });
+    refreshWorkspaceControls();
   }
 
   function renderPathAvailability(snapshot) {
@@ -1310,6 +1320,7 @@
     const body = await request('/snapshots');
     const snapshots = Array.isArray(body.snapshots) ? body.snapshots : [];
     state.snapshots = snapshots;
+    if (state.workspace) renderWorkspace();
     const select = $('snapshot-select'); select.replaceChildren();
     if (!snapshots.length) {
       select.add(new Option('No snapshots', ''));
@@ -1476,7 +1487,276 @@
     document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
   }
 
+  function workspaceStatus(message, kind = '') {
+    $('batch-status').textContent = message;
+    $('batch-status').dataset.kind = kind;
+  }
+
+  function invalidateBatchPreview(message = '') {
+    state.batchDraftVersion += 1;
+    state.preview = null;
+    state.previewDraftVersion = -1;
+    $('batch-preview-results').replaceChildren();
+    if (message) workspaceStatus(message);
+    refreshWorkspaceControls();
+  }
+
+  function refreshWorkspaceControls() {
+    const enabled = Boolean(state.csrf && state.workspace && !state.busy && !state.workspaceBusy && !state.previewBusy && !state.publishing && !state.fileLoading);
+    const total = state.batch.length;
+    $('batch-preview').disabled = !enabled || total < 1 || total > 8 || state.batchBytes > 2 * 1024 * 1024 || state.batch.some((item) => !item.name.trim() || item.name.length > 128);
+    const previewFresh = Boolean(state.preview && state.previewDraftVersion === state.batchDraftVersion && Date.parse(state.preview.expires_at || '') > Date.now());
+    const previewItems = state.preview && Array.isArray(state.preview.items) ? state.preview.items : [];
+    const allReady = previewFresh && state.preview.valid === true && previewItems.length === total && previewItems.every((item) => item.status === 'ready');
+    $('batch-publish').disabled = !enabled || !allReady || !$('batch-set-name').value.trim();
+    $('batch-load-sample').disabled = !enabled;
+    $('batch-file-input').disabled = !enabled;
+    $('batch-vendor').disabled = !enabled;
+    $('workspace-refresh').disabled = !enabled;
+    $('workspace-rename').disabled = !enabled || !state.workspace;
+    $('workspace-name-input').disabled = !enabled;
+    $('site-create').disabled = !enabled;
+    $('batch-set-name').disabled = !enabled;
+    $('batch-site-select').disabled = !enabled;
+    $('snapshot-set-list').disabled = !state.snapshotSets.length || !enabled;
+    $('active-set-open-network').disabled = !state.activeSet || !Array.isArray(state.activeSet.members) || state.activeSet.members.length < 1;
+    document.querySelectorAll('.batch-item input,.batch-item select,.batch-remove,.member-open').forEach((button) => { button.disabled = !enabled; });
+    document.querySelectorAll('.snapshot-set-activate').forEach((button) => { button.disabled = !enabled || button.dataset.active === 'true'; });
+    $('batch-limit').textContent = total
+      ? `${total} of 8 files · ${(state.batchBytes / 1024).toFixed(1)} KiB of 2 MiB · names up to 128 characters`
+      : 'Choose 1–8 files, with a combined size of at most 2 MiB.';
+  }
+
+  function renderBatchItems() {
+    const host = $('batch-items'); host.replaceChildren();
+    if (!state.batch.length) host.append(el('div', 'batch-empty', 'No files added yet. Select one or load the labeled network sample.'));
+    state.batch.forEach((item, index) => {
+      const row = el('div', 'batch-item');
+      const copy = el('div', 'batch-item-copy'); const name = document.createElement('input'); name.className='batch-name'; name.type='text'; name.value=item.name; name.maxLength=128; name.setAttribute('aria-label',`Source file name ${index+1}`); if (!item.name.trim() || item.name.length > 128) name.setAttribute('aria-invalid','true'); name.addEventListener('input',() => { item.name=name.value; if (!item.name.trim() || item.name.length > 128) name.setAttribute('aria-invalid','true'); else name.removeAttribute('aria-invalid'); invalidateBatchPreview('File name changed. Validate the batch again.'); }); copy.append(name,el('small', '', `${item.bytes.toLocaleString()} bytes`));
+      const vendor = document.createElement('select'); vendor.setAttribute('aria-label', `Format for ${item.name}`);
+      [['auto','Detect'],['cisco-asa','ASA'],['paloalto-panos','PAN-OS'],['fortinet-fortigate','FortiOS']].forEach(([value,label]) => vendor.add(new Option(label,value)));
+      vendor.value = item.vendor || 'auto'; vendor.addEventListener('change', () => { item.vendor = vendor.value; invalidateBatchPreview('Format changed. Validate the batch again.'); });
+      const remove = el('button', 'batch-remove', '×'); remove.type = 'button'; remove.setAttribute('aria-label', `Remove ${item.name}`); remove.addEventListener('click', () => { state.batch.splice(index,1); state.batchBytes = state.batch.reduce((sum,entry) => sum + entry.bytes,0); invalidateBatchPreview('File list changed. Validate the batch again.'); renderBatchItems(); });
+      row.append(copy,vendor,remove); host.append(row);
+    });
+    refreshWorkspaceControls();
+  }
+
+  function renderPreview(preview) {
+    const host = $('batch-preview-results'); host.replaceChildren();
+    (preview.items || []).forEach((item) => {
+      const card = el('article', 'preview-item'); card.dataset.status = item.status || 'invalid';
+      const head = el('div', 'preview-item-head'); head.append(el('strong', '', item.name || 'Configuration'), el('span', 'preview-badge', item.status || 'invalid')); head.lastChild.dataset.status = item.status || 'invalid'; card.append(head);
+      const facts = [item.hostname, item.vendor ? vendorName(item.vendor) : '', item.context, item.parser_version ? `Parser ${item.parser_version}` : '', `${Number(item.chain_count)||0} chains`, `${Number(item.rule_count)||0} rules`, `${Number(item.warning_count)||0} warnings`].filter(Boolean);
+      if (facts.length) card.append(el('p', '', facts.join(' · ')));
+      if (item.error_code) card.append(el('p', '', `Needs attention: ${String(item.error_code).replaceAll('_',' ')}`));
+      if (item.existing) card.append(el('p','','Already saved in this workspace · the published dataset will reuse this snapshot.'));
+      if (Array.isArray(item.warnings) && item.warnings.length) {
+        const warnings = item.warnings.slice(0,20).map((warning) => {
+          if (typeof warning === 'string') return warning;
+          if (!warning || typeof warning !== 'object') return String(warning || 'Warning');
+          const line = warning.line || warning.line_number || warning.source_line;
+          const code = warning.code || warning.kind;
+          return [line ? `Line ${line}` : '', code || '', warning.message || warning.text || 'Warning'].filter(Boolean).join(': ');
+        });
+        const reported = Number(item.warning_count) || warnings.length;
+        card.append(el('p', '', `${reported} parser warning${reported === 1 ? '' : 's'}${reported > warnings.length ? ` · showing ${warnings.length}` : ''}: ${warnings.join(' · ')}`));
+      } else if (Number(item.warning_count) > 0) card.append(el('p','','Warnings are present; detailed warning text was truncated by the parser.'));
+      if (Array.isArray(item.capabilities) && item.capabilities.length) { const caps = el('div','preview-capabilities'); item.capabilities.forEach((name) => caps.append(el('span','',name))); card.append(caps); }
+      if (Array.isArray(item.source_preview) && item.source_preview.length) {
+        const source = el('div','preview-source'); source.setAttribute('aria-label','Sanitized configuration source preview');
+        const omittedLines=Math.max(0,Number(item.source_line_count) - item.source_preview.length);
+        source.textContent = item.source_preview.map((line) => `${line.number}: ${line.text}`).join('\n') + (item.source_preview_truncated || omittedLines > 0 ? `\n… preview truncated${omittedLines ? ` · ${omittedLines} more lines` : ''}` : ''); card.append(source);
+      }
+      host.append(card);
+    });
+  }
+
+  async function readWorkspace() {
+    const requestId = ++state.workspaceRequest;
+    const body = await request('/workspace');
+    if (requestId !== state.workspaceRequest) return false;
+    if (!body.workspace || !Array.isArray(body.snapshot_sets)) throw new Error('Workspace response was incomplete. Refresh the page.');
+    state.workspace = body.workspace; state.snapshotSets = body.snapshot_sets;
+    state.activeSet = state.snapshotSets.find((item) => item.id === body.workspace.active_set_id) || null;
+    renderWorkspace();
+  }
+
+  function renderWorkspace() {
+    const workspace = state.workspace;
+    $('workspace-name').textContent = workspace && workspace.name || 'Local workspace';
+    $('workspace-title').textContent = workspace && workspace.name || 'Workspace';
+    if (document.activeElement !== $('workspace-name-input')) $('workspace-name-input').value = workspace && workspace.name || 'Local workspace';
+    $('workspace-revision').textContent = workspace ? `Workspace · revision ${workspace.revision}` : 'Workspace';
+    const siteSelects = [$('batch-site-select')];
+    siteSelects.forEach((select) => { const prior = select.value; select.replaceChildren(new Option('Unassigned','')); (workspace && workspace.sites || []).forEach((site) => select.add(new Option(site.name,site.id))); if ([...select.options].some((option) => option.value === prior)) select.value = prior; });
+    const siteList = $('workspace-sites'); siteList.replaceChildren();
+    (workspace && workspace.sites || []).forEach((site) => { const row = el('div','workspace-site-row'); row.append(el('strong','',site.name),el('span','',site.description || 'Workspace site')); siteList.append(row); });
+    const setList = $('snapshot-set-list'); const selectedSet=state.activeSet && state.activeSet.id || ''; setList.replaceChildren();
+    if (!state.snapshotSets.length) setList.add(new Option('No saved datasets',''));
+    else { setList.add(new Option('Choose a saved dataset','')); state.snapshotSets.forEach((set) => setList.add(new Option(`${set.name} · ${(set.members || []).length} snapshots`,set.id))); setList.value=selectedSet; }
+    const cardTitle = $('active-set-name'), siteTitle = $('active-set-site'), membersHost = $('active-set-members'), status = $('active-set-status');
+    membersHost.replaceChildren();
+    if (!state.activeSet) { cardTitle.textContent = 'No active dataset'; siteTitle.textContent = 'Choose a saved set or import configurations to get started.'; status.textContent = 'EMPTY'; status.classList.remove('is-active'); membersHost.append(el('div','dataset-empty','Your active dataset will appear here with its firewall snapshots.')); }
+    else {
+      cardTitle.textContent = state.activeSet.name || 'Untitled dataset';
+      const site = (workspace.sites || []).find((entry) => entry.id === state.activeSet.site_id);
+      siteTitle.textContent = site ? `${site.name}${site.description ? ` · ${site.description}` : ''}` : 'Unassigned site';
+      status.textContent = 'ACTIVE'; status.classList.add('is-active');
+      (state.activeSet.members || []).forEach((member) => {
+        const row = el('div','dataset-member'); row.append(el('span','member-symbol','FW'));
+        const snapshot=state.snapshots.find((entry) => entry.id === member.snapshot_id);
+        const copy = el('div','dataset-member-copy'); copy.append(el('strong','',snapshot && (snapshot.hostname || snapshot.name) || member.name || `Snapshot ${String(member.snapshot_id || '').slice(0,8)}`),el('small','',[snapshot ? vendorName(snapshot.vendor) : 'Snapshot',snapshot && snapshot.context,snapshot && snapshot.name].filter(Boolean).join(' · ') || String(member.snapshot_id || '').slice(0,8)));
+        const open = el('button','member-open','Inspect'); open.type = 'button'; open.addEventListener('click', () => loadSnapshot(member.snapshot_id).then((ok) => { if (ok) $('investigation').scrollIntoView({behavior:'smooth'}); })); row.append(copy,open); membersHost.append(row);
+      });
+      if (!(state.activeSet.members || []).length) membersHost.append(el('div','dataset-empty','This dataset has no snapshots yet.'));
+    }
+    const memberIds = new Set((state.activeSet && state.activeSet.members || []).map((member) => member.snapshot_id));
+    const outside = Boolean(state.snapshot && state.activeSet && !memberIds.has(state.snapshot.id));
+    $('active-set-scope-note').hidden = !outside;
+    $('active-set-scope-note').textContent = outside ? `The current investigation uses ${summaryName(state.snapshot)}, which is outside the active dataset “${state.activeSet.name}”.` : '';
+    refreshWorkspaceControls();
+  }
+
+  async function refreshWorkspaceView() {
+    $('workspace-refresh').classList.add('rotating');
+    try { await readWorkspace(); await loadSnapshots(state.snapshot && state.snapshot.id || ''); await loadHistory(); await loadNetworkHistory(); await loadExplorationHistory(); }
+    catch (error) { if (error.code === 'workspace_conflict') { try { await readWorkspace(); } catch (_) {} } showToast(error.message,'error'); }
+    finally { window.setTimeout(() => $('workspace-refresh').classList.remove('rotating'),400); }
+  }
+
+  async function handleWorkspaceError(error) {
+    if (error.code === 'workspace_conflict') { try { await readWorkspace(); } catch (_) {} }
+    showToast(error.message,'error');
+  }
+
+  async function renameWorkspace() {
+    const value = $('workspace-name-input').value.trim();
+    if (!value || value.length > 80) { $('workspace-name-input').setAttribute('aria-invalid','true'); showToast('Enter a workspace name from 1 to 80 characters.','error'); return; }
+    $('workspace-name-input').removeAttribute('aria-invalid'); state.workspaceBusy=true; refreshWorkspaceControls();
+    try { const body = await request('/workspace',{method:'PUT',body:JSON.stringify({name:value,expected_revision:state.workspace.revision})}); state.workspace = body.workspace; await readWorkspace(); showToast('Workspace renamed.'); }
+    catch(error) { await handleWorkspaceError(error); }
+    finally { state.workspaceBusy=false; refreshWorkspaceControls(); }
+  }
+
+  async function createWorkspaceSite() {
+    const name = $('site-name').value.trim(), description = $('site-description').value.trim();
+    if (!name || name.length > 80 || description.length > 240) { $('site-name').setAttribute('aria-invalid',String(!name || name.length > 80)); showToast('Enter a site name from 1 to 80 characters.','error'); return; }
+    $('site-name').removeAttribute('aria-invalid');
+    state.workspaceBusy=true; refreshWorkspaceControls();
+    try { const body = await request('/sites',{method:'POST',body:JSON.stringify({name,description,expected_revision:state.workspace.revision})}); state.workspace = body.workspace; $('site-name').value=''; $('site-description').value=''; await readWorkspace(); $('batch-site-select').value = body.site.id; showToast('Workspace site added.'); }
+    catch(error) { await handleWorkspaceError(error); }
+    finally { state.workspaceBusy=false; refreshWorkspaceControls(); }
+  }
+
+  async function addBatchFiles(files) {
+    if (!files || !files.length || state.fileLoading) return;
+    const additions = [...files];
+    if (state.batch.length + additions.length > 8) { showToast('A batch can contain at most 8 files.','error'); return; }
+    const size = additions.reduce((sum,file) => sum + file.size, state.batchBytes);
+    if (size > 2 * 1024 * 1024) { showToast('The batch exceeds the 2 MiB total size limit.','error'); return; }
+    const draftVersion=state.batchDraftVersion; state.fileLoading=true; refreshWorkspaceControls();
+    try {
+      const defaultVendor = $('batch-vendor').value;
+      const loaded=[];
+      for (const file of additions) loaded.push({name:file.name,config:await file.text(),vendor:defaultVendor,bytes:file.size});
+      if (draftVersion !== state.batchDraftVersion) { workspaceStatus('The batch changed while files were loading. Select the files again to add them.','error'); return; }
+      state.batch.push(...loaded);
+      state.batchBytes = size; invalidateBatchPreview('File list changed. Validate the batch before publishing.'); renderBatchItems();
+    } catch (_) { showToast('A selected configuration file could not be read.','error'); }
+    finally { state.fileLoading=false; refreshWorkspaceControls(); }
+  }
+
+  async function loadBatchSample() {
+    if (state.fileLoading) return;
+    const button = $('batch-load-sample'); const draftVersion=state.batchDraftVersion; state.fileLoading=true; refreshWorkspaceControls(); button.disabled = true;
+    try {
+      const body = await request('/sample/network-exploration');
+      if (draftVersion !== state.batchDraftVersion) { workspaceStatus('The batch changed while the sample was loading. The current files were kept; load the sample again to replace them.','error'); return; }
+      if (!Array.isArray(body.configs) || body.configs.length < 1 || body.configs.length > 8) throw new Error('The network exploration sample was incomplete.');
+      const sampleBatch = body.configs.map((item) => ({name:item.name || `${item.node_id || 'firewall'}.cfg`,config:item.config || '',vendor:item.vendor || 'auto',bytes:new Blob([item.config || '']).size}));
+      const bytes = sampleBatch.reduce((sum,item) => sum + item.bytes,0);
+      if (bytes > 2*1024*1024) throw new Error('The network exploration sample exceeds the 2 MiB batch limit.');
+      state.batch = sampleBatch; state.batchBytes = bytes; invalidateBatchPreview('Sample loaded. Validate it to review parser results.'); renderBatchItems();
+    } catch(error) { showToast(error.message,'error'); }
+    finally { state.fileLoading=false; refreshWorkspaceControls(); }
+  }
+
+  async function previewBatch() {
+    const draftVersion = state.batchDraftVersion;
+    if (!state.batch.length || state.batch.length > 8 || state.batchBytes > 2*1024*1024) return;
+    state.previewBusy = true; $('batch-preview').classList.add('is-loading'); $('batch-status').textContent = 'Validating configuration files…'; $('batch-status').dataset.kind = ''; refreshWorkspaceControls();
+    try {
+      const body = await request('/import-previews',{method:'POST',body:JSON.stringify({items:state.batch.map(({name,config,vendor}) => ({name,config,vendor}))})});
+      if (draftVersion !== state.batchDraftVersion) { workspaceStatus('Files or formats changed during validation. Validate the current batch again.'); return; }
+      if (!body.preview || !Array.isArray(body.preview.items)) throw new Error('The validation response was incomplete. Try again.');
+      state.preview = body.preview; state.previewDraftVersion = draftVersion; renderPreview(body.preview);
+      const ready = body.preview.items.filter((item) => item.status === 'ready').length;
+      const invalid = body.preview.items.length - ready;
+      workspaceStatus(`${ready} of ${body.preview.items.length} configurations ready${invalid ? ` · ${invalid} need attention` : ''}. ${body.preview.valid ? 'You can publish this batch.' : 'Resolve the listed issues and validate again.'}`, body.preview.valid ? 'success' : 'error');
+    } catch(error) { if (draftVersion === state.batchDraftVersion) { state.preview=null; state.previewDraftVersion=-1; workspaceStatus(error.message,'error'); } }
+    finally { state.previewBusy=false; $('batch-preview').classList.remove('is-loading'); refreshWorkspaceControls(); }
+  }
+
+  async function publishBatch() {
+    if (!state.preview || state.previewDraftVersion !== state.batchDraftVersion || Date.parse(state.preview.expires_at || '') <= Date.now()) { invalidateBatchPreview('Preview expired or changed. Validate the current batch again.'); return; }
+    const setName = $('batch-set-name').value.trim();
+    if (!setName || setName.length > 80) { $('batch-set-name').setAttribute('aria-invalid','true'); showToast('Enter a dataset name from 1 to 80 characters.','error'); return; }
+    $('batch-set-name').removeAttribute('aria-invalid');
+    const revision = state.workspace.revision; const submittedDraft = state.batchDraftVersion; const previewId = state.preview.id;
+    state.publishing=true; $('batch-publish').classList.add('is-loading'); $('batch-status').textContent='Publishing the validated dataset…'; $('batch-status').dataset.kind=''; refreshWorkspaceControls();
+    try {
+      const body = await request(`/import-previews/${encodeURIComponent(previewId)}/publish`,{method:'POST',body:JSON.stringify({set_name:setName,site_id:$('batch-site-select').value || '',expected_revision:revision})});
+      if (!body.snapshot_set || !body.workspace) throw new Error('The publish response was incomplete. Refresh the workspace to confirm the saved dataset.');
+      state.workspace = body.workspace; state.preview=null; state.previewDraftVersion=-1;
+      await readWorkspace(); await loadSnapshots(state.snapshot && state.snapshot.id || '');
+      await loadHistory();
+      if (submittedDraft === state.batchDraftVersion) { state.batch=[]; state.batchBytes=0; $('batch-set-name').value=''; $('batch-preview-results').replaceChildren(); renderBatchItems(); workspaceStatus('Dataset published and activated. You can inspect each snapshot or investigate the dataset below.','success'); }
+      else workspaceStatus('Dataset published and activated. The files edited during publication remain in the batch; the active dataset has been refreshed.','success');
+      $('active-set-name').scrollIntoView({behavior:'smooth',block:'center'});
+    } catch(error) { if (error.code === 'workspace_conflict') { try { await readWorkspace(); } catch(_) {} } workspaceStatus(error.message,'error'); showToast(error.message,'error'); }
+    finally { state.publishing=false; $('batch-publish').classList.remove('is-loading'); refreshWorkspaceControls(); }
+  }
+
+  async function activateSnapshotSet(setId) {
+    const set = state.snapshotSets.find((item) => item.id === setId); if (!set || !state.workspace) return;
+    state.workspaceBusy=true; refreshWorkspaceControls();
+    try {
+      await request(`/snapshot-sets/${encodeURIComponent(setId)}/activate`,{method:'POST',body:JSON.stringify({expected_revision:state.workspace.revision})});
+      await readWorkspace();
+      if (!state.workspace || state.workspace.active_set_id !== setId) { showToast('Another workspace view activated a different dataset. The current selection has been refreshed.','error'); return; }
+      showToast(`Dataset “${set.name}” is active.`);
+    }
+    catch(error) { await handleWorkspaceError(error); }
+    finally { state.workspaceBusy=false; refreshWorkspaceControls(); }
+  }
+
+  function openActiveSetNetwork() {
+    const members = state.activeSet && state.activeSet.members || [];
+    if (!members.length) return;
+    $('network-nodes').replaceChildren(); $('network-links').replaceChildren();
+    members.slice(0,16).forEach((member,index) => addNetworkNode({node_id:`device${index+1}`}));
+    members.slice(0,16).forEach((member,index) => { const row=networkNodeRows()[index]; if (row) row.querySelector('.network-snapshot-id').value=member.snapshot_id; });
+    refreshNetworkTopology(); clearNetworkResult();
+    $('network-status').textContent = `Loaded ${Math.min(members.length,16)} dataset snapshots as devices. Declare real links and endpoints before tracing.`;
+    $('network-source-interface').value=''; $('network-destination-interface').value='';
+    $('network-source-node').value='device1'; $('network-destination-node').value=`device${Math.min(members.length,16)}`;
+    $('network-path').scrollIntoView({behavior:'smooth',block:'start'}); $('network-source-interface').focus({preventScroll:true});
+  }
+
   function wireEvents() {
+    $('workspace-refresh').addEventListener('click', refreshWorkspaceView);
+    $('workspace-rename').addEventListener('click', renameWorkspace);
+    $('workspace-name-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); renameWorkspace(); } });
+    $('site-create').addEventListener('click', createWorkspaceSite);
+    $('batch-file-input').addEventListener('change', async (event) => { await addBatchFiles(event.target.files); event.target.value=''; });
+    $('batch-load-sample').addEventListener('click', loadBatchSample);
+    $('batch-preview').addEventListener('click', previewBatch);
+    $('batch-publish').addEventListener('click', publishBatch);
+    $('batch-set-name').addEventListener('input', () => { $('batch-set-name').removeAttribute('aria-invalid'); refreshWorkspaceControls(); });
+    $('batch-vendor').addEventListener('change', () => { if (!state.batch.length) return; state.batch.forEach((item) => { item.vendor=$('batch-vendor').value; }); invalidateBatchPreview('Batch format changed. Validate the batch again.'); renderBatchItems(); });
+    $('snapshot-set-list').addEventListener('change', (event) => { if (event.target.value && event.target.value !== (state.activeSet && state.activeSet.id)) activateSnapshotSet(event.target.value); });
+    $('active-set-open-network').addEventListener('click', openActiveSetNetwork);
     $('network-load-sample').addEventListener('click', () => loadNetworkSample());
     $('network-load-vendor-sample').addEventListener('click', () => loadNetworkSample('/sample/network-multivendor'));
     $('network-load-exploration-sample').addEventListener('click', () => loadNetworkSample('/sample/network-exploration'));
@@ -1548,7 +1828,9 @@
     ['flow-source', 'flow-destination', 'flow-source-port', 'flow-destination-port'].forEach((id) => $(id).addEventListener('input', () => clearResult()));
     document.querySelectorAll('.nav-item').forEach((link) => link.addEventListener('click', (event) => {
       const target = link.getAttribute('href');
-      if (target === '#imports') { event.preventDefault(); $('config-input').focus(); $('imports').scrollIntoView({ behavior: 'smooth' }); }
+      document.querySelectorAll('.nav-item').forEach((item) => { const active=item === link; item.classList.toggle('active',active); if (active) item.setAttribute('aria-current','page'); else item.removeAttribute('aria-current'); });
+      if (target === '#workspace-home') { event.preventDefault(); $('workspace-home').scrollIntoView({ behavior: 'smooth' }); }
+      else if (target === '#imports') { event.preventDefault(); $('config-input').focus(); $('imports').scrollIntoView({ behavior: 'smooth' }); }
       else if (target === '#policy-inventory' || target === '#objects') { event.preventDefault(); const section = $(target.slice(1)); section.scrollIntoView({ behavior: 'smooth' }); (target === '#policy-inventory' ? $('inventory-search') : $('object-search')).focus({ preventScroll: true }); }
       else if (target === '#investigation') { event.preventDefault(); $('flow-source').focus(); }
     }));
@@ -1560,6 +1842,7 @@
       const session = await request('/session');
       state.csrf = session.csrf_token || '';
       if (!state.csrf) throw new Error('The local session could not be initialized. Reload the page.');
+      await readWorkspace();
       await loadSnapshots();
       await loadHistory();
       await loadNetworkHistory();
