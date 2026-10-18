@@ -29,6 +29,8 @@ type L3RoutingTable struct {
 	VirtualContext string              `json:"virtual_context" bson:"virtual_context"` // VRF/VDOM name
 	VirtualRouter  string              `json:"virtual_router" bson:"virtual_router"`   // Virtual router name
 	Routes         []L3Route           `json:"routes" bson:"routes"`
+	OSPFProcesses  []OSPFProcess       `json:"ospf_processes,omitempty" bson:"ospf_processes,omitempty"`
+	BGPProcesses   []BGPProcess        `json:"bgp_processes,omitempty" bson:"bgp_processes,omitempty"`
 	DefaultRoute   *L3Route            `json:"default_route,omitempty" bson:"default_route,omitempty"`
 	ConfigHash     string              `json:"config_hash" bson:"config_hash"`       // SHA-256 hash of routing config
 	InsertedTime   time.Time           `json:"inserted_time" bson:"inserted_time"`

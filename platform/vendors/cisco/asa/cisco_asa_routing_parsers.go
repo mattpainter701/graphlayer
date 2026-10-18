@@ -43,12 +43,13 @@ type ASARoutingParserContext struct {
 //
 // Example output:
 // Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-//        D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-//        N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-//        E1 - OSPF external type 1, E2 - OSPF external type 2
-//        i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
 //
-// Gateway of last resort is 10.0.0.1 to network 0.0.0.0
+//	D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+//	N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+//	E1 - OSPF external type 1, E2 - OSPF external type 2
+//	i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+//
+// # Gateway of last resort is 10.0.0.1 to network 0.0.0.0
 //
 // S*   0.0.0.0 0.0.0.0 [1/0] via 10.0.0.1, outside
 // C    10.1.1.0 255.255.255.0 is directly connected, inside
@@ -62,7 +63,7 @@ func ParseASARoutingTable(output string) ([]models.L3Route, error) {
 
 	// Regex patterns for different route types
 	// ASA route format: <code> <prefix> <mask> [AD/metric] via <nexthop>, <time>, <interface>
-	routePattern := regexp.MustCompile(`^([A-Z*]+)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+(?:\[(\d+)/(\d+)\]\s+)?via\s+(\d+\.\d+\.\d+\.\d+)(?:,\s+(.+?))(?:,\s+(.+))?$`)
+	routePattern := regexp.MustCompile(`^([A-Z*]+(?:\s+[A-Z0-9]+)?)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+(?:\[(\d+)/(\d+)\]\s+)?via\s+(\d+\.\d+\.\d+\.\d+)(?:,\s+(.+?))(?:,\s+(.+))?$`)
 	connectedPattern := regexp.MustCompile(`^([CL])\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+is\s+directly\s+connected,\s+(.+)$`)
 
 	for _, line := range lines {
@@ -78,7 +79,7 @@ func ParseASARoutingTable(output string) ([]models.L3Route, error) {
 				NextHop:   "0.0.0.0", // Directly connected
 				Interface: matches[4],
 				Metric:    0,
-				Metadata:  make(map[string]interface{}),
+				IsActive:  true,
 			}
 
 			// Protocol determination
@@ -88,7 +89,7 @@ func ParseASARoutingTable(output string) ([]models.L3Route, error) {
 			} else if matches[1] == "L" {
 				route.Protocol = "local"
 				route.AdminDistance = 0
-				route.Metadata["route_type"] = "local_interface_address"
+				route.Description = "Local interface address route"
 			}
 
 			routes = append(routes, route)
@@ -100,18 +101,18 @@ func ParseASARoutingTable(output string) ([]models.L3Route, error) {
 			route := models.L3Route{
 				Prefix:   convertASANetmaskToCIDR(matches[2], matches[3]),
 				NextHop:  matches[6],
-				Metadata: make(map[string]interface{}),
+				IsActive: true,
 			}
 
 			// Parse admin distance and metric
 			if matches[4] != "" {
 				if ad, err := strconv.ParseUint(matches[4], 10, 32); err == nil {
-					route.AdminDistance = uint32(ad)
+					route.AdminDistance = int(ad)
 				}
 			}
 			if matches[5] != "" {
 				if metric, err := strconv.ParseUint(matches[5], 10, 32); err == nil {
-					route.Metric = uint32(metric)
+					route.Metric = int(metric)
 				}
 			}
 
@@ -125,13 +126,12 @@ func ParseASARoutingTable(output string) ([]models.L3Route, error) {
 
 			// Parse route age if present
 			if matches[7] != "" && strings.Contains(matches[7], ":") {
-				route.Metadata["age"] = matches[7]
+				route.Description = "Route age " + matches[7]
 			}
 
 			// Protocol determination from route code
 			routeCode := matches[1]
 			route.Protocol = parseASARouteCode(routeCode)
-			route.Metadata["route_code"] = routeCode
 
 			routes = append(routes, route)
 		}
@@ -144,14 +144,15 @@ func ParseASARoutingTable(output string) ([]models.L3Route, error) {
 //
 // Example output:
 // router ospf 1
-//  router-id 10.0.0.1
-//  network 10.1.1.0 255.255.255.0 area 0
-//  network 192.168.1.0 255.255.255.0 area 10
-//  area 10 stub
-//  log-adj-changes
-//  redistribute static subnets route-map STATIC-TO-OSPF
-//  redistribute connected subnets
-//  default-information originate
+//
+//	router-id 10.0.0.1
+//	network 10.1.1.0 255.255.255.0 area 0
+//	network 192.168.1.0 255.255.255.0 area 10
+//	area 10 stub
+//	log-adj-changes
+//	redistribute static subnets route-map STATIC-TO-OSPF
+//	redistribute connected subnets
+//	default-information originate
 func ParseASAOSPFConfig(output string) (*models.OSPFProcess, error) {
 	lines := strings.Split(output, "\n")
 
@@ -171,11 +172,12 @@ func ParseASAOSPFConfig(output string) (*models.OSPFProcess, error) {
 
 		// Match process ID
 		if matches := processPattern.FindStringSubmatch(line); matches != nil {
+			processID, _ := strconv.Atoi(matches[1])
 			ospfProcess = &models.OSPFProcess{
-				ProcessID: matches[1],
+				ProcessID: processID,
 				Areas:     []models.OSPFArea{},
 				Neighbors: []models.OSPFNeighbor{},
-				Metadata:  make(map[string]interface{}),
+				Networks:  []models.OSPFNetwork{},
 			}
 			continue
 		}
@@ -199,16 +201,14 @@ func ParseASAOSPFConfig(output string) (*models.OSPFProcess, error) {
 			// Create area if it doesn't exist
 			if _, exists := areaMap[areaID]; !exists {
 				areaMap[areaID] = &models.OSPFArea{
-					AreaID:     areaID,
-					AreaType:   "normal",
-					Networks:   []string{},
-					Interfaces: []string{},
+					AreaID:   areaID,
+					AreaType: "normal",
 				}
 			}
 
 			// Add network to area
 			cidr := convertASANetmaskToCIDR(network, netmask)
-			areaMap[areaID].Networks = append(areaMap[areaID].Networks, cidr)
+			ospfProcess.Networks = append(ospfProcess.Networks, models.OSPFNetwork{Network: cidr, AreaID: areaID, Wildcard: netmask})
 			continue
 		}
 
@@ -231,10 +231,7 @@ func ParseASAOSPFConfig(output string) (*models.OSPFProcess, error) {
 			areaID := matches[1]
 			cost := matches[2]
 			if area, exists := areaMap[areaID]; exists {
-				if area.Metadata == nil {
-					area.Metadata = make(map[string]interface{})
-				}
-				area.Metadata["default_cost"] = cost
+				area.DefaultCost, _ = strconv.Atoi(cost)
 			}
 			continue
 		}
@@ -243,12 +240,8 @@ func ParseASAOSPFConfig(output string) (*models.OSPFProcess, error) {
 		if matches := redistributePattern.FindStringSubmatch(line); matches != nil {
 			protocol := strings.ToLower(matches[1])
 			switch protocol {
-			case "static":
-				ospfProcess.RedistributeStatic = true
-			case "connected":
-				ospfProcess.RedistributeConnected = true
-			case "bgp":
-				ospfProcess.RedistributeBGP = true
+			default:
+				ospfProcess.RedistributedProtocols = append(ospfProcess.RedistributedProtocols, protocol)
 			}
 			continue
 		}
@@ -305,12 +298,11 @@ func ParseASAOSPFNeighbors(output string) ([]models.OSPFNeighbor, error) {
 			NeighborID: fields[0],
 			IPAddress:  fields[4],
 			Interface:  fields[5],
-			Metadata:   make(map[string]interface{}),
 		}
 
 		// Parse priority
-		if priority, err := strconv.ParseUint(fields[1], 10, 32); err == nil {
-			neighbor.Priority = uint32(priority)
+		if priority, err := strconv.Atoi(fields[1]); err == nil {
+			neighbor.Priority = priority
 		}
 
 		// Parse state (format: "FULL/BDR" or "FULL/  -")
@@ -320,13 +312,13 @@ func ParseASAOSPFNeighbors(output string) ([]models.OSPFNeighbor, error) {
 			if len(stateParts) > 1 {
 				role := strings.TrimSpace(stateParts[1])
 				if role != "-" {
-					neighbor.Metadata["role"] = role
+					neighbor.Role = role
 				}
 			}
 		}
 
 		// Dead time
-		neighbor.Metadata["dead_time"] = fields[3]
+		neighbor.DeadTime = durationSeconds(fields[3])
 
 		neighbors = append(neighbors, neighbor)
 	}
@@ -338,18 +330,19 @@ func ParseASAOSPFNeighbors(output string) ([]models.OSPFNeighbor, error) {
 //
 // Example output:
 // router bgp 65001
-//  bgp router-id 10.0.0.1
-//  bgp log-neighbor-changes
-//  address-family ipv4 unicast
-//   neighbor 203.0.113.1 remote-as 65100
-//   neighbor 203.0.113.1 description ISP1
-//   neighbor 198.51.100.1 remote-as 65200
-//   neighbor 10.1.1.10 remote-as 65001
-//   neighbor 10.1.1.10 route-reflector-client
-//   network 10.0.0.0 mask 255.0.0.0
-//   redistribute static
-//   redistribute connected
-//  exit-address-family
+//
+//	bgp router-id 10.0.0.1
+//	bgp log-neighbor-changes
+//	address-family ipv4 unicast
+//	 neighbor 203.0.113.1 remote-as 65100
+//	 neighbor 203.0.113.1 description ISP1
+//	 neighbor 198.51.100.1 remote-as 65200
+//	 neighbor 10.1.1.10 remote-as 65001
+//	 neighbor 10.1.1.10 route-reflector-client
+//	 network 10.0.0.0 mask 255.0.0.0
+//	 redistribute static
+//	 redistribute connected
+//	exit-address-family
 func ParseASABGPConfig(output string) (*models.BGPProcess, error) {
 	lines := strings.Split(output, "\n")
 
@@ -369,11 +362,11 @@ func ParseASABGPConfig(output string) (*models.BGPProcess, error) {
 
 		// Match BGP process
 		if matches := processPattern.FindStringSubmatch(line); matches != nil {
-			asNum, _ := strconv.ParseUint(matches[1], 10, 32)
+			asNum, _ := strconv.Atoi(matches[1])
 			bgpProcess = &models.BGPProcess{
-				LocalAS:   uint32(asNum),
-				Neighbors: []models.BGPNeighbor{},
-				Metadata:  make(map[string]interface{}),
+				LocalAS:                asNum,
+				Neighbors:              []models.BGPNeighbor{},
+				RedistributedProtocols: []string{},
 			}
 			continue
 		}
@@ -391,17 +384,12 @@ func ParseASABGPConfig(output string) (*models.BGPProcess, error) {
 		// Match neighbor remote-as
 		if matches := neighborASPattern.FindStringSubmatch(line); matches != nil {
 			neighborIP := matches[1]
-			remoteAS, _ := strconv.ParseUint(matches[2], 10, 32)
+			remoteAS, _ := strconv.Atoi(matches[2])
 
 			if _, exists := neighborMap[neighborIP]; !exists {
-				neighborMap[neighborIP] = &models.BGPNeighbor{
-					NeighborID: neighborIP, // Will be updated if we get real neighbor ID
-					IPAddress:  neighborIP,
-					RemoteAS:   uint32(remoteAS),
-					Metadata:   make(map[string]interface{}),
-				}
+				neighborMap[neighborIP] = &models.BGPNeighbor{IPAddress: neighborIP, RemoteAS: remoteAS}
 			} else {
-				neighborMap[neighborIP].RemoteAS = uint32(remoteAS)
+				neighborMap[neighborIP].RemoteAS = remoteAS
 			}
 			continue
 		}
@@ -412,7 +400,7 @@ func ParseASABGPConfig(output string) (*models.BGPProcess, error) {
 			description := matches[2]
 
 			if neighbor, exists := neighborMap[neighborIP]; exists {
-				neighbor.Metadata["description"] = description
+				neighbor.Description = description
 			}
 			continue
 		}
@@ -421,7 +409,7 @@ func ParseASABGPConfig(output string) (*models.BGPProcess, error) {
 		if matches := neighborRRPattern.FindStringSubmatch(line); matches != nil {
 			neighborIP := matches[1]
 			if neighbor, exists := neighborMap[neighborIP]; exists {
-				neighbor.Metadata["is_route_reflector_client"] = true
+				neighbor.RouteReflectorClient = true
 			}
 			continue
 		}
@@ -430,12 +418,8 @@ func ParseASABGPConfig(output string) (*models.BGPProcess, error) {
 		if matches := redistributePattern.FindStringSubmatch(line); matches != nil {
 			protocol := strings.ToLower(matches[1])
 			switch protocol {
-			case "static":
-				bgpProcess.RedistributeStatic = true
-			case "connected":
-				bgpProcess.RedistributeConnected = true
-			case "ospf":
-				bgpProcess.RedistributeOSPF = true
+			default:
+				bgpProcess.RedistributedProtocols = append(bgpProcess.RedistributedProtocols, protocol)
 			}
 			continue
 		}
@@ -452,8 +436,8 @@ func ParseASABGPConfig(output string) (*models.BGPProcess, error) {
 
 	// Set route reflector ID if any neighbors are RR clients
 	for _, neighbor := range bgpProcess.Neighbors {
-		if isRRClient, ok := neighbor.Metadata["is_route_reflector_client"].(bool); ok && isRRClient {
-			bgpProcess.RouteReflectorID = bgpProcess.RouterID
+		if neighbor.RouteReflectorClient {
+			bgpProcess.RouteReflector = true
 			break
 		}
 	}
@@ -499,30 +483,28 @@ func ParseASABGPSummary(output string) (map[string]models.BGPNeighbor, error) {
 		}
 
 		neighborIP := fields[0]
-		remoteAS, _ := strconv.ParseUint(fields[2], 10, 32)
+		remoteAS, _ := strconv.Atoi(fields[2])
 		uptime := fields[8]
 		state := fields[9]
 
 		neighbor := models.BGPNeighbor{
-			NeighborID: neighborIP,
-			IPAddress:  neighborIP,
-			RemoteAS:   uint32(remoteAS),
-			Metadata:   make(map[string]interface{}),
+			IPAddress: neighborIP,
+			RemoteAS:  remoteAS,
 		}
 
 		// Determine state
 		if _, err := strconv.Atoi(state); err == nil {
 			// It's a number, meaning Established with prefix count
 			neighbor.State = "Established"
-			neighbor.Metadata["prefix_count"] = state
+			neighbor.PrefixesReceived, _ = strconv.Atoi(state)
 		} else {
 			// It's a state string (Idle, Active, Connect, etc.)
 			neighbor.State = state
 		}
 
-		neighbor.Metadata["uptime"] = uptime
-		neighbor.Metadata["messages_received"] = fields[3]
-		neighbor.Metadata["messages_sent"] = fields[4]
+		neighbor.UptimeSeconds = durationSeconds(uptime)
+		neighbor.MsgReceived, _ = strconv.Atoi(fields[3])
+		neighbor.MsgSent, _ = strconv.Atoi(fields[4])
 
 		neighbors[neighborIP] = neighbor
 	}
@@ -554,6 +536,19 @@ func convertASANetmaskToCIDR(network, netmask string) string {
 	return fmt.Sprintf("%s/%d", network, bits)
 }
 
+func durationSeconds(value string) int {
+	parts := strings.Split(value, ":")
+	seconds := 0
+	for _, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			return 0
+		}
+		seconds = seconds*60 + n
+	}
+	return seconds
+}
+
 // Helper function: Parse ASA route code to protocol name
 func parseASARouteCode(code string) string {
 	code = strings.TrimSpace(code)
@@ -580,6 +575,16 @@ func parseASARouteCode(code string) string {
 		return "eigrp_external"
 	case "O":
 		return "ospf"
+	case "O IA":
+		return "ospf_inter_area"
+	case "O E1":
+		return "ospf_external_type1"
+	case "O E2":
+		return "ospf_external_type2"
+	case "O N1":
+		return "ospf_nssa_type1"
+	case "O N2":
+		return "ospf_nssa_type2"
 	case "IA":
 		return "ospf_inter_area"
 	case "N1":

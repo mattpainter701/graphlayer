@@ -3,6 +3,7 @@ package cisco
 import (
 	"testing"
 
+	"github.com/mattpainter701/graphlayer/platform/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,17 +35,16 @@ O E2 10.99.0.0 255.255.0.0 [110/1] via 10.1.1.4, 00:05:10, dmz`
 	assert.Equal(t, "0.0.0.0/0", defaultRoute.Prefix)
 	assert.Equal(t, "10.0.0.1", defaultRoute.NextHop)
 	assert.Equal(t, "static", defaultRoute.Protocol)
-	assert.Equal(t, uint32(1), defaultRoute.AdminDistance)
-	assert.Equal(t, uint32(0), defaultRoute.Metric)
+	assert.Equal(t, 1, defaultRoute.AdminDistance)
+	assert.Equal(t, 0, defaultRoute.Metric)
 	assert.Equal(t, "outside", defaultRoute.Interface)
-	assert.Equal(t, "S*", defaultRoute.Metadata["route_code"])
 
 	// Test connected route
 	connectedRoute := routes[1]
 	assert.Equal(t, "10.1.1.0/24", connectedRoute.Prefix)
 	assert.Equal(t, "0.0.0.0", connectedRoute.NextHop)
 	assert.Equal(t, "connected", connectedRoute.Protocol)
-	assert.Equal(t, uint32(0), connectedRoute.AdminDistance)
+	assert.Equal(t, 0, connectedRoute.AdminDistance)
 	assert.Equal(t, "inside", connectedRoute.Interface)
 
 	// Test local route
@@ -52,30 +52,29 @@ O E2 10.99.0.0 255.255.0.0 [110/1] via 10.1.1.4, 00:05:10, dmz`
 	assert.Equal(t, "10.1.1.1/32", localRoute.Prefix)
 	assert.Equal(t, "0.0.0.0", localRoute.NextHop)
 	assert.Equal(t, "local", localRoute.Protocol)
-	assert.Equal(t, "local_interface_address", localRoute.Metadata["route_type"])
+	assert.Equal(t, "Local interface address route", localRoute.Description)
 
 	// Test OSPF intra-area route
 	ospfRoute := routes[3]
 	assert.Equal(t, "192.168.1.0/24", ospfRoute.Prefix)
 	assert.Equal(t, "10.1.1.2", ospfRoute.NextHop)
 	assert.Equal(t, "ospf", ospfRoute.Protocol)
-	assert.Equal(t, uint32(110), ospfRoute.AdminDistance)
-	assert.Equal(t, uint32(20), ospfRoute.Metric)
+	assert.Equal(t, 110, ospfRoute.AdminDistance)
+	assert.Equal(t, 20, ospfRoute.Metric)
 	assert.Equal(t, "inside", ospfRoute.Interface)
-	assert.Equal(t, "00:15:23", ospfRoute.Metadata["age"])
 
 	// Test OSPF inter-area route
 	ospfInterRoute := routes[4]
 	assert.Equal(t, "192.168.100.0/24", ospfInterRoute.Prefix)
 	assert.Equal(t, "ospf_inter_area", ospfInterRoute.Protocol)
-	assert.Equal(t, uint32(30), ospfInterRoute.Metric)
+	assert.Equal(t, 30, ospfInterRoute.Metric)
 
 	// Test BGP route
 	bgpRoute := routes[5]
 	assert.Equal(t, "172.16.0.0/16", bgpRoute.Prefix)
 	assert.Equal(t, "10.1.1.3", bgpRoute.NextHop)
 	assert.Equal(t, "bgp", bgpRoute.Protocol)
-	assert.Equal(t, uint32(200), bgpRoute.AdminDistance)
+	assert.Equal(t, 200, bgpRoute.AdminDistance)
 
 	// Test OSPF E2 route
 	ospfE2Route := routes[6]
@@ -103,13 +102,13 @@ func TestParseASAOSPFConfig(t *testing.T) {
 	assert.NotNil(t, ospfProcess, "OSPF process should not be nil")
 
 	// Test OSPF process
-	assert.Equal(t, "1", ospfProcess.ProcessID)
+	assert.Equal(t, 1, ospfProcess.ProcessID)
 	assert.Equal(t, "10.0.0.1", ospfProcess.RouterID)
 	assert.Len(t, ospfProcess.Areas, 2, "Should have 2 OSPF areas")
 
 	// Test redistribution
-	assert.True(t, ospfProcess.RedistributeStatic, "Should redistribute static")
-	assert.True(t, ospfProcess.RedistributeConnected, "Should redistribute connected")
+	assert.Contains(t, ospfProcess.RedistributedProtocols, "static")
+	assert.Contains(t, ospfProcess.RedistributedProtocols, "connected")
 
 	// Find area 0
 	var area0 *models.OSPFArea
@@ -121,8 +120,8 @@ func TestParseASAOSPFConfig(t *testing.T) {
 	}
 	assert.NotNil(t, area0, "Should have area 0")
 	assert.Equal(t, "normal", area0.AreaType)
-	assert.Contains(t, area0.Networks, "10.1.1.0/24")
-	assert.Contains(t, area0.Networks, "10.2.2.0/24")
+	assert.Contains(t, ospfProcess.Networks, models.OSPFNetwork{Network: "10.1.1.0/24", AreaID: "0", Wildcard: "255.255.255.0"})
+	assert.Contains(t, ospfProcess.Networks, models.OSPFNetwork{Network: "10.2.2.0/24", AreaID: "0", Wildcard: "255.255.255.0"})
 
 	// Find area 10
 	var area10 *models.OSPFArea
@@ -134,7 +133,36 @@ func TestParseASAOSPFConfig(t *testing.T) {
 	}
 	assert.NotNil(t, area10, "Should have area 10")
 	assert.Equal(t, "stub", area10.AreaType)
-	assert.Contains(t, area10.Networks, "192.168.1.0/24")
+	assert.Contains(t, ospfProcess.Networks, models.OSPFNetwork{Network: "192.168.1.0/24", AreaID: "10", Wildcard: "255.255.255.0"})
+}
+
+func TestBuildASAL3RoutingTableRetainsProtocolProcesses(t *testing.T) {
+	table, err := BuildASAL3RoutingTable("dev-1", "asa-test", "default", "", "router ospf 10\n router-id 10.0.0.1\n network 10.0.0.0 255.255.255.0 area 0", "", "router bgp 65001\n bgp router-id 10.0.0.1\n neighbor 203.0.113.2 remote-as 65002", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(table.OSPFProcesses) != 1 || table.OSPFProcesses[0].ProcessID != 10 || len(table.OSPFProcesses[0].Networks) != 1 {
+		t.Fatalf("OSPF process was not retained: %#v", table.OSPFProcesses)
+	}
+	if len(table.BGPProcesses) != 1 || table.BGPProcesses[0].LocalAS != 65001 || len(table.BGPProcesses[0].Neighbors) != 1 {
+		t.Fatalf("BGP process was not retained: %#v", table.BGPProcesses)
+	}
+}
+
+func TestBuildASAL3RoutingTableMergesBGPOperationalFields(t *testing.T) {
+	bgpConfig := "router bgp 65001\n neighbor 203.0.113.1 remote-as 65100"
+	bgpSummary := "BGP router identifier 10.0.0.1, local AS number 65001\n\nNeighbor V AS MsgRcvd MsgSent TblVer InQ OutQ Up/Down State/PfxRcd\n203.0.113.1 4 65100 1234 1230 145 0 0 01:23:45 50"
+	table, err := BuildASAL3RoutingTable("dev-1", "asa-test", "default", "", "", "", bgpConfig, bgpSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(table.BGPProcesses) != 1 || len(table.BGPProcesses[0].Neighbors) != 1 {
+		t.Fatalf("BGP peer missing: %#v", table.BGPProcesses)
+	}
+	n := table.BGPProcesses[0].Neighbors[0]
+	if n.State != "Established" || n.UptimeSeconds != 1*3600+23*60+45 || n.PrefixesReceived != 50 || n.MsgReceived != 1234 || n.MsgSent != 1230 {
+		t.Fatalf("BGP summary fields were lost: %#v", n)
+	}
 }
 
 // TestParseASAOSPFNeighbors tests parsing of OSPF neighbor table
@@ -156,24 +184,24 @@ Neighbor ID     Pri   State           Dead Time   Address         Interface
 	assert.Equal(t, "10.1.1.2", neighbor1.IPAddress)
 	assert.Equal(t, "FULL", neighbor1.State)
 	assert.Equal(t, "inside", neighbor1.Interface)
-	assert.Equal(t, uint32(1), neighbor1.Priority)
-	assert.Equal(t, "BDR", neighbor1.Metadata["role"])
-	assert.Equal(t, "00:00:35", neighbor1.Metadata["dead_time"])
+	assert.Equal(t, 1, neighbor1.Priority)
+	assert.Equal(t, "BDR", neighbor1.Role)
+	assert.Equal(t, 35, neighbor1.DeadTime)
 
 	// Test second neighbor (DR)
 	neighbor2 := neighbors[1]
 	assert.Equal(t, "10.0.0.3", neighbor2.NeighborID)
 	assert.Equal(t, "10.2.2.3", neighbor2.IPAddress)
 	assert.Equal(t, "FULL", neighbor2.State)
-	assert.Equal(t, uint32(100), neighbor2.Priority)
-	assert.Equal(t, "DR", neighbor2.Metadata["role"])
+	assert.Equal(t, 100, neighbor2.Priority)
+	assert.Equal(t, "DR", neighbor2.Role)
 
 	// Test third neighbor (point-to-point, no DR/BDR)
 	neighbor3 := neighbors[2]
 	assert.Equal(t, "10.0.0.4", neighbor3.NeighborID)
 	assert.Equal(t, "FULL", neighbor3.State)
-	assert.Equal(t, uint32(0), neighbor3.Priority)
-	assert.NotContains(t, neighbor3.Metadata, "role") // "-" role is not stored
+	assert.Equal(t, 0, neighbor3.Priority)
+	assert.Empty(t, neighbor3.Role) // "-" role is not stored
 }
 
 // TestParseASABGPConfig tests parsing of BGP configuration
@@ -202,15 +230,15 @@ func TestParseASABGPConfig(t *testing.T) {
 
 	// Test BGP process
 	assert.Equal(t, "10.0.0.1", bgpProcess.RouterID)
-	assert.Equal(t, uint32(65001), bgpProcess.LocalAS)
+	assert.Equal(t, 65001, bgpProcess.LocalAS)
 	assert.Len(t, bgpProcess.Neighbors, 4, "Should have 4 BGP neighbors")
 
 	// Test redistribution
-	assert.True(t, bgpProcess.RedistributeStatic, "Should redistribute static")
-	assert.True(t, bgpProcess.RedistributeConnected, "Should redistribute connected")
+	assert.Contains(t, bgpProcess.RedistributedProtocols, "static")
+	assert.Contains(t, bgpProcess.RedistributedProtocols, "connected")
 
 	// Test route reflector
-	assert.Equal(t, "10.0.0.1", bgpProcess.RouteReflectorID)
+	assert.True(t, bgpProcess.RouteReflector)
 
 	// Find EBGP neighbor ISP1
 	var ebgpNeighbor *models.BGPNeighbor
@@ -221,8 +249,8 @@ func TestParseASABGPConfig(t *testing.T) {
 		}
 	}
 	assert.NotNil(t, ebgpNeighbor, "Should find EBGP neighbor")
-	assert.Equal(t, uint32(65100), ebgpNeighbor.RemoteAS)
-	assert.Equal(t, "ISP1", ebgpNeighbor.Metadata["description"])
+	assert.Equal(t, 65100, ebgpNeighbor.RemoteAS)
+	assert.Equal(t, "ISP1", ebgpNeighbor.Description)
 
 	// Find IBGP route reflector client
 	var rrClient *models.BGPNeighbor
@@ -233,8 +261,8 @@ func TestParseASABGPConfig(t *testing.T) {
 		}
 	}
 	assert.NotNil(t, rrClient, "Should find RR client")
-	assert.Equal(t, uint32(65001), rrClient.RemoteAS)
-	assert.True(t, rrClient.Metadata["is_route_reflector_client"].(bool))
+	assert.Equal(t, 65001, rrClient.RemoteAS)
+	assert.True(t, rrClient.RouteReflectorClient)
 }
 
 // TestParseASABGPSummary tests parsing of BGP summary output
@@ -256,23 +284,23 @@ Neighbor        V           AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State
 	// Test EBGP neighbor in Established state
 	neighbor1 := neighbors["203.0.113.1"]
 	assert.Equal(t, "203.0.113.1", neighbor1.IPAddress)
-	assert.Equal(t, uint32(65100), neighbor1.RemoteAS)
+	assert.Equal(t, 65100, neighbor1.RemoteAS)
 	assert.Equal(t, "Established", neighbor1.State)
-	assert.Equal(t, "50", neighbor1.Metadata["prefix_count"])
-	assert.Equal(t, "01:23:45", neighbor1.Metadata["uptime"])
-	assert.Equal(t, "1234", neighbor1.Metadata["messages_received"])
-	assert.Equal(t, "1230", neighbor1.Metadata["messages_sent"])
+	assert.Equal(t, 50, neighbor1.PrefixesReceived)
+	assert.Equal(t, 1*3600+23*60+45, neighbor1.UptimeSeconds)
+	assert.Equal(t, 1234, neighbor1.MsgReceived)
+	assert.Equal(t, 1230, neighbor1.MsgSent)
 
 	// Test IBGP neighbor in Established state
 	neighbor3 := neighbors["10.1.1.10"]
-	assert.Equal(t, uint32(65001), neighbor3.RemoteAS)
+	assert.Equal(t, 65001, neighbor3.RemoteAS)
 	assert.Equal(t, "Established", neighbor3.State)
-	assert.Equal(t, "100", neighbor3.Metadata["prefix_count"])
+	assert.Equal(t, 100, neighbor3.PrefixesReceived)
 
 	// Test neighbor in Idle state
 	neighbor4 := neighbors["10.1.1.11"]
 	assert.Equal(t, "Idle", neighbor4.State)
-	assert.NotContains(t, neighbor4.Metadata, "prefix_count") // No prefix count when not Established
+	assert.Equal(t, 0, neighbor4.PrefixesReceived) // No prefix count when not Established
 }
 
 // TestConvertASANetmaskToCIDR tests netmask to CIDR conversion
@@ -345,11 +373,11 @@ func TestParseASAOSPFConfigMinimal(t *testing.T) {
 
 	assert.NoError(t, err, "Should parse minimal OSPF config")
 	assert.NotNil(t, ospfProcess)
-	assert.Equal(t, "1", ospfProcess.ProcessID)
+	assert.Equal(t, 1, ospfProcess.ProcessID)
 	assert.Equal(t, "10.0.0.1", ospfProcess.RouterID)
 	assert.Len(t, ospfProcess.Areas, 1)
 	assert.Equal(t, "0", ospfProcess.Areas[0].AreaID)
-	assert.Contains(t, ospfProcess.Areas[0].Networks, "10.1.1.0/24")
+	assert.Contains(t, ospfProcess.Networks, models.OSPFNetwork{Network: "10.1.1.0/24", AreaID: "0", Wildcard: "255.255.255.0"})
 }
 
 // TestParseASABGPConfigMinimal tests minimal BGP configuration
@@ -365,10 +393,10 @@ func TestParseASABGPConfigMinimal(t *testing.T) {
 	assert.NoError(t, err, "Should parse minimal BGP config")
 	assert.NotNil(t, bgpProcess)
 	assert.Equal(t, "10.0.0.1", bgpProcess.RouterID)
-	assert.Equal(t, uint32(65001), bgpProcess.LocalAS)
+	assert.Equal(t, 65001, bgpProcess.LocalAS)
 	assert.Len(t, bgpProcess.Neighbors, 1)
 	assert.Equal(t, "10.1.1.2", bgpProcess.Neighbors[0].IPAddress)
-	assert.Equal(t, uint32(65002), bgpProcess.Neighbors[0].RemoteAS)
+	assert.Equal(t, 65002, bgpProcess.Neighbors[0].RemoteAS)
 }
 
 // TestParseASARoutingTableEIGRP tests EIGRP route parsing
@@ -387,12 +415,12 @@ EX   172.20.0.0 255.255.0.0 [170/2681856] via 10.1.1.6, 01:15:45, dmz`
 	eigrpRoute := routes[0]
 	assert.Equal(t, "10.10.0.0/16", eigrpRoute.Prefix)
 	assert.Equal(t, "eigrp", eigrpRoute.Protocol)
-	assert.Equal(t, uint32(90), eigrpRoute.AdminDistance)
-	assert.Equal(t, uint32(2297856), eigrpRoute.Metric)
+	assert.Equal(t, 90, eigrpRoute.AdminDistance)
+	assert.Equal(t, 2297856, eigrpRoute.Metric)
 
 	// Test EIGRP external route
 	eigrpExtRoute := routes[1]
 	assert.Equal(t, "172.20.0.0/16", eigrpExtRoute.Prefix)
 	assert.Equal(t, "eigrp_external", eigrpExtRoute.Protocol)
-	assert.Equal(t, uint32(170), eigrpExtRoute.AdminDistance)
+	assert.Equal(t, 170, eigrpExtRoute.AdminDistance)
 }

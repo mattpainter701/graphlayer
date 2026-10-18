@@ -18,15 +18,15 @@ import (
 // ASAInterface represents an ASA interface with operational state
 type ASAInterface struct {
 	Name          string    `json:"name"`
-	Nameif        string    `json:"nameif"`         // Security zone name
+	Nameif        string    `json:"nameif"` // Security zone name
 	SecurityLevel int       `json:"security_level"`
 	IPAddress     string    `json:"ip_address"`
 	SubnetMask    string    `json:"subnet_mask"`
 	MACAddress    string    `json:"mac_address"`
 	MTU           int       `json:"mtu"`
-	AdminState    string    `json:"admin_state"`    // "up" | "down"
-	LineProtocol  string    `json:"line_protocol"`  // "up" | "down"
-	Bandwidth     int       `json:"bandwidth"`      // Mbps
+	AdminState    string    `json:"admin_state"`   // "up" | "down"
+	LineProtocol  string    `json:"line_protocol"` // "up" | "down"
+	Bandwidth     int       `json:"bandwidth"`     // Mbps
 	Description   string    `json:"description,omitempty"`
 	CollectedAt   time.Time `json:"collected_at"`
 }
@@ -35,33 +35,33 @@ type ASAInterface struct {
 func ParseASAInterface(output string) ([]ASAInterface, error) {
 	var interfaces []ASAInterface
 	lines := strings.Split(output, "\n")
-	
+
 	var currentInterface *ASAInterface
-	
+
 	// Regex patterns
 	interfaceLineRe := regexp.MustCompile(`^Interface\s+(\S+)\s+"([^"]*)",\s+is\s+(\w+),\s+line\s+protocol\s+is\s+(\w+)`)
 	macRe := regexp.MustCompile(`MAC address\s+([0-9a-f.]+)`)
 	ipRe := regexp.MustCompile(`IP address\s+(\d+\.\d+\.\d+\.\d+),\s+subnet mask\s+(\d+\.\d+\.\d+\.\d+)`)
 	mtuRe := regexp.MustCompile(`MTU\s+(\d+)`)
 	bwRe := regexp.MustCompile(`BW\s+(\d+)\s+Mbps`)
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// New interface header
 		if match := interfaceLineRe.FindStringSubmatch(trimmed); match != nil {
 			// Save previous interface
 			if currentInterface != nil {
 				interfaces = append(interfaces, *currentInterface)
 			}
-			
+
 			// Start new interface
 			currentInterface = &ASAInterface{
-				Name:          match[1],
-				Nameif:        match[2],
-				AdminState:    match[3],
-				LineProtocol:  match[4],
-				CollectedAt:   time.Now().UTC(),
+				Name:         match[1],
+				Nameif:       match[2],
+				AdminState:   match[3],
+				LineProtocol: match[4],
+				CollectedAt:  time.Now().UTC(),
 			}
 		} else if currentInterface != nil {
 			// Parse interface details
@@ -77,12 +77,12 @@ func ParseASAInterface(output string) ([]ASAInterface, error) {
 			}
 		}
 	}
-	
+
 	// Save last interface
 	if currentInterface != nil {
 		interfaces = append(interfaces, *currentInterface)
 	}
-	
+
 	return interfaces, nil
 }
 
@@ -94,7 +94,7 @@ type ASARoute struct {
 	Netmask       string    `json:"netmask"`
 	NextHop       string    `json:"next_hop,omitempty"`
 	Interface     string    `json:"interface"`
-	RouteType     string    `json:"route_type"`    // "C" (connected), "S" (static), etc.
+	RouteType     string    `json:"route_type"` // "C" (connected), "S" (static), etc.
 	AdminDistance int       `json:"admin_distance,omitempty"`
 	Metric        int       `json:"metric,omitempty"`
 	CollectedAt   time.Time `json:"collected_at"`
@@ -104,21 +104,21 @@ type ASARoute struct {
 func ParseASARoute(output string) ([]ASARoute, error) {
 	var routes []ASARoute
 	lines := strings.Split(output, "\n")
-	
+
 	// Regex for route lines
 	// C    192.168.1.0 255.255.255.0 is directly connected, outside
 	// S    0.0.0.0 0.0.0.0 [1/0] via 192.168.1.254, outside
 	connectedRe := regexp.MustCompile(`^([CSIRMBDO])\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+is directly connected,\s+(\S+)`)
 	staticRe := regexp.MustCompile(`^([CSIRMBDO])\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+\[(\d+)/(\d+)\]\s+via\s+(\d+\.\d+\.\d+\.\d+),\s+(\S+)`)
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Skip empty lines and headers
 		if trimmed == "" || strings.HasPrefix(trimmed, "Codes:") || strings.HasPrefix(trimmed, "Gateway") {
 			continue
 		}
-		
+
 		// Try connected route
 		if match := connectedRe.FindStringSubmatch(trimmed); match != nil {
 			routes = append(routes, ASARoute{
@@ -143,7 +143,7 @@ func ParseASARoute(output string) ([]ASARoute, error) {
 			})
 		}
 	}
-	
+
 	return routes, nil
 }
 
@@ -154,7 +154,7 @@ type ASAARPEntry struct {
 	Interface   string    `json:"interface"`
 	IPAddress   string    `json:"ip_address"`
 	MACAddress  string    `json:"mac_address"`
-	Age         int       `json:"age"`        // seconds
+	Age         int       `json:"age"` // seconds
 	CollectedAt time.Time `json:"collected_at"`
 }
 
@@ -162,13 +162,13 @@ type ASAARPEntry struct {
 func ParseASAARP(output string) ([]ASAARPEntry, error) {
 	var entries []ASAARPEntry
 	lines := strings.Split(output, "\n")
-	
+
 	// Format: outside 192.168.1.254 0050.56bb.0001 3599
 	arpRe := regexp.MustCompile(`^(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F.:]+)\s+(\d+)`)
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		if match := arpRe.FindStringSubmatch(trimmed); match != nil {
 			age, _ := strconv.Atoi(match[4])
 			entries = append(entries, ASAARPEntry{
@@ -180,7 +180,7 @@ func ParseASAARP(output string) ([]ASAARPEntry, error) {
 			})
 		}
 	}
-	
+
 	return entries, nil
 }
 
@@ -188,40 +188,40 @@ func ParseASAARP(output string) ([]ASAARPEntry, error) {
 
 // ASAXlateEntry represents an active NAT translation
 type ASAXlateEntry struct {
-	Flags         string    `json:"flags"`          // "D" (DNS), "i" (dynamic), "s" (static), etc.
-	SourceZone    string    `json:"source_zone"`    // e.g., "inside"
-	SourceIP      string    `json:"source_ip"`
-	SourcePort    int       `json:"source_port,omitempty"`
-	DestZone      string    `json:"dest_zone"`      // e.g., "outside"
-	DestIP        string    `json:"dest_ip"`
-	DestPort      int       `json:"dest_port,omitempty"`
-	Protocol      string    `json:"protocol,omitempty"`  // "TCP", "UDP", "ICMP"
-	IdleTime      string    `json:"idle_time"`
-	Timeout       string    `json:"timeout"`
-	CollectedAt   time.Time `json:"collected_at"`
+	Flags       string    `json:"flags"`       // "D" (DNS), "i" (dynamic), "s" (static), etc.
+	SourceZone  string    `json:"source_zone"` // e.g., "inside"
+	SourceIP    string    `json:"source_ip"`
+	SourcePort  int       `json:"source_port,omitempty"`
+	DestZone    string    `json:"dest_zone"` // e.g., "outside"
+	DestIP      string    `json:"dest_ip"`
+	DestPort    int       `json:"dest_port,omitempty"`
+	Protocol    string    `json:"protocol,omitempty"` // "TCP", "UDP", "ICMP"
+	IdleTime    string    `json:"idle_time"`
+	Timeout     string    `json:"timeout"`
+	CollectedAt time.Time `json:"collected_at"`
 }
 
 // ParseASAXlate parses "show xlate" output
 func ParseASAXlate(output string) ([]ASAXlateEntry, error) {
 	var entries []ASAXlateEntry
 	lines := strings.Split(output, "\n")
-	
+
 	// NAT from inside:10.0.0.10 to outside:192.168.1.100
 	//     flags s idle 0:00:05 timeout 0:00:00
 	// NAT from inside:10.0.0.10/443 to outside:192.168.1.100/443
 	natRe := regexp.MustCompile(`^NAT from (\w+):(\d+\.\d+\.\d+\.\d+)(?:/(\d+))?\s+to\s+(\w+):(\d+\.\d+\.\d+\.\d+)(?:/(\d+))?`)
 	flagsRe := regexp.MustCompile(`flags\s+([a-zA-Z]+)\s+idle\s+([\d:]+)\s+timeout\s+([\d:]+)`)
-	
+
 	var currentXlate *ASAXlateEntry
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Skip header lines
 		if strings.Contains(trimmed, "in use") || strings.Contains(trimmed, "Flags:") {
 			continue
 		}
-		
+
 		// NAT line
 		if match := natRe.FindStringSubmatch(trimmed); match != nil {
 			currentXlate = &ASAXlateEntry{
@@ -231,16 +231,16 @@ func ParseASAXlate(output string) ([]ASAXlateEntry, error) {
 				DestIP:      match[5],
 				CollectedAt: time.Now().UTC(),
 			}
-			
+
 			if match[3] != "" {
 				currentXlate.SourcePort, _ = strconv.Atoi(match[3])
 			}
 			if match[6] != "" {
 				currentXlate.DestPort, _ = strconv.Atoi(match[6])
 			}
-			
+
 			entries = append(entries, *currentXlate)
-		} else if currentXlate != nil && match := flagsRe.FindStringSubmatch(trimmed); match != nil {
+		} else if match := flagsRe.FindStringSubmatch(trimmed); currentXlate != nil && match != nil {
 			// Update last entry with flags
 			if len(entries) > 0 {
 				entries[len(entries)-1].Flags = match[1]
@@ -249,7 +249,7 @@ func ParseASAXlate(output string) ([]ASAXlateEntry, error) {
 			}
 		}
 	}
-	
+
 	return entries, nil
 }
 
@@ -257,32 +257,32 @@ func ParseASAXlate(output string) ([]ASAXlateEntry, error) {
 
 // ASANATRule represents a NAT policy rule
 type ASANATRule struct {
-	Section          string    `json:"section"`           // "Manual NAT" or "Auto NAT"
-	RuleNumber       int       `json:"rule_number"`
-	SourceZone       string    `json:"source_zone"`
-	DestZone         string    `json:"dest_zone"`
-	SourceObject     string    `json:"source_object"`
-	DestObject       string    `json:"dest_object,omitempty"`
-	NATType          string    `json:"nat_type"`          // "static", "dynamic"
-	TranslateHits    int       `json:"translate_hits"`
-	UntranslateHits  int       `json:"untranslate_hits"`
-	CollectedAt      time.Time `json:"collected_at"`
+	Section         string    `json:"section"` // "Manual NAT" or "Auto NAT"
+	RuleNumber      int       `json:"rule_number"`
+	SourceZone      string    `json:"source_zone"`
+	DestZone        string    `json:"dest_zone"`
+	SourceObject    string    `json:"source_object"`
+	DestObject      string    `json:"dest_object,omitempty"`
+	NATType         string    `json:"nat_type"` // "static", "dynamic"
+	TranslateHits   int       `json:"translate_hits"`
+	UntranslateHits int       `json:"untranslate_hits"`
+	CollectedAt     time.Time `json:"collected_at"`
 }
 
 // ParseASANAT parses "show nat" output
 func ParseASANAT(output string) ([]ASANATRule, error) {
 	var rules []ASANATRule
 	lines := strings.Split(output, "\n")
-	
+
 	currentSection := ""
-	
+
 	// 1 (inside) to (outside) source static obj-10.0.0.10 obj-192.168.1.100
 	ruleRe := regexp.MustCompile(`^(\d+)\s+\((\w+)\)\s+to\s+\((\w+)\)\s+source\s+(static|dynamic)\s+(\S+)\s+(\S+)`)
 	hitsRe := regexp.MustCompile(`translate_hits\s*=\s*(\d+)(?:,\s*untranslate_hits\s*=\s*(\d+))?`)
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Section headers
 		if strings.Contains(trimmed, "Manual NAT") {
 			currentSection = "Manual NAT"
@@ -291,7 +291,7 @@ func ParseASANAT(output string) ([]ASANATRule, error) {
 			currentSection = "Auto NAT"
 			continue
 		}
-		
+
 		// Rule line
 		if match := ruleRe.FindStringSubmatch(trimmed); match != nil {
 			ruleNum, _ := strconv.Atoi(match[1])
@@ -306,18 +306,18 @@ func ParseASANAT(output string) ([]ASANATRule, error) {
 				CollectedAt:  time.Now().UTC(),
 			}
 			rules = append(rules, rule)
-		} else if len(rules) > 0 && match := hitsRe.FindStringSubmatch(trimmed); match != nil {
+		} else if match := hitsRe.FindStringSubmatch(trimmed); len(rules) > 0 && match != nil {
 			// Update last rule with hit counts
 			translateHits, _ := strconv.Atoi(match[1])
 			rules[len(rules)-1].TranslateHits = translateHits
-			
+
 			if match[2] != "" {
 				untranslateHits, _ := strconv.Atoi(match[2])
 				rules[len(rules)-1].UntranslateHits = untranslateHits
 			}
 		}
 	}
-	
+
 	return rules, nil
 }
 
@@ -325,35 +325,35 @@ func ParseASANAT(output string) ([]ASANATRule, error) {
 
 // ASAConnection represents an active firewall connection
 type ASAConnection struct {
-	Protocol     string    `json:"protocol"`       // "TCP", "UDP", "ICMP"
-	SourceZone   string    `json:"source_zone"`
-	SourceIP     string    `json:"source_ip"`
-	SourcePort   int       `json:"source_port,omitempty"`
-	DestZone     string    `json:"dest_zone"`
-	DestIP       string    `json:"dest_ip"`
-	DestPort     int       `json:"dest_port,omitempty"`
-	IdleTime     string    `json:"idle_time"`
-	Bytes        int       `json:"bytes"`
-	Flags        string    `json:"flags"`
-	CollectedAt  time.Time `json:"collected_at"`
+	Protocol    string    `json:"protocol"` // "TCP", "UDP", "ICMP"
+	SourceZone  string    `json:"source_zone"`
+	SourceIP    string    `json:"source_ip"`
+	SourcePort  int       `json:"source_port,omitempty"`
+	DestZone    string    `json:"dest_zone"`
+	DestIP      string    `json:"dest_ip"`
+	DestPort    int       `json:"dest_port,omitempty"`
+	IdleTime    string    `json:"idle_time"`
+	Bytes       int       `json:"bytes"`
+	Flags       string    `json:"flags"`
+	CollectedAt time.Time `json:"collected_at"`
 }
 
 // ParseASAConn parses "show conn" output
 func ParseASAConn(output string) ([]ASAConnection, error) {
 	var connections []ASAConnection
 	lines := strings.Split(output, "\n")
-	
+
 	// TCP outside 192.168.1.50:54321 inside 10.0.0.10:443, idle 0:00:05, bytes 5000, flags UIO
 	connRe := regexp.MustCompile(`^(TCP|UDP|ICMP)\s+(\w+)\s+(\d+\.\d+\.\d+\.\d+):(\d+)\s+(\w+)\s+(\d+\.\d+\.\d+\.\d+):(\d+),\s+idle\s+([\d:]+),\s+bytes\s+(\d+),\s+flags\s+(\S+)`)
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		if match := connRe.FindStringSubmatch(trimmed); match != nil {
 			srcPort, _ := strconv.Atoi(match[4])
 			dstPort, _ := strconv.Atoi(match[7])
 			bytes, _ := strconv.Atoi(match[9])
-			
+
 			connections = append(connections, ASAConnection{
 				Protocol:    match[1],
 				SourceZone:  match[2],
@@ -369,7 +369,7 @@ func ParseASAConn(output string) ([]ASAConnection, error) {
 			})
 		}
 	}
-	
+
 	return connections, nil
 }
 
@@ -377,23 +377,23 @@ func ParseASAConn(output string) ([]ASAConnection, error) {
 
 // ASALocalHost represents a local host entry
 type ASALocalHost struct {
-	Interface        string    `json:"interface"`
-	IPAddress        string    `json:"ip_address"`
-	TCPFlowCount     int       `json:"tcp_flow_count"`
-	TCPFlowLimit     string    `json:"tcp_flow_limit"`      // "unlimited" or number
-	UDPFlowCount     int       `json:"udp_flow_count"`
-	UDPFlowLimit     string    `json:"udp_flow_limit"`
-	TCPEmbryonicCount int      `json:"tcp_embryonic_count"`
-	CollectedAt      time.Time `json:"collected_at"`
+	Interface         string    `json:"interface"`
+	IPAddress         string    `json:"ip_address"`
+	TCPFlowCount      int       `json:"tcp_flow_count"`
+	TCPFlowLimit      string    `json:"tcp_flow_limit"` // "unlimited" or number
+	UDPFlowCount      int       `json:"udp_flow_count"`
+	UDPFlowLimit      string    `json:"udp_flow_limit"`
+	TCPEmbryonicCount int       `json:"tcp_embryonic_count"`
+	CollectedAt       time.Time `json:"collected_at"`
 }
 
 // ParseASALocalHost parses "show local-host" output
 func ParseASALocalHost(output string) ([]ASALocalHost, error) {
 	var hosts []ASALocalHost
 	lines := strings.Split(output, "\n")
-	
+
 	var currentHost *ASALocalHost
-	
+
 	// Interface inside: 50 active, 100 maximum active, 0 denied
 	// local host: <10.0.0.10>,
 	interfaceRe := regexp.MustCompile(`^Interface\s+(\w+):`)
@@ -401,12 +401,12 @@ func ParseASALocalHost(output string) ([]ASALocalHost, error) {
 	tcpRe := regexp.MustCompile(`TCP flow count/limit\s+=\s+(\d+)/(\S+)`)
 	udpRe := regexp.MustCompile(`UDP flow count/limit\s+=\s+(\d+)/(\S+)`)
 	embryonicRe := regexp.MustCompile(`TCP embryonic count\s+=\s+(\d+)`)
-	
+
 	currentInterface := ""
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Interface line
 		if match := interfaceRe.FindStringSubmatch(trimmed); match != nil {
 			currentInterface = match[1]
@@ -415,7 +415,7 @@ func ParseASALocalHost(output string) ([]ASALocalHost, error) {
 			if currentHost != nil {
 				hosts = append(hosts, *currentHost)
 			}
-			
+
 			// New host
 			currentHost = &ASALocalHost{
 				Interface:   currentInterface,
@@ -435,12 +435,12 @@ func ParseASALocalHost(output string) ([]ASALocalHost, error) {
 			}
 		}
 	}
-	
+
 	// Save last host
 	if currentHost != nil {
 		hosts = append(hosts, *currentHost)
 	}
-	
+
 	return hosts, nil
 }
 
@@ -458,21 +458,21 @@ type ASAZone struct {
 func ParseASANameif(output string) ([]ASAZone, error) {
 	var zones []ASAZone
 	lines := strings.Split(output, "\n")
-	
+
 	// GigabitEthernet0/0       outside                  0
 	nameifRe := regexp.MustCompile(`^(\S+)\s+(\S+)\s+(\d+)`)
-	
+
 	dataStarted := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Header line
 		if strings.Contains(trimmed, "Interface") && strings.Contains(trimmed, "Name") {
 			dataStarted = true
 			continue
 		}
-		
-		if dataStarted && match := nameifRe.FindStringSubmatch(trimmed); match != nil {
+
+		if match := nameifRe.FindStringSubmatch(trimmed); dataStarted && match != nil {
 			secLevel, _ := strconv.Atoi(match[3])
 			zones = append(zones, ASAZone{
 				Interface:     match[1],
@@ -482,7 +482,7 @@ func ParseASANameif(output string) ([]ASAZone, error) {
 			})
 		}
 	}
-	
+
 	return zones, nil
 }
 
@@ -494,9 +494,9 @@ func ParseASANameif(output string) ([]ASAZone, error) {
 type ASAACLEntry struct {
 	ACLName     string    `json:"acl_name"`
 	LineNumber  int       `json:"line_number"`
-	RuleType    string    `json:"rule_type"`      // "extended", "standard"
-	Action      string    `json:"action"`         // "permit", "deny"
-	Protocol    string    `json:"protocol"`       // "tcp", "udp", "ip", "icmp"
+	RuleType    string    `json:"rule_type"` // "extended", "standard"
+	Action      string    `json:"action"`    // "permit", "deny"
+	Protocol    string    `json:"protocol"`  // "tcp", "udp", "ip", "icmp"
 	Source      string    `json:"source"`
 	SourcePort  string    `json:"source_port,omitempty"`
 	Dest        string    `json:"dest"`
@@ -510,18 +510,18 @@ type ASAACLEntry struct {
 func ParseASAACL(output string) ([]ASAACLEntry, error) {
 	var entries []ASAACLEntry
 	lines := strings.Split(output, "\n")
-	
+
 	// access-list outside_access_in; 3 elements; name hash: 0x12345678
 	// access-list outside_access_in line 1 extended permit tcp any host 192.168.1.100 eq https (hitcnt=150)
 	aclHeaderRe := regexp.MustCompile(`^access-list\s+(\S+);\s+\d+\s+elements;\s+name hash:\s+(\S+)`)
 	aclLineRe := regexp.MustCompile(`^access-list\s+(\S+)\s+line\s+(\d+)\s+extended\s+(permit|deny)\s+(\S+)\s+(.+?)\s+\(hitcnt=(\d+)\)`)
-	
+
 	currentACLName := ""
 	currentHashID := ""
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// ACL header
 		if match := aclHeaderRe.FindStringSubmatch(trimmed); match != nil {
 			currentACLName = match[1]
@@ -529,10 +529,10 @@ func ParseASAACL(output string) ([]ASAACLEntry, error) {
 		} else if match := aclLineRe.FindStringSubmatch(trimmed); match != nil {
 			lineNum, _ := strconv.Atoi(match[2])
 			hitCount, _ := strconv.Atoi(match[6])
-			
+
 			// Parse remaining fields (source, dest, ports)
 			remaining := match[5]
-			
+
 			entry := ASAACLEntry{
 				ACLName:     currentACLName,
 				LineNumber:  lineNum,
@@ -543,7 +543,7 @@ func ParseASAACL(output string) ([]ASAACLEntry, error) {
 				HashID:      currentHashID,
 				CollectedAt: time.Now().UTC(),
 			}
-			
+
 			// Simplified parsing - in production, this would be more sophisticated
 			parts := strings.Fields(remaining)
 			if len(parts) >= 2 {
@@ -553,11 +553,11 @@ func ParseASAACL(output string) ([]ASAACLEntry, error) {
 			if len(parts) >= 4 && parts[2] == "eq" {
 				entry.DestPort = parts[3]
 			}
-			
+
 			entries = append(entries, entry)
 		}
 	}
-	
+
 	return entries, nil
 }
 
@@ -578,21 +578,21 @@ type ASAServicePolicy struct {
 func ParseASAServicePolicy(output string) ([]ASAServicePolicy, error) {
 	var policies []ASAServicePolicy
 	lines := strings.Split(output, "\n")
-	
+
 	// Global policy:
 	//   Service-policy: global_policy
 	//     Class-map: inspection_default
 	//       Inspect: dns preset_dns_map, packet 1000, drop 0, reset-drop 0
 	policyRe := regexp.MustCompile(`Service-policy:\s+(\S+)`)
 	classRe := regexp.MustCompile(`Class-map:\s+(\S+)`)
-	inspectRe := regexp.MustCompile(`Inspect:\s+(\S+).+packet\s+(\d+),\s+drop\s+(\d+)(?:,\s+reset-drop\s+(\d+))?`)
-	
+	inspectRe := regexp.MustCompile(`Inspect:\s+([^,\s]+).+packet\s+(\d+),\s+drop\s+(\d+)(?:,\s+reset-drop\s+(\d+))?`)
+
 	currentPolicy := ""
 	currentClass := ""
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		if match := policyRe.FindStringSubmatch(trimmed); match != nil {
 			currentPolicy = match[1]
 		} else if match := classRe.FindStringSubmatch(trimmed); match != nil {
@@ -600,7 +600,7 @@ func ParseASAServicePolicy(output string) ([]ASAServicePolicy, error) {
 		} else if match := inspectRe.FindStringSubmatch(trimmed); match != nil {
 			packets, _ := strconv.Atoi(match[2])
 			drops, _ := strconv.Atoi(match[3])
-			
+
 			policy := ASAServicePolicy{
 				PolicyName:  currentPolicy,
 				ClassMap:    currentClass,
@@ -609,15 +609,15 @@ func ParseASAServicePolicy(output string) ([]ASAServicePolicy, error) {
 				Drops:       drops,
 				CollectedAt: time.Now().UTC(),
 			}
-			
+
 			if match[4] != "" {
 				policy.ResetDrops, _ = strconv.Atoi(match[4])
 			}
-			
+
 			policies = append(policies, policy)
 		}
 	}
-	
+
 	return policies, nil
 }
 
@@ -626,14 +626,14 @@ func ParseASAServicePolicy(output string) ([]ASAServicePolicy, error) {
 // ASAFailoverState represents failover/HA state
 type ASAFailoverState struct {
 	FailoverEnabled bool      `json:"failover_enabled"`
-	ThisUnit        string    `json:"this_unit"`          // "Primary" | "Secondary"
-	ThisState       string    `json:"this_state"`         // "Active" | "Standby Ready" | "Failed"
+	ThisUnit        string    `json:"this_unit"`  // "Primary" | "Secondary"
+	ThisState       string    `json:"this_state"` // "Active" | "Standby Ready" | "Failed"
 	OtherUnit       string    `json:"other_unit"`
 	OtherState      string    `json:"other_state"`
-	ActiveTime      int       `json:"active_time"`        // seconds
-	StandbyTime     int       `json:"standby_time"`       // seconds
+	ActiveTime      int       `json:"active_time"`  // seconds
+	StandbyTime     int       `json:"standby_time"` // seconds
 	LANInterface    string    `json:"lan_interface"`
-	LANStatus       string    `json:"lan_status"`         // "up" | "down"
+	LANStatus       string    `json:"lan_status"` // "up" | "down"
 	CollectedAt     time.Time `json:"collected_at"`
 }
 
@@ -642,9 +642,9 @@ func ParseASAFailover(output string) (*ASAFailoverState, error) {
 	state := &ASAFailoverState{
 		CollectedAt: time.Now().UTC(),
 	}
-	
+
 	lines := strings.Split(output, "\n")
-	
+
 	// Failover On
 	// Failover unit Primary
 	// This host: Primary - Active
@@ -655,10 +655,10 @@ func ParseASAFailover(output string) (*ASAFailoverState, error) {
 	thisHostRe := regexp.MustCompile(`^This host:\s+(\w+)\s+-\s+(.+)`)
 	otherHostRe := regexp.MustCompile(`^Other host:\s+(\w+)\s+-\s+(.+)`)
 	activeTimeRe := regexp.MustCompile(`Active time:\s+(\d+)\s+\(sec\)`)
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		if match := failoverOnRe.FindStringSubmatch(trimmed); match != nil {
 			state.FailoverEnabled = (match[1] == "On")
 		} else if match := unitRe.FindStringSubmatch(trimmed); match != nil {
@@ -675,7 +675,7 @@ func ParseASAFailover(output string) (*ASAFailoverState, error) {
 			state.ActiveTime, _ = strconv.Atoi(match[1])
 		}
 	}
-	
+
 	return state, nil
 }
 
@@ -683,7 +683,7 @@ func ParseASAFailover(output string) (*ASAFailoverState, error) {
 
 // ASAVPNSession represents a VPN session
 type ASAVPNSession struct {
-	SessionType string    `json:"session_type"`   // "IPsec", "SSL", "IKEv2"
+	SessionType string    `json:"session_type"` // "IPsec", "SSL", "IKEv2"
 	Username    string    `json:"username"`
 	PublicIP    string    `json:"public_ip"`
 	Protocol    string    `json:"protocol"`
@@ -698,15 +698,15 @@ type ASAVPNSession struct {
 func ParseASAVPN(output string) ([]ASAVPNSession, error) {
 	var sessions []ASAVPNSession
 	lines := strings.Split(output, "\n")
-	
+
 	// Session Type: IPsec
 	// Username     : user1                  Index    : 1
 	// Public IP    : 203.0.113.50           Protocol : IKEv2 IPsec
 	// Session ID   : 1000                   Duration : 0h:30m:15s
 	// Bytes Tx     : 50000                  Bytes Rx : 150000
-	
+
 	var currentSession *ASAVPNSession
-	
+
 	sessionTypeRe := regexp.MustCompile(`^Session Type:\s+(\S+)`)
 	usernameRe := regexp.MustCompile(`^Username\s+:\s+(\S+)`)
 	publicIPRe := regexp.MustCompile(`^Public IP\s+:\s+(\S+)`)
@@ -714,16 +714,16 @@ func ParseASAVPN(output string) ([]ASAVPNSession, error) {
 	sessionIDRe := regexp.MustCompile(`^Session ID\s+:\s+(\d+)`)
 	durationRe := regexp.MustCompile(`^.*Duration\s+:\s+(\S+)`)
 	bytesRe := regexp.MustCompile(`^Bytes Tx\s+:\s+(\d+)\s+Bytes Rx\s+:\s+(\d+)`)
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		if match := sessionTypeRe.FindStringSubmatch(trimmed); match != nil {
 			// Save previous session
 			if currentSession != nil {
 				sessions = append(sessions, *currentSession)
 			}
-			
+
 			currentSession = &ASAVPNSession{
 				SessionType: match[1],
 				CollectedAt: time.Now().UTC(),
@@ -733,10 +733,16 @@ func ParseASAVPN(output string) ([]ASAVPNSession, error) {
 				currentSession.Username = match[1]
 			} else if match := publicIPRe.FindStringSubmatch(trimmed); match != nil {
 				currentSession.PublicIP = match[1]
+				if protocol := protocolRe.FindStringSubmatch(trimmed); protocol != nil {
+					currentSession.Protocol = strings.TrimSpace(protocol[1])
+				}
 			} else if match := protocolRe.FindStringSubmatch(trimmed); match != nil {
 				currentSession.Protocol = strings.TrimSpace(match[1])
 			} else if match := sessionIDRe.FindStringSubmatch(trimmed); match != nil {
 				currentSession.SessionID, _ = strconv.Atoi(match[1])
+				if duration := durationRe.FindStringSubmatch(trimmed); duration != nil {
+					currentSession.Duration = duration[1]
+				}
 			} else if match := durationRe.FindStringSubmatch(trimmed); match != nil {
 				currentSession.Duration = match[1]
 			} else if match := bytesRe.FindStringSubmatch(trimmed); match != nil {
@@ -745,12 +751,12 @@ func ParseASAVPN(output string) ([]ASAVPNSession, error) {
 			}
 		}
 	}
-	
+
 	// Save last session
 	if currentSession != nil {
 		sessions = append(sessions, *currentSession)
 	}
-	
+
 	return sessions, nil
 }
 
@@ -759,7 +765,7 @@ func ParseASAVPN(output string) ([]ASAVPNSession, error) {
 // ASAObjectGroup represents an object group
 type ASAObjectGroup struct {
 	Name        string    `json:"name"`
-	Type        string    `json:"type"`           // "network", "service", "protocol"
+	Type        string    `json:"type"` // "network", "service", "protocol"
 	Members     []string  `json:"members"`
 	CollectedAt time.Time `json:"collected_at"`
 }
@@ -768,19 +774,19 @@ type ASAObjectGroup struct {
 func ParseASAObjectGroup(output string) ([]ASAObjectGroup, error) {
 	var groups []ASAObjectGroup
 	lines := strings.Split(output, "\n")
-	
+
 	// object-group network inside-networks
 	//  network-object 10.0.0.0 255.255.255.0
 	//  network-object 10.1.0.0 255.255.255.0
 	// object-group service web-services
 	//  service-object tcp eq www
 	//  service-object tcp eq https
-	
+
 	groupRe := regexp.MustCompile(`^object-group\s+(network|service|protocol)\s+(\S+)`)
 	memberRe := regexp.MustCompile(`^\s+(network-object|service-object|protocol-object)\s+(.+)`)
-	
+
 	var currentGroup *ASAObjectGroup
-	
+
 	for _, line := range lines {
 		// object-group line
 		if match := groupRe.FindStringSubmatch(line); match != nil {
@@ -788,24 +794,24 @@ func ParseASAObjectGroup(output string) ([]ASAObjectGroup, error) {
 			if currentGroup != nil {
 				groups = append(groups, *currentGroup)
 			}
-			
+
 			currentGroup = &ASAObjectGroup{
 				Type:        match[1],
 				Name:        match[2],
 				Members:     []string{},
 				CollectedAt: time.Now().UTC(),
 			}
-		} else if currentGroup != nil && match := memberRe.FindStringSubmatch(line); match != nil {
+		} else if match := memberRe.FindStringSubmatch(line); currentGroup != nil && match != nil {
 			// Member line
 			currentGroup.Members = append(currentGroup.Members, match[2])
 		}
 	}
-	
+
 	// Save last group
 	if currentGroup != nil {
 		groups = append(groups, *currentGroup)
 	}
-	
+
 	return groups, nil
 }
 
@@ -818,13 +824,12 @@ func normalizeMACAddress(mac string) string {
 	mac = strings.ReplaceAll(mac, "-", "")
 	mac = strings.ReplaceAll(mac, ".", "")
 	mac = strings.ToLower(mac)
-	
+
 	// Add colons every 2 characters
 	if len(mac) == 12 {
 		return fmt.Sprintf("%s:%s:%s:%s:%s:%s",
 			mac[0:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10], mac[10:12])
 	}
-	
+
 	return mac
 }
-

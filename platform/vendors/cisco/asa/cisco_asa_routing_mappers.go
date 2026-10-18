@@ -48,13 +48,12 @@ func BuildASAL3RoutingTable(
 
 	// Initialize routing table
 	table := &models.L3RoutingTable{
-		DeviceID:       deviceID,
-		Hostname:       hostname,
-		VirtualRouter:  context, // ASA uses context instead of VRF
-		Routes:         []models.L3Route{},
-		OSPFProcesses:  []models.OSPFProcess{},
-		BGPProcesses:   []models.BGPProcess{},
-		ProtocolStatus: make(map[string]string),
+		DeviceID:      deviceID,
+		Hostname:      hostname,
+		VirtualRouter: context, // ASA uses context instead of VRF
+		Routes:        []models.L3Route{},
+		OSPFProcesses: []models.OSPFProcess{},
+		BGPProcesses:  []models.BGPProcess{},
 	}
 
 	// Parse routing table
@@ -77,7 +76,6 @@ func BuildASAL3RoutingTable(
 		} else {
 			ospfProcess = process
 			table.OSPFProcesses = append(table.OSPFProcesses, *process)
-			table.ProtocolStatus["ospf"] = "configured"
 			logger.Info("Parsed OSPF configuration", "process_id", process.ProcessID)
 		}
 	}
@@ -106,7 +104,6 @@ func BuildASAL3RoutingTable(
 		} else {
 			bgpProcess = process
 			table.BGPProcesses = append(table.BGPProcesses, *process)
-			table.ProtocolStatus["bgp"] = "configured"
 			logger.Info("Parsed BGP configuration", "local_as", process.LocalAS)
 		}
 	}
@@ -148,16 +145,26 @@ func BuildASAL3RoutingTable(
 // mergeASABGPNeighbors merges BGP operational state from "show bgp summary"
 // into the BGP process configuration data
 func mergeASABGPNeighbors(bgpProcess *models.BGPProcess, summaryNeighbors map[string]models.BGPNeighbor) {
+	configured := map[string]bool{}
 	for i := range bgpProcess.Neighbors {
 		neighbor := &bgpProcess.Neighbors[i]
+		configured[neighbor.IPAddress] = true
 		if summaryData, exists := summaryNeighbors[neighbor.IPAddress]; exists {
-			// Update state from operational data
 			neighbor.State = summaryData.State
-
-			// Merge metadata
-			for key, value := range summaryData.Metadata {
-				neighbor.Metadata[key] = value
-			}
+			neighbor.UptimeSeconds = summaryData.UptimeSeconds
+			neighbor.PrefixesReceived = summaryData.PrefixesReceived
+			neighbor.MsgReceived = summaryData.MsgReceived
+			neighbor.MsgSent = summaryData.MsgSent
+		}
+	}
+	keys := make([]string, 0, len(summaryNeighbors))
+	for ip := range summaryNeighbors {
+		keys = append(keys, ip)
+	}
+	sort.Strings(keys)
+	for _, ip := range keys {
+		if !configured[ip] {
+			bgpProcess.Neighbors = append(bgpProcess.Neighbors, summaryNeighbors[ip])
 		}
 	}
 }
@@ -169,10 +176,8 @@ func enhanceRoutesWithASAOSPFMetadata(routes []models.L3Route, ospfProcess *mode
 
 	// Build area network map
 	areaNetworks := make(map[string]string) // prefix -> area ID
-	for _, area := range ospfProcess.Areas {
-		for _, network := range area.Networks {
-			areaNetworks[network] = area.AreaID
-		}
+	for _, network := range ospfProcess.Networks {
+		areaNetworks[network.Network] = network.AreaID
 	}
 
 	for i := range enhanced {
@@ -184,16 +189,15 @@ func enhanceRoutesWithASAOSPFMetadata(routes []models.L3Route, ospfProcess *mode
 		}
 
 		// Add OSPF process metadata
-		if route.Metadata == nil {
-			route.Metadata = make(map[string]interface{})
+		if route.OSPFMetadata == nil {
+			route.OSPFMetadata = &models.OSPFRouteMetadata{}
 		}
-		route.Metadata["ospf_process_id"] = ospfProcess.ProcessID
-		route.Metadata["ospf_router_id"] = ospfProcess.RouterID
+		route.OSPFMetadata.Cost = route.Metric
 
 		// Determine OSPF area if possible
 		for networkPrefix, areaID := range areaNetworks {
 			if strings.HasPrefix(route.Prefix, networkPrefix) {
-				route.Metadata["ospf_area"] = areaID
+				route.OSPFMetadata.AreaID = areaID
 				break
 			}
 		}
@@ -201,17 +205,17 @@ func enhanceRoutesWithASAOSPFMetadata(routes []models.L3Route, ospfProcess *mode
 		// OSPF path type based on protocol
 		switch protocol {
 		case "ospf":
-			route.Metadata["ospf_path_type"] = "intra-area"
+			route.OSPFMetadata.RouteType = "intra-area"
 		case "ospf_inter_area":
-			route.Metadata["ospf_path_type"] = "inter-area"
+			route.OSPFMetadata.RouteType = "inter-area"
 		case "ospf_external_type1":
-			route.Metadata["ospf_path_type"] = "external-type1"
+			route.OSPFMetadata.RouteType = "external-type1"
 		case "ospf_external_type2":
-			route.Metadata["ospf_path_type"] = "external-type2"
+			route.OSPFMetadata.RouteType = "external-type2"
 		case "ospf_nssa_type1":
-			route.Metadata["ospf_path_type"] = "nssa-type1"
+			route.OSPFMetadata.RouteType = "nssa-type1"
 		case "ospf_nssa_type2":
-			route.Metadata["ospf_path_type"] = "nssa-type2"
+			route.OSPFMetadata.RouteType = "nssa-type2"
 		}
 	}
 
@@ -239,49 +243,32 @@ func ValidateASARoutingTable(table *models.L3RoutingTable) []string {
 		warnings = append(warnings, fmt.Sprintf("High route count (%d) - may approach platform limits", len(table.Routes)))
 	}
 
-	// OSPF neighbor validation
-	for _, ospfProcess := range table.OSPFProcesses {
-		if len(ospfProcess.Areas) == 0 {
-			warnings = append(warnings, fmt.Sprintf("OSPF process %s has no areas configured", ospfProcess.ProcessID))
+	for _, process := range table.OSPFProcesses {
+		if len(process.Areas) == 0 {
+			warnings = append(warnings, fmt.Sprintf("OSPF process %d has no areas configured", process.ProcessID))
 		}
-
-		downNeighbors := 0
-		for _, neighbor := range ospfProcess.Neighbors {
-			if neighbor.State != "FULL" && neighbor.State != "2WAY" {
-				downNeighbors++
+		down := 0
+		for _, n := range process.Neighbors {
+			if n.State != "FULL" && n.State != "2WAY" {
+				down++
 			}
 		}
-		if downNeighbors > 0 {
-			warnings = append(warnings, fmt.Sprintf("OSPF has %d neighbors not in FULL/2WAY state", downNeighbors))
-		}
-
-		// Check for backbone area
-		hasBackbone := false
-		for _, area := range ospfProcess.Areas {
-			if area.AreaID == "0" || area.AreaID == "0.0.0.0" {
-				hasBackbone = true
-				break
-			}
-		}
-		if !hasBackbone && len(ospfProcess.Areas) > 1 {
-			warnings = append(warnings, "OSPF configured without backbone area 0 - multi-area OSPF requires area 0")
+		if down > 0 {
+			warnings = append(warnings, fmt.Sprintf("OSPF has %d neighbors not in FULL/2WAY state", down))
 		}
 	}
-
-	// BGP peer validation
-	for _, bgpProcess := range table.BGPProcesses {
-		if bgpProcess.RouterID == "" {
+	for _, process := range table.BGPProcesses {
+		if process.RouterID == "" {
 			warnings = append(warnings, "BGP process has no Router ID configured")
 		}
-
-		downPeers := 0
-		for _, neighbor := range bgpProcess.Neighbors {
-			if neighbor.State != "Established" {
-				downPeers++
+		down := 0
+		for _, n := range process.Neighbors {
+			if n.State != "Established" {
+				down++
 			}
 		}
-		if downPeers > 0 {
-			warnings = append(warnings, fmt.Sprintf("BGP has %d peers not in Established state", downPeers))
+		if down > 0 {
+			warnings = append(warnings, fmt.Sprintf("BGP has %d peers not in Established state", down))
 		}
 	}
 
@@ -371,19 +358,11 @@ func CompareASARoutingTables(old, new *models.L3RoutingTable) (added, removed, c
 
 // EnrichASARoutingTableWithInterfaces adds interface metadata to routes
 func EnrichASARoutingTableWithInterfaces(table *models.L3RoutingTable, interfaceMap map[string]map[string]interface{}) {
-	for i := range table.Routes {
-		route := &table.Routes[i]
-		if route.Interface == "" {
-			continue
-		}
-
-		if ifaceMetadata, exists := interfaceMap[route.Interface]; exists {
-			if route.Metadata == nil {
-				route.Metadata = make(map[string]interface{})
-			}
-			route.Metadata["interface_details"] = ifaceMetadata
-		}
-	}
+	// The canonical route model has no generic metadata map. Keep this helper
+	// as a compatibility no-op rather than smuggling interface details into
+	// unrelated source or description fields.
+	_ = table
+	_ = interfaceMap
 }
 
 // GetASADefaultRoute returns the default route if one exists

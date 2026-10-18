@@ -1,6 +1,6 @@
 # Enterprise foundation: current implementation
 
-This is the first implementation increment from [the overhaul plan](ENTERPRISE_OVERHAUL_PLAN.md), not the completed enterprise application. It adds an offline policy evaluation contract and repairs demonstrated confidence/reference-data/build validation defects. The detailed [backlog](ENTERPRISE_OVERHAUL_BACKLOG.md) remains the delivery map.
+This records the M0 implementation increment from [the overhaul plan](ENTERPRISE_OVERHAUL_PLAN.md). The subsequent [firewall investigation milestone](FIREWALL_INVESTIGATION.md) adds a real ASA adapter, sanitized evidence storage and local operator UI; use that guide for the current application. The detailed [backlog](ENTERPRISE_OVERHAUL_BACKLOG.md) remains the delivery map.
 
 ## Replay the policy proof
 
@@ -14,7 +14,7 @@ The synthetic sample returns a policy-only `permit` attributed to `allow-web`. I
 
 Supported inputs are already-normalized single-device policy bundles. The implemented subset covers literal IPv4/IPv6 addresses and prefixes, address `any`, concrete numeric IP protocols or the documented aliases, TCP/UDP source/destination ports and ranges, enabled state, explicit rule order and complete-chain defaults. Scope mismatch and malformed tuples are errors. Earlier unresolved candidate rules and incomplete bundles prevent a definitive verdict. Known independent nonmatches can safely eliminate unresolved candidates.
 
-There is no vendor configuration adapter, evidence storage, named-object expansion, route/NAT/return-path simulation, authentication service, operator UI or device provisioning in this increment. Evidence references and completeness are caller assertions. A permitted policy result cannot establish that the network will forward the packet. Full capabilities and input details are in [the package guide](../platform/policy/README.md).
+The standalone foundation API accepts normalized data; evidence references and completeness are caller assertions. The subsequent ASA adapter adds bounded object expansion and source-backed evidence separately. Route/NAT/return-path simulation, enterprise authentication and device provisioning remain outside both increments. A permitted policy result cannot establish that the network will forward the packet. Full capabilities and input details, including the current v2 wildcard contract, are in [the package guide](../platform/policy/README.md).
 
 CLI inputs are bounded to 8 MiB each and policy rule count is bounded. JSON field/trailing-data checks reject malformed bundles. Validation failures exit nonzero; a valid indeterminate decision is a successful evaluation with an unresolved result. This command opens only the supplied local files and makes no network/device changes.
 
@@ -52,7 +52,7 @@ python -m pytest tests/ -q
 
 The coverage job retains a 70% total threshold on its explicit supported foundation package set. The new evaluator and CLI are included. This is a scoped green gate; it is not a claim that `go test ./...` or every nested module passes.
 
-Measured discovery found pre-existing vendor package build failures and missing nested orchestration module dependencies. Those failures are recorded in the [baseline audit](ENTERPRISE_OVERHAUL_AUDIT.md) and block real vendor integration. The legacy vendor-aware decision engine is not wired to the new evaluator. Recovering parser/model contracts, then proving a real config-to-investigation workflow, is the next milestone.
+Measured discovery found pre-existing vendor package build failures and missing nested orchestration module dependencies. Those failures are recorded in the [baseline audit](ENTERPRISE_OVERHAUL_AUDIT.md). The subsequent investigation milestone repairs and includes ASA in supported CI; other vendor/nested-module failures remain. The legacy vendor-aware decision engine is not wired to the new evaluator.
 
 Local verification uses an isolated Go toolchain and Python virtual environment outside the repository. Docker Desktop's Linux daemon was unavailable on the development host; the GitHub QA job supplies the exact container self-test evidence. No production deployment or external device collection is performed by this change.
 

@@ -54,3 +54,10 @@ Thumbs.db
 sample_data/
 
 .claude/
+
+# Playwright browser-test outputs and local investigation state
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/.e2e-runtime/
+/platform/.e2e-runtime/
