@@ -830,6 +830,9 @@
     row.querySelectorAll('select').forEach((input) => input.addEventListener('change', () => { clearNetworkResult(); refreshControls(); }));
     remove.addEventListener('click', () => { row.remove(); clearNetworkResult(); refreshControls(); });
     refreshNetworkTopology();
+    if (link.a) row.querySelector('.network-link-a-node').value = link.a.node_id;
+    if (link.b) row.querySelector('.network-link-b-node').value = link.b.node_id;
+    refreshControls();
   }
 
   function networkPayload() {

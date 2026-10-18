@@ -25,6 +25,8 @@ async function loadNetworkSample(page, mutateSample) {
   await expect(page.locator('#network-status')).toContainText(/2 sample firewall snapshots imported/i);
   await expect(page.locator('.network-node-row')).toHaveCount(2);
   await expect(page.locator('.network-link-row')).toHaveCount(1);
+  await expect(page.locator('.network-link-a-node')).toHaveValue('edge');
+  await expect(page.locator('.network-link-b-node')).toHaveValue('core');
   await expect(page.locator('#network-evaluate')).toBeEnabled();
 }
 

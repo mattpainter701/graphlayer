@@ -255,7 +255,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .network-endpoint-grid .field input,.network-endpoint-grid .field select { margin-top: 5px; }
 .network-result { margin-top: 14px; padding-top: 13px; border-top: 1px solid #e9edf1; min-width: 0; }
 .network-result > .path-stages > h3 { margin: 5px 0 2px; color: #65788e; font-size: 13px; }
-.network-result .path-disposition.path-modeled_round_trip { color: #26744a; }
+.network-result .path-disposition.path-modeled-round-trip { color: #26744a; }
 @media (max-width: 700px) { .network-panel { padding: 14px 12px; }.network-layout { grid-template-columns: minmax(0, 1fr); }.network-row,.network-link-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }.network-link-arrow { display: none; }.network-endpoint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 390px) { .network-row,.network-link-row,.network-endpoint-grid { grid-template-columns: minmax(0, 1fr); }.network-row > .small-icon-button { justify-self: end; } }
 
