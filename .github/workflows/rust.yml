@@ -1,0 +1,64 @@
+name: Rust engine and architecture
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Temporary capture from the actual released implementation. Committed
+  # parity fixtures replace this job before final-head validation.
+  released-asa-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platform/go.mod
+      - name: Capture released ASA forwarding semantics
+        run: node e2e/capture-released-asa-path.js --output "${RUNNER_TEMP}/released-asa-path.json"
+      - name: Upload released parity corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: released-asa-path
+          path: ${{ runner.temp }}/released-asa-path.json
+          if-no-files-found: error
+
+  rust-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bootstrap only: commit the generated lockfile and formatted source from
+      # this artifact, then remove this step before final-head validation.
+      - name: Bootstrap pinned Rust inputs
+        run: |
+          cargo generate-lockfile
+          cargo fmt --all
+      - name: Upload Rust bootstrap inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-bootstrap-inputs
+          path: |
+            Cargo.lock
+            crates/**/*.rs
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check Rust engine
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test Rust engine
+        run: cargo test --workspace
+      - uses: ./.github/actions/build-rust-engine
+
+  rust-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce Rust implementation ownership
+        run: python scripts/check-rust-boundary.py
+      - name: Test boundary ratchet
+        run: python -m unittest tests.test_rust_boundary -v

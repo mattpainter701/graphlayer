@@ -1,90 +1,52 @@
 # Contributing
 
-Thank you for considering contributing to the **GraphLayer Platform**!  
-This document focuses on **connector and parser** development. For the general
-guidelines please also read the existing guides in `platform/docs/`.
+Rust is the required implementation language for GraphLayer's domain engine. Read
+[`docs/RUST_ARCHITECTURE.md`](docs/RUST_ARCHITECTURE.md) and the repository
+[`AGENTS.md`](AGENTS.md) before changing production code. The architecture
+document describes the migration state and the boundaries for compatibility
+code.
 
-## Directory Layout
+## Adding or changing domain behavior
 
-```
-graphlayer/
-├── platform/                  # Go core (library + binaries)
-│   ├── cmd/                   # CLI entrypoints
-│   ├── connectors/            # Python connector library
-│   ├── correlation/           # Correlation engine
-│   ├── graph/                 # Graph data model & algorithms
-│   ├── intelligence/          # Inference & explainability
-│   ├── models/                # Data models
-│   ├── reference/             # IANA & vendor reference data
-│   ├── scoring/               # Scoring engine
-│   └── vendors/               # Vendor-specific parsers
-├── tests/                     # Python integration tests
-├── scripts/                   # Build & CI helper scripts
-│   ├── check_packaging.sh     # Package integrity checks
-│   └── smoke_test.py          # Connector import smoke test
-├── docs/                      # Additional documentation
-├── docker-compose.yml         # Development stack
-├── docker-compose.qa.yml      # QA/CI stack
-├── Dockerfile.core            # Core runtime image
-└── Dockerfile.connectors      # Connector worker image
-```
+Implement vendor parsing and connectors, graph and topology behavior, policy,
+routing and NAT, network analysis, validation, and inference in Rust. The Rust
+workspace is at the repository root; its application crate is named
+`graphlayer-engine`. Keep pure domain decisions in Rust. Go and Python glue may
+translate input/output formats or call the Rust engine while compatibility
+interfaces are being migrated. Browser JavaScript and TypeScript may render
+the results and manage view state.
 
-## Development Setup
+When porting an existing implementation, preserve its external contract and
+compare sanitized golden fixtures, including malformed-input cases. Switch the
+caller to Rust and remove the legacy implementation as part of the port. Do
+not create a Rust facade that delegates domain decisions back to the old Go or
+Python implementation.
 
-### Prerequisites
-- Go 1.24+ (`go version`)
-- Python 3.12+ (`python3 --version`)
-- Docker & Docker Compose (for QA stack)
+## Legacy inventory
 
-### Quick Start
-```bash
-# Clone the repo
-git clone https://github.com/mattpainter701/graphlayer.git
-cd graphlayer
+The remaining Go and Python domain files are frozen during migration. The
+guard in `scripts/check-rust-boundary.py` checks their SHA256 hashes and
+rejects new production Go or Python files anywhere under `platform/`.
+Deleting legacy files during a port is allowed. A narrow security fix,
+correctness fix, or migration adapter must have an exact-path exception that
+pins the approved SHA256 and names an owner, reason, and expiry within 90 days
+in `config/rust-boundary.json`. Remove exceptions when the Rust port is
+complete. Update baseline hashes only as part of a
+reviewed migration.
 
-# Run Go tests (platform core)
-cd platform && go test ./...
+The inventory is not a complete Rust implementation: the Cisco ASA forwarding parser is
+the first port, and remaining vendor parsers, analysis code, and Python
+connectors still need migration.
 
-# Run Python connector tests
-cd .. && pip install pytest && pytest tests/ -v
+## Verification
 
-# Build all Docker images
-docker compose build
+Use the Rust toolchain pinned by `rust-toolchain.toml` and run the focused
+crate tests for the area you changed. The Rust CI workflow runs the workspace
+checks. For a legacy-boundary change, run:
+
+```text
+python scripts/check-rust-boundary.py
 ```
 
-## How to Add a New Connector
-
-1. Create `platform/connectors/<vendor>_connector.py`
-2. Register it in `platform/connectors/registry.py`
-3. Add import to `platform/connectors/__init__.py`
-4. Write tests in `tests/test_<vendor>_connector.py`
-5. Run `python -m pytest tests/ -v` to verify
-6. Update `scripts/smoke_test.py` with the new module path
-
-## How to Add a New Vendor Parser (Go)
-
-1. Create `platform/vendors/<vendor>/parser.go`
-2. Implement the `Parser` interface from `platform/vendors/shared/`
-3. Add fuzz tests in `platform/vendors/<vendor>/fuzz_test.go`
-4. Run `cd platform && go test ./vendors/<vendor>/...`
-
-## Code Review & CI
-
-All changes must pass:
-
-| Check | Description |
-|-------|-------------|
-| `lint` | golangci-lint + static analysis |
-| `test` | Go tests across supported versions |
-| `python-test` | Python connector integration tests |
-| `qa` | Full Docker QA stack smoke test |
-| `bench` | Performance regression check |
-| `coverage` | Minimum 70% code coverage |
-
-## Release Checklist
-
-1. All CI checks passing on `main`
-2. Run `scripts/check_packaging.sh` to verify distribution integrity
-3. Run `scripts/smoke_test.py` for import sanity
-4. Tag release: `git tag vX.Y.Z && git push origin vX.Y.Z`
-5. Build and push Docker images via CI
+Fixtures must not contain credentials, raw customer configurations, or
+unredacted logs. Keep examples synthetic or sanitized.

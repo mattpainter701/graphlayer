@@ -22,7 +22,15 @@ See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported synt
 launch commands and tests. This is a single-user investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.
 
+Rust is required for new parser, connector and analysis-engine behavior. The
+[language policy](docs/RUST_ARCHITECTURE.md) is enforced in CI. The first
+production port moves ASA forwarding inventory parsing into Rust; the rest of
+the legacy engine remains tracked migration work. See the
+[Rust worker and packaging guide](docs/RUST_WORKER.md) for builds and tests.
+
 ```powershell
+cargo build --locked --release -p graphlayer-engine
+$env:GRAPHLAYER_ENGINE = (Resolve-Path target/release/graphlayer-engine.exe).Path
 cd platform
 go run ./cmd/graphlayer-investigate --listen 127.0.0.1:8088
 ```
