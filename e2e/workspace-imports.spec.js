@@ -149,7 +149,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-mobile.png') });
-  await expectResponsive(page, [320,390,768,1440]);
+  await expectResponsive(page, [320,390,768,920,1024,1120,1280,1440]);
 });
 
 test('invalid and duplicate files preserve the published baseline and sanitized preview never renders credentials', async ({ page }) => {

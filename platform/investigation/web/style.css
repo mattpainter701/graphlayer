@@ -270,6 +270,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .network-actions [role="status"] { color: #718196; font-size: 11px; line-height: 1.5; }
 .network-boundary { margin: 10px 0 0; padding: 9px 11px; border-left: 3px solid #c49a4c; background: #fbf7ee; color: #78643e; font-size: 11px; line-height: 1.5; }
 .network-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; min-width: 0; }
+@media (max-width: 1160px) { .network-layout { grid-template-columns: minmax(0, 1fr); } }
 .network-subpanel { min-width: 0; padding: 12px; border: 1px solid #e3e9ee; border-radius: 5px; background: #fcfdfe; }
 .network-subpanel h3 { margin: 0; color: #52677d; font-size: 13px; }
 .network-subheading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
