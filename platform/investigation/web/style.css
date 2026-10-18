@@ -339,7 +339,9 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .exploration-result .path-stage:focus { outline: 2px solid #668ca9; outline-offset: 2px; }
 @media (max-width: 600px) {
   .network-query-actions { width: 100%; justify-content: stretch; }
-  .network-query-actions .button { flex: 1 1 100%; }
+  .network-query-actions .button { flex: 1 1 100%; min-width: 0; }
+  #network-path .flow-footer { align-items: stretch; flex-direction: column; }
+  #network-path .network-query-actions { min-width: 0; }
   .exploration-selectors { grid-template-columns: minmax(0,1fr); }
   .exploration-topology-wrap { padding: 8px; }
   .exploration-topology { min-height: 100px; }
