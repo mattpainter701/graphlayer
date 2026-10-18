@@ -37,7 +37,7 @@ function flowFor(rule) {
 }
 
 async function importSample(page) {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.getByRole('button', { name: /load labeled asa sample/i }).click();
   await expect(page.locator('#config-input')).toHaveValue(/\S/);
   await page.getByRole('button', { name: /import configuration/i }).click();
@@ -207,7 +207,7 @@ test('failed import preserves the prior snapshot and source text is rendered ine
 });
 
 test('sanitized snapshots omit credential canaries and hostile source stays text', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.getByRole('button', { name: /load labeled asa sample/i }).click();
   await expect(page.locator('#config-input')).toHaveValue(/\S/);
   const source = await page.locator('#config-input').inputValue();
@@ -247,7 +247,7 @@ test('sanitized snapshots omit credential canaries and hostile source stays text
 });
 
 test('API rejects a foreign Origin even with an initialized browser session', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   const session = await jsonFromPage(page, '/api/session');
   expect(session.status).toBe(200);
   const response = await page.request.post('/api/imports', {

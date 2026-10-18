@@ -131,13 +131,18 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if path == "/" {
 		path = "/index.html"
 	}
-	if path == "/assets/app.js" {
-		path = "/app.js"
+	path = strings.TrimPrefix(path, "/assets")
+	contentTypes := map[string]string{
+		"/index.html":   "text/html; charset=utf-8",
+		"/app.js":       "text/javascript; charset=utf-8",
+		"/shell.js":     "text/javascript; charset=utf-8",
+		"/topology.js":  "text/javascript; charset=utf-8",
+		"/style.css":    "text/css; charset=utf-8",
+		"/shell.css":    "text/css; charset=utf-8",
+		"/topology.css": "text/css; charset=utf-8",
 	}
-	if path == "/assets/style.css" {
-		path = "/style.css"
-	}
-	if path != "/index.html" && path != "/app.js" && path != "/style.css" {
+	contentType, allowed := contentTypes[path]
+	if !allowed {
 		http.NotFound(w, r)
 		return
 	}
@@ -146,14 +151,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	switch path {
-	case "/app.js":
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	case "/style.css":
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	default:
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	}
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(200)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(data)

@@ -100,7 +100,7 @@ func responseJSON(t *testing.T, r *http.Response) map[string]any {
 
 func TestHTTPImportEvaluateHistoryAndSecurityHeaders(t *testing.T) {
 	b, _ := newTestBrowser(t)
-	for _, path := range []string{"/", "/assets/app.js", "/assets/style.css"} {
+	for _, path := range []string{"/", "/assets/app.js", "/assets/style.css", "/assets/shell.js", "/assets/shell.css", "/assets/topology.js", "/assets/topology.css"} {
 		resp, err := b.request("GET", path, nil, false)
 		if err != nil {
 			t.Fatal(err)
@@ -113,6 +113,12 @@ func TestHTTPImportEvaluateHistoryAndSecurityHeaders(t *testing.T) {
 		}
 		if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("missing nosniff on %s", path)
+		}
+		if strings.HasSuffix(path, ".js") && !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/javascript") {
+			t.Errorf("incorrect script content type on %s", path)
+		}
+		if strings.HasSuffix(path, ".css") && !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/css") {
+			t.Errorf("incorrect stylesheet content type on %s", path)
 		}
 		resp.Body.Close()
 	}

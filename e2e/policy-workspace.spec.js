@@ -28,7 +28,7 @@ async function submitConfig(page, config) {
 }
 
 async function importServiceSample(page, includeUnknown = false) {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.locator('#load-service-sample').click();
   await expect(page.locator('#config-input')).toHaveValue(/object-group service/i);
   if (includeUnknown) {
@@ -104,7 +104,7 @@ test('service workspace searches and inspects inventory, explains decisions, and
 });
 
 test('an unresolved service deny before a later permit remains indeterminate', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.locator('#load-service-sample').click();
   await expect(page.locator('#config-input')).toHaveValue(/object-group service/i);
   const source = await page.locator('#config-input').inputValue();
@@ -125,7 +125,7 @@ test('an unresolved service deny before a later permit remains indeterminate', a
 });
 
 test('rule inventory pages large chains and search leaves flow evaluation unchanged', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   const aceLines = Array.from({ length: 105 }, (_, index) =>
     `access-list PAGE-IN extended permit tcp any any eq ${2000 + index}`);
   const config = ['hostname paging-fw', ...aceLines, 'access-group PAGE-IN in interface outside', ''].join('\n');
@@ -156,7 +156,7 @@ test('rule inventory pages large chains and search leaves flow evaluation unchan
 });
 
 test('long-span dependency evidence paginates source with exact physical line ranges', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   const filler = Array.from({ length: 205 }, (_, index) => `! retained policy evidence filler ${index + 1}`);
   const config = [
     'hostname long-evidence-fw',
@@ -194,7 +194,7 @@ test('long-span dependency evidence paginates source with exact physical line ra
 
 test('service inventory remains usable on mobile and renders hostile object names inert', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.locator('#load-service-sample').click();
   await expect(page.locator('#config-input')).toHaveValue(/object-group service/i);
   const hostile = '<img>';

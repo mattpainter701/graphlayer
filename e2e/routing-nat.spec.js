@@ -10,7 +10,7 @@ async function saveLayout(page, name, fullPage = true) {
 }
 
 async function importPathSample(page, mutate) {
-  await page.goto('/');
+  await page.goto('/#imports');
   const sample = await page.evaluate(async () => {
     const response = await fetch('/api/sample/path', { credentials: 'same-origin' });
     return response.json();

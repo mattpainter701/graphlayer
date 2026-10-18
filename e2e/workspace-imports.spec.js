@@ -18,9 +18,14 @@ async function sample(page) {
 }
 
 async function enterWorkspace(page) {
-  await page.goto('/');
+  await page.goto('/#workspace');
   await expect(page.locator('#workspace-title')).not.toHaveText(/Loading workspace/i);
   await expect(page.locator('#workspace-refresh')).toBeEnabled();
+}
+
+async function enterImports(page) {
+  await page.goto('/#imports');
+  await expect(page.locator('#batch-load-sample')).toBeVisible();
 }
 
 async function validate(page, count) {
@@ -67,6 +72,8 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await page.locator('#workspace-name-input').fill('Enterprise network operations');
   await page.locator('#workspace-rename').click();
   await expect(page.locator('#workspace-title')).toHaveText('Enterprise network operations');
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page).toHaveURL(/#imports$/);
 
   const beforeSite = await workspace(page);
   if (!beforeSite.workspace.sites.some((site) => site.name === 'Chicago DC')) {
@@ -89,7 +96,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   const unpublished = await page.request.get('/api/snapshots').then((response) => response.json());
   expect(unpublished.snapshots.map((item) => item.id)).toEqual(before.snapshots.map((item) => item.id));
   await fs.mkdir(screenshots, { recursive: true });
-  await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-preview.png') });
+  await page.locator('[data-app-page="imports"]').screenshot({ path: path.join(screenshots, 'workspace-imports-preview.png') });
   await expectResponsive(page, [320,390,768]);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('#batch-site-select').selectOption(site.id);
@@ -101,9 +108,13 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await expect(page.locator('#active-set-members .dataset-member')).toHaveCount(4);
 
   await fs.mkdir(screenshots, { recursive: true });
-  await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-desktop.png') });
+  await page.locator('[data-app-page="imports"]').screenshot({ path: path.join(screenshots, 'workspace-imports-desktop.png') });
   await page.locator('#active-set-open-network').click();
+  await expect(page).toHaveURL(/#network-path$/);
   await expect(page.locator('.network-node-row')).toHaveCount(4);
+  await expect(page.locator('#topology-stage')).toBeVisible();
+  await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(4);
+  await expect(page.locator('#topology-caption')).toContainText(/Declared topology draft.*analysis not run/i);
   expect(await page.locator('.network-snapshot-id').evaluateAll((inputs) => inputs.map((input) => input.value))).toEqual(set.members.map((member) => member.snapshot_id));
   await expect(page.locator('.network-link-row')).toHaveCount(0);
   const ids = await page.locator('.network-node-id').evaluateAll((inputs) => inputs.map((input) => input.value));
@@ -139,21 +150,24 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   expect(original.request.nodes.map((node) => node.snapshot_id)).toEqual(set.members.map((member) => member.snapshot_id));
 
   await page.reload();
+  await page.goto('/#workspace');
   await expect(page.locator('#workspace-title')).toHaveText('Enterprise network operations');
   await expect(page.locator('#active-set-name')).toHaveText(setName);
   await expect(page.locator('#active-set-site')).toContainText('Chicago DC');
+  await page.goto('/#network-path');
   await page.locator('#exploration-history-list .exploration-history-open').first().click();
   await expect(page.locator('#exploration-result')).toBeVisible();
   const [replayedDownload] = await Promise.all([page.waitForEvent('download'), page.locator('#exploration-export').click()]);
   expect(await readDownload(replayedDownload)).toEqual(original);
 
+  await page.goto('/#workspace');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-mobile.png') });
   await expectResponsive(page, [320,390,768,920,1024,1120,1280,1440]);
 });
 
 test('invalid and duplicate files preserve the published baseline and sanitized preview never renders credentials', async ({ page }) => {
-  await enterWorkspace(page);
+  await enterImports(page);
   const existing = await workspace(page);
   const config = (await sample(page)).configs.find((item) => item.vendor === 'cisco-asa');
   const raw = `${config.config}\nusername preview-user password PREVIEW_SECRET_CANARY_5817\n`;
@@ -178,7 +192,7 @@ test('invalid and duplicate files preserve the published baseline and sanitized 
 });
 
 test('publishes an unassigned set, switches baselines and persists active selection', async ({ page }, info) => {
-  await enterWorkspace(page);
+  await enterImports(page);
   let prior = await workspace(page);
   let priorSet = prior.snapshot_sets.find((set) => set.id === prior.workspace.active_set_id);
   if (!priorSet) {
@@ -205,7 +219,7 @@ test('publishes an unassigned set, switches baselines and persists active select
 });
 
 test('discards a preview response when the queued format changes', async ({ page }) => {
-  await enterWorkspace(page);
+  await enterImports(page);
   await page.locator('#batch-load-sample').click();
   await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
   let release, signal;

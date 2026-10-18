@@ -12,7 +12,7 @@ async function readDownload(download) {
 }
 
 async function loadNetworkSample(page, mutateSample) {
-  await page.goto('/');
+  await page.goto('/#network-path');
   if (mutateSample) {
     await page.route('**/api/sample/network', async (route) => {
       const response = await route.fetch();

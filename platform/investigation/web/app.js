@@ -7,6 +7,10 @@
   const objectPageSize = 50;
   const apiRoot = '/api';
 
+  function navigateAppPage(page, anchor) {
+    document.dispatchEvent(new CustomEvent('graphlayer:navigate', { detail: { page, anchor } }));
+  }
+
   function el(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -269,6 +273,7 @@
     const index = objects.findIndex((object) => object.id === id);
     state.objectPage = index < 0 ? 0 : Math.floor(index / objectPageSize);
     renderObjects();
+    navigateAppPage('investigation', 'objects');
     $('objects').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -780,6 +785,7 @@
       $('path-source-port').value = hasPorts ? String(flow.source_port || '') : '';
       $('path-destination-port').value = hasPorts ? String(flow.destination_port || '') : '';
       updatePathInterfaceMeta();
+      navigateAppPage('investigation');
       $('path-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) { showToast(error.message, 'error'); }
     finally { state.busy = false; refreshControls(); }
@@ -796,9 +802,34 @@
     return [...document.querySelectorAll('.network-link-row')].length <= 32 && [...document.querySelectorAll('.network-link-row')].every((row) => row.querySelector('.network-link-a-node').value && row.querySelector('.network-link-b-node').value && row.querySelector('.network-link-a-interface').value.trim() && row.querySelector('.network-link-b-interface').value.trim());
   }
 
-  function clearNetworkResult() { state.networkInvestigation = null; $('network-result').hidden = true; clearExplorationResult(); refreshControls(); }
+  function clearNetworkResult() { state.networkInvestigation = null; $('network-result').hidden = true; clearExplorationResult(); renderDeclaredTopology(); refreshControls(); }
 
   function clearExplorationResult() { state.networkExploration = null; if ($('exploration-result')) $('exploration-result').hidden = true; }
+
+  function notifyTopology(request, exploration = null, branchIndex = 0, returnIndex = 0) {
+    const snapshots = (request.nodes || []).map((node) => ({ node_id: node.node_id, snapshot: state.networkSnapshots.get(node.snapshot_id) || state.snapshots.find((item) => item.id === node.snapshot_id) }));
+    document.dispatchEvent(new CustomEvent('graphlayer:topology-updated', { detail: { mode: exploration ? 'result' : 'draft', request, exploration, branchIndex, returnIndex, snapshots } }));
+  }
+
+  function renderDeclaredTopology() {
+    const request = networkPayload();
+    renderExplorationTopology({ request }, null, null);
+    notifyTopology(request);
+  }
+
+  async function openTopologyEvidence(detail) {
+    const record = state.networkExploration;
+    const request = record ? record.request : networkPayload();
+    const submitted = networkRequestJSON(request);
+    if (!detail || typeof detail.snapshot_id !== 'string' || typeof detail.ref !== 'string' || !(request.nodes || []).some((node) => node.snapshot_id === detail.snapshot_id)) return;
+    try {
+      const snapshot = await networkSnapshot(detail.snapshot_id);
+      if (state.networkExploration !== record || (!record && networkRequestJSON(networkPayload()) !== submitted)) throw new Error('The topology changed before its source was opened.');
+      const evidence = (snapshot.evidence || []).find((item) => item.id === detail.ref);
+      if (!evidence) throw new Error('Evidence reference is unavailable in its snapshot.');
+      showEvidence(evidence, detail.trigger, snapshot);
+    } catch (error) { showToast(error.message, 'error'); }
+  }
 
   function networkNodeRows() { return [...document.querySelectorAll('.network-node-row')]; }
   function nodeIDs() { return networkNodeRows().map((row) => row.querySelector('.network-node-id').value.trim()).filter(Boolean); }
@@ -943,6 +974,7 @@
   }
 
   function renderExplorationTopology(exploration, branch, returnCandidate) {
+    // This traversal places declared nodes on the canvas. Only server results supply path overlays.
     const svg = $('exploration-topology'); svg.replaceChildren();
     const request = exploration.request || {}; const nodes = request.nodes || []; const links = request.links || [];
     const forward = branch && branch.forward && branch.forward.hops || []; const returns = returnCandidate && returnCandidate.direction && returnCandidate.direction.hops || [];
@@ -966,17 +998,9 @@
     const hitsByNode = new Map(); const addHits = (hops, direction) => (hops || []).forEach((hop, index) => { if (!hitsByNode.has(hop.node_id)) hitsByNode.set(hop.node_id, []); hitsByNode.get(hop.node_id).push({ hop, direction, index }); }); addHits(forward, 'forward'); addHits(returns, 'return');
     const statusClass = (value) => String(value || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
     const displayNode = (value) => value.length > 16 ? `${value.slice(0, 13)}…` : value;
-    nodes.forEach((node) => { const pos = positions.get(node.node_id); const hits = hitsByNode.get(node.node_id) || []; const hit = hits[0]; const hopStatus = hit && hit.hop.path && hit.hop.path.disposition || 'unknown'; const directions = [...new Set(hits.map((item) => item.direction))]; const group = document.createElementNS(ns, 'g'); group.setAttribute('class', `topology-node ${directions.map((direction) => `topology-${direction}`).join(' ')} topology-state-${statusClass(hopStatus)}`); group.setAttribute('tabindex', '0'); group.setAttribute('role', 'button'); group.setAttribute('aria-label', `${node.node_id}, operator supplied topology node${hits.length ? `, selected ${directions.join(' and ')} hop${hits.length === 1 ? ` ${hit.index + 1}` : 's'}${hopStatus ? `, status ${hopStatus}` : ''}` : ', not in selected branch'}`); group.dataset.nodeId = node.node_id; const circle = document.createElementNS(ns, 'circle'); circle.setAttribute('cx', pos.x); circle.setAttribute('cy', pos.y); circle.setAttribute('r', '25'); const label = document.createElementNS(ns, 'text'); label.setAttribute('x', pos.x); label.setAttribute('y', pos.y + 43); label.textContent = displayNode(node.node_id); const title = document.createElementNS(ns, 'title'); title.textContent = node.node_id; label.append(title); const status = document.createElementNS(ns, 'text'); status.setAttribute('x', pos.x); status.setAttribute('y', pos.y + 59); status.setAttribute('class', 'topology-node-status'); status.textContent = hits.length ? directions.join(' + ') : 'declared'; group.append(circle, label, status); const focus = () => focusExplorationHop(node.node_id); group.addEventListener('click', focus); group.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); focus(); } }); svg.append(group); });
-    const list = $('exploration-topology-list'); list.replaceChildren(); nodes.forEach((node) => { const button = el('button', 'topology-list-node', node.node_id); button.type = 'button'; button.addEventListener('click', () => focusExplorationHop(node.node_id)); const hits = hitsByNode.get(node.node_id) || []; button.setAttribute('aria-label', `${node.node_id}${hits.length ? `, ${[...new Set(hits.map((item) => item.direction))].join(' and ')} hop${hits.length === 1 ? ` ${hits[0].index + 1}` : 's'}` : ', declared node without selected hop'}`); list.append(button); });
+    nodes.forEach((node) => { const pos = positions.get(node.node_id); const hits = hitsByNode.get(node.node_id) || []; const hit = hits[0]; const hopStatus = hit && hit.hop.path && hit.hop.path.disposition || 'unknown'; const directions = [...new Set(hits.map((item) => item.direction))]; const group = document.createElementNS(ns, 'g'); group.setAttribute('class', `topology-node ${directions.map((direction) => `topology-${direction}`).join(' ')} topology-state-${statusClass(hopStatus)}`); group.setAttribute('tabindex', '0'); group.setAttribute('role', 'button'); group.setAttribute('aria-label', `${node.node_id}, operator supplied topology node${hits.length ? `, selected ${directions.join(' and ')} hop${hits.length === 1 ? ` ${hit.index + 1}` : 's'}${hopStatus ? `, status ${hopStatus}` : ''}` : ', not in selected branch'}`); group.dataset.nodeId = node.node_id; const circle = document.createElementNS(ns, 'circle'); circle.setAttribute('cx', pos.x); circle.setAttribute('cy', pos.y); circle.setAttribute('r', '25'); const label = document.createElementNS(ns, 'text'); label.setAttribute('x', pos.x); label.setAttribute('y', pos.y + 43); label.textContent = displayNode(node.node_id); const title = document.createElementNS(ns, 'title'); title.textContent = node.node_id; label.append(title); const status = document.createElementNS(ns, 'text'); status.setAttribute('x', pos.x); status.setAttribute('y', pos.y + 59); status.setAttribute('class', 'topology-node-status'); status.textContent = hits.length ? directions.join(' + ') : 'declared'; group.append(circle, label, status); svg.append(group); });
+    const list = $('exploration-topology-list'); list.replaceChildren(); nodes.forEach((node) => { const button = el('button', 'topology-list-node', node.node_id); button.type = 'button'; button.dataset.nodeId = node.node_id; const hits = hitsByNode.get(node.node_id) || []; button.setAttribute('aria-label', `${node.node_id}${hits.length ? `, ${[...new Set(hits.map((item) => item.direction))].join(' and ')} hop${hits.length === 1 ? ` ${hits[0].index + 1}` : 's'}` : ', declared node without selected hop'}`); list.append(button); });
     links.forEach((link) => list.append(el('span', 'topology-list-link', `${link.a.node_id} (${link.a.interface}) ↔ ${link.b.node_id} (${link.b.interface})`)));
-  }
-
-  function focusExplorationHop(nodeId) {
-    const forward = [...document.querySelectorAll('#exploration-forward-hops .path-stage')].find((item) => item.dataset.nodeId === nodeId);
-    const returned = [...document.querySelectorAll('#exploration-return-hops .path-stage')].find((item) => item.dataset.nodeId === nodeId);
-    const card = forward || returned;
-    if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.focus({ preventScroll: true }); }
-    else showToast(`${nodeId} is declared in the topology but has no hop in the selected branch.`);
   }
 
   function renderNetworkExploration(exploration) {
@@ -999,6 +1023,7 @@
       const fill = (id, values, fallback) => { const list = $(id); list.replaceChildren(); (values && values.length ? values : [fallback]).forEach((value) => list.append(el('li', '', boundedPathText(value, 1200)))); };
       fill('exploration-reasons', [...(result.reasons || []), ...(selectedBranch && selectedBranch.reasons || []), ...(selectedBranch && selectedBranch.forward && selectedBranch.forward.reasons || []), ...(candidate && candidate.reasons || []), ...(candidate && candidate.direction && candidate.direction.reasons || [])], 'No reason details were returned.'); fill('exploration-assumptions', [...(result.assumptions || []), ...(result.truncated ? ['Some branches were omitted because the exploration was truncated.'] : [])], 'No additional assumptions were returned.');
       renderExplorationTopology(exploration, selectedBranch, candidate);
+      notifyTopology(exploration.request || {}, exploration, Number(branchSelect.value) || 0, Number(returnSelect.value) || 0);
     };
     const rebuildReturns = () => { const candidates = candidatesForBranch(); returnSelect.replaceChildren(...(candidates.length ? candidates.map((candidate, index) => new Option(`Return ${index + 1} · ${pathLabel(candidate.direction && candidate.direction.hops)} · session ${candidate.session_status || 'unknown'}${candidate.asymmetric ? ' · asymmetric' : ''}`, String(index))) : [new Option('No return candidate', '')])); if (candidates.length) returnSelect.value = '0'; draw(); };
     branchSelect.onchange = rebuildReturns; returnSelect.onchange = draw; rebuildReturns(); refreshControls();
@@ -1045,7 +1070,7 @@
       req.links.forEach((link, index) => { const row = document.querySelectorAll('.network-link-row')[index]; row.querySelector('.network-link-a-node').value = link.a.node_id; row.querySelector('.network-link-a-interface').value = link.a.interface; row.querySelector('.network-link-b-node').value = link.b.node_id; row.querySelector('.network-link-b-interface').value = link.b.interface; });
       refreshNetworkTopology(); $('network-source-node').value = req.source.node_id; $('network-source-interface').value = req.source.interface; $('network-destination-node').value = req.destination.node_id; $('network-destination-interface').value = req.destination.interface;
       $('network-flow-source').value = req.flow.source; $('network-flow-destination').value = req.flow.destination; $('network-flow-protocol').value = req.flow.protocol; $('network-flow-source-port').value = req.flow.source_port || ''; $('network-flow-destination-port').value = req.flow.destination_port || '';
-      renderNetworkInvestigation(investigation); $('network-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      navigateAppPage('topology'); renderNetworkInvestigation(investigation); $('network-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) { showToast(error.message, 'error'); } finally { state.busy = false; refreshControls(); }
   }
 
@@ -1068,7 +1093,7 @@
       $('network-source-node').value = sample.source.node_id; $('network-source-interface').value = sample.source.interface; $('network-destination-node').value = sample.destination.node_id; $('network-destination-interface').value = sample.destination.interface;
       Object.entries(sample.flow || {}).forEach(([key, value]) => { const id = `network-flow-${key.replaceAll('_', '-')}`; if ($(id)) $(id).value = String(value); });
       $('network-status').textContent = `${imported.length} sample firewall snapshots imported. Review device IDs and operator supplied links before tracing.`;
-      clearNetworkResult(); refreshControls();
+      clearNetworkResult(); refreshControls(); navigateAppPage('topology');
     } catch (error) { showToast(error.message, 'error'); $('network-status').textContent = error.message; }
     finally { setBusy(button, false); refreshControls(); }
   }
@@ -1098,7 +1123,7 @@
 
   async function reopenNetworkExploration(id) {
     if (state.busy) return; const before = JSON.stringify(networkPayload()); state.busy = true; refreshControls();
-    try { const body = await request(`/network-explorations/${encodeURIComponent(id)}`); const exploration = body.exploration; if (!exploration || !exploration.request) throw new Error('Saved network exploration was incomplete.'); await Promise.all(exploration.request.nodes.map((node) => networkSnapshot(node.snapshot_id))); if (JSON.stringify(networkPayload()) !== before) throw new Error('Network topology or flow changed while history was loading. The saved exploration was not displayed.'); applyNetworkRequest(exploration.request); renderNetworkExploration(exploration); $('exploration-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    try { const body = await request(`/network-explorations/${encodeURIComponent(id)}`); const exploration = body.exploration; if (!exploration || !exploration.request) throw new Error('Saved network exploration was incomplete.'); await Promise.all(exploration.request.nodes.map((node) => networkSnapshot(node.snapshot_id))); if (JSON.stringify(networkPayload()) !== before) throw new Error('Network topology or flow changed while history was loading. The saved exploration was not displayed.'); applyNetworkRequest(exploration.request); navigateAppPage('topology'); renderNetworkExploration(exploration); $('exploration-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
     catch (error) { showToast(error.message, 'error'); } finally { state.busy = false; refreshControls(); }
   }
 
@@ -1406,6 +1431,7 @@
       await loadSnapshots(snapshot.id);
       await loadHistory();
       showToast('Configuration imported and snapshot selected.');
+      navigateAppPage('investigation');
     } catch (error) { showToast(error.message, 'error'); }
     finally { setBusy(button, false); refreshControls(); }
   }
@@ -1454,6 +1480,7 @@
       if (!state.snapshot || state.snapshot.id !== investigation.snapshot_id || !selectedChain() || selectedChain().id !== investigation.chain_id) throw new Error('Saved scope is unavailable; the result was not opened in a different scope.');
       $('snapshot-select').value = investigation.snapshot_id;
       const flow = investigation.result && investigation.result.flow;
+      navigateAppPage('investigation');
       if (!flow || !renderInvestigation(investigation)) throw new Error('Saved flow details were missing or did not match its scope.');
       $('flow-source').value = flow.source;
       $('flow-destination').value = flow.destination;
@@ -1607,7 +1634,7 @@
         const row = el('div','dataset-member'); row.append(el('span','member-symbol','FW'));
         const snapshot=state.snapshots.find((entry) => entry.id === member.snapshot_id);
         const copy = el('div','dataset-member-copy'); copy.append(el('strong','',snapshot && (snapshot.hostname || snapshot.name) || member.name || `Snapshot ${String(member.snapshot_id || '').slice(0,8)}`),el('small','',[snapshot ? vendorName(snapshot.vendor) : 'Snapshot',snapshot && snapshot.context,snapshot && snapshot.name].filter(Boolean).join(' · ') || String(member.snapshot_id || '').slice(0,8)));
-        const open = el('button','member-open','Inspect'); open.type = 'button'; open.addEventListener('click', () => loadSnapshot(member.snapshot_id).then((ok) => { if (ok) $('investigation').scrollIntoView({behavior:'smooth'}); })); row.append(copy,open); membersHost.append(row);
+        const open = el('button','member-open','Inspect'); open.type = 'button'; open.addEventListener('click', () => loadSnapshot(member.snapshot_id).then((ok) => { if (ok) navigateAppPage('investigation'); })); row.append(copy,open); membersHost.append(row);
       });
       if (!(state.activeSet.members || []).length) membersHost.append(el('div','dataset-empty','This dataset has no snapshots yet.'));
     }
@@ -1713,6 +1740,7 @@
       await loadHistory();
       if (submittedDraft === state.batchDraftVersion) { state.batch=[]; state.batchBytes=0; $('batch-set-name').value=''; $('batch-preview-results').replaceChildren(); renderBatchItems(); workspaceStatus('Dataset published and activated. You can inspect each snapshot or investigate the dataset below.','success'); }
       else workspaceStatus('Dataset published and activated. The files edited during publication remain in the batch; the active dataset has been refreshed.','success');
+      navigateAppPage('workspace');
       $('active-set-name').scrollIntoView({behavior:'smooth',block:'center'});
     } catch(error) { if (error.code === 'workspace_conflict') { try { await readWorkspace(); } catch(_) {} } workspaceStatus(error.message,'error'); showToast(error.message,'error'); }
     finally { state.publishing=false; $('batch-publish').classList.remove('is-loading'); refreshWorkspaceControls(); }
@@ -1741,10 +1769,17 @@
     $('network-status').textContent = `Loaded ${Math.min(members.length,16)} dataset snapshots as devices. Declare real links and endpoints before tracing.`;
     $('network-source-interface').value=''; $('network-destination-interface').value='';
     $('network-source-node').value='device1'; $('network-destination-node').value=`device${Math.min(members.length,16)}`;
+    renderDeclaredTopology();
+    navigateAppPage('topology');
     $('network-path').scrollIntoView({behavior:'smooth',block:'start'}); $('network-source-interface').focus({preventScroll:true});
+    const submitted = networkRequestJSON(networkPayload());
+    Promise.all(members.map((member) => networkSnapshot(member.snapshot_id))).then(() => {
+      if (!state.networkExploration && networkRequestJSON(networkPayload()) === submitted) renderDeclaredTopology();
+    }).catch((error) => showToast(error.message, 'error'));
   }
 
   function wireEvents() {
+    document.addEventListener('graphlayer:open-network-evidence', (event) => openTopologyEvidence(event.detail));
     $('workspace-refresh').addEventListener('click', refreshWorkspaceView);
     $('workspace-rename').addEventListener('click', renameWorkspace);
     $('workspace-name-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); renameWorkspace(); } });
@@ -1813,12 +1848,16 @@
     $('refresh-history').addEventListener('click', () => loadHistory().catch((error) => showToast(error.message, 'error')));
     $('refresh-path-history').addEventListener('click', () => loadPathHistory().catch((error) => showToast(error.message, 'error')));
     $('export-button').addEventListener('click', exportResult);
-    $('close-source').addEventListener('click', () => {
+    const closeSource = () => {
       $('source-lines').hidden = true;
       const trigger = state.evidenceTrigger;
       state.evidenceTrigger = null;
       if (trigger && trigger.isConnected && !trigger.closest('[hidden]')) trigger.focus();
-      else $('inventory-search').focus();
+      else document.querySelector('.nav-item[aria-current="page"]')?.focus();
+    };
+    $('close-source').addEventListener('click', closeSource);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !$('source-lines').hidden) { event.preventDefault(); closeSource(); }
     });
     $('flow-protocol').addEventListener('change', () => {
       const enabled = $('flow-protocol').value === 'tcp' || $('flow-protocol').value === 'udp';
@@ -1826,14 +1865,7 @@
       clearResult();
     });
     ['flow-source', 'flow-destination', 'flow-source-port', 'flow-destination-port'].forEach((id) => $(id).addEventListener('input', () => clearResult()));
-    document.querySelectorAll('.nav-item').forEach((link) => link.addEventListener('click', (event) => {
-      const target = link.getAttribute('href');
-      document.querySelectorAll('.nav-item').forEach((item) => { const active=item === link; item.classList.toggle('active',active); if (active) item.setAttribute('aria-current','page'); else item.removeAttribute('aria-current'); });
-      if (target === '#workspace-home') { event.preventDefault(); $('workspace-home').scrollIntoView({ behavior: 'smooth' }); }
-      else if (target === '#imports') { event.preventDefault(); $('config-input').focus(); $('imports').scrollIntoView({ behavior: 'smooth' }); }
-      else if (target === '#policy-inventory' || target === '#objects') { event.preventDefault(); const section = $(target.slice(1)); section.scrollIntoView({ behavior: 'smooth' }); (target === '#policy-inventory' ? $('inventory-search') : $('object-search')).focus({ preventScroll: true }); }
-      else if (target === '#investigation') { event.preventDefault(); $('flow-source').focus(); }
-    }));
+
   }
 
   async function start() {
@@ -1847,6 +1879,7 @@
       await loadHistory();
       await loadNetworkHistory();
       await loadExplorationHistory();
+      renderDeclaredTopology();
     } catch (error) { showToast(error.message, 'error'); }
   }
 
