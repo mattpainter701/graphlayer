@@ -7,6 +7,12 @@ device configurations and operational state from diverse sources, parses them
 through vendor-specific adapters, correlates devices across sources, infers
 topology links, and exports rich graph representations.
 
+The required implementation language for parsers, connectors and domain
+engines is Rust. See [Rust architecture](docs/RUST_ARCHITECTURE.md) and the
+[worker contract](docs/RUST_WORKER.md). The ASA forwarding inventory parser
+has moved to Rust; the Go/Python layers described below are legacy components
+under a CI-enforced migration boundary, not a claim of a completed rewrite.
+
 ## Architecture Layers
 
 ```

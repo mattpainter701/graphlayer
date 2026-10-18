@@ -1,0 +1,44 @@
+name: Rust engine and architecture
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check Rust engine
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Test Rust engine
+        run: cargo test --locked --workspace
+      - uses: ./.github/actions/build-rust-engine
+
+  rust-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce Rust implementation ownership
+        run: python scripts/check-rust-boundary.py
+      - name: Test boundary ratchet
+        run: python -m unittest tests.test_rust_boundary -v
+
+  rust-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build packaged investigation application
+        run: docker build --file Dockerfile.investigate --tag graphlayer-investigate:ci .
+      - name: Start packaged loopback application
+        run: docker run --detach --network host --name graphlayer-rust-smoke graphlayer-investigate:ci --listen 127.0.0.1:8091 --data-dir /tmp/graphlayer-smoke
+      - name: Import ASA through the packaged Rust sibling
+        run: python e2e/container-smoke.py
+      - name: Stop packaged application
+        if: always()
+        run: docker rm --force graphlayer-rust-smoke || true

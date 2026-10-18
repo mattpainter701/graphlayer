@@ -36,6 +36,7 @@
     if (!response.ok) {
       const code = body && body.error && body.error.code;
       const messages = {
+        analysis_engine_unavailable: 'The local analysis engine is unavailable. Check the application installation and retry.',
         workspace_conflict: 'The workspace changed in another view. It has been reloaded; review your changes and try again.',
         invalid_workspace: 'Use a workspace and dataset name of at most 80 characters.',
         preview_not_found: 'This validation preview has expired or is unavailable. Validate the configurations again.',
@@ -1576,7 +1577,7 @@
       const head = el('div', 'preview-item-head'); head.append(el('strong', '', item.name || 'Configuration'), el('span', 'preview-badge', item.status || 'invalid')); head.lastChild.dataset.status = item.status || 'invalid'; card.append(head);
       const facts = [item.hostname, item.vendor ? vendorName(item.vendor) : '', item.context, item.parser_version ? `Parser ${item.parser_version}` : '', `${Number(item.chain_count)||0} chains`, `${Number(item.rule_count)||0} rules`, `${Number(item.warning_count)||0} warnings`].filter(Boolean);
       if (facts.length) card.append(el('p', '', facts.join(' · ')));
-      if (item.error_code) card.append(el('p', '', `Needs attention: ${String(item.error_code).replaceAll('_',' ')}`));
+      if (item.error_code) card.append(el('p', '', item.error_code === 'analysis_engine_unavailable' ? 'The local analysis engine is unavailable. Check the application installation, then validate again.' : `Needs attention: ${String(item.error_code).replaceAll('_',' ')}`));
       if (item.existing) card.append(el('p','','Already saved in this workspace · the published dataset will reuse this snapshot.'));
       if (Array.isArray(item.warnings) && item.warnings.length) {
         const warnings = item.warnings.slice(0,20).map((warning) => {

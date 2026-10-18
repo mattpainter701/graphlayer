@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Run ASA forwarding inventory parsing in a required Rust engine, preserving routing/NAT evidence and released data contracts. Package the native worker with the application and reject unavailable or invalid analysis engines without falling back to Go parsing.
+- Require Rust for parsers, connectors and analysis behavior through repository instructions, a pinned Cargo workspace and CI-enforced legacy language boundaries. Track the remaining Go/Python migration explicitly.
+
 - Add named local workspaces, sites and snapshot sets with reviewed multi-vendor batch imports, sanitized previews, revision conflict checks and atomic publication that preserves the previous baseline on failure.
 - Redesign the workspace shell around onboarding, active datasets and source inspection, with persisted baseline selection, exact investigation replay and desktop/mobile end-to-end coverage. Preserve released workspace-v1 through v6 records while adding validated workspace-v7 transactions.
 

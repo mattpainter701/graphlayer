@@ -32,10 +32,18 @@ async function main() {
     throw build.error || new Error(`go build exited with status ${build.status}`);
   }
 
+  const engine = process.env.GRAPHLAYER_ENGINE;
+  if (!engine || !path.isAbsolute(engine)) throw new Error('Build the Rust engine and set its absolute GRAPHLAYER_ENGINE path before browser tests.');
+  const packagedEngine = path.join(binaryDir, process.platform === 'win32' ? 'graphlayer-engine.exe' : 'graphlayer-engine');
+  await fs.copyFile(engine, packagedEngine);
+  if (process.platform !== 'win32') await fs.chmod(packagedEngine, 0o755);
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.GRAPHLAYER_ENGINE;
+
   const child = spawn(binary, [
     '--listen', listen,
     '--data-dir', path.join(dataDir, 'workspace'),
-  ], { cwd: root, stdio: 'inherit', windowsHide: true });
+  ], { cwd: root, env: childEnvironment, stdio: 'inherit', windowsHide: true });
 
   const stop = () => child.kill('SIGTERM');
   process.on('SIGINT', stop);

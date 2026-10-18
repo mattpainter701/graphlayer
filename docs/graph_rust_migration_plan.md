@@ -1,92 +1,39 @@
-# GraphLayer Rust Graph Engine Migration Plan
+# Rust domain migration
 
-## Goal
+GraphLayer's domain implementation is moving to Rust. This plan replaces the
+older graph-only proposal: the target includes parsers, connectors, graph and
+topology construction, policy, route and NAT evaluation, network analysis,
+validation, inference, and performance-sensitive algorithms.
 
-Move the graphing hot path toward a Rust implementation without rewriting the
-entire platform. The Rust scope should stay focused on graph construction,
-validation, algorithms, and export serialization.
+The root Cargo workspace contains the `graphlayer-engine` application crate
+and the reusable domain crates under `crates/`. Rust owns domain rules and
+decisions. Go HTTP, storage, and CLI compatibility code may remain as adapters
+while callers migrate. Browser code may manage view state and render results.
+A migrated slice must not call the old Go or Python engine for its domain work.
 
-## Why Rust for graphing
+## Migration slices
 
-- Strong typing for graph IDs, node/edge kinds, optional VLANs, and export
-  formats.
-- Predictable performance for large topology traversal and export workloads.
-- Memory safety for dense graph processing.
-- A clean boundary for consolidating graph logic currently split between Go
-  graph export code and Python graph algorithms.
+1. **Establish the boundary with Cisco ASA forwarding inventory parsing.** Implement
+   interface/route/NAT parsing in Rust, preserve its contract, and compare sanitized
+   golden fixtures. This is the first port, not complete Rust runtime support.
+2. **Move remaining domain behavior.** Port the other Go vendor parsers,
+   graph/topology and policy/routing/NAT analysis, then every Python connector.
+   Keep each slice independently reviewable with focused fixtures and parity
+   checks.
+3. **Retire legacy implementations.** Switch the owning caller to Rust, delete
+   the old implementation, and remove any temporary exception. Update the
+   frozen inventory only with the reviewed port.
+4. **Reduce compatibility code.** Keep Go transport, storage, and CLI code
+   limited to compatibility work as consumers move to the Rust engine.
 
-## Non-goals
+The [Rust architecture](RUST_ARCHITECTURE.md) describes the language boundary.
+[`AGENTS.md`](../AGENTS.md) makes it repository policy, and
+[`config/rust-boundary.json`](../config/rust-boundary.json) plus
+[`scripts/check-rust-boundary.py`](../scripts/check-rust-boundary.py) enforce a
+freeze on the remaining legacy domain files. The guard allows deletions and
+accepts only exact-path exceptions that pin the approved SHA256 and name an
+owner, reason, and expiry within 90 days.
+CI runs the guard.
 
-- Do not rewrite Python connectors as part of the graph migration.
-- Do not rewrite all vendor parsers up front.
-- Do not start with FFI; prefer a CLI/JSON boundary first.
-
-## Proposed boundary
-
-Producers emit a canonical topology JSON document:
-
-```json
-{
-  "schema_version": "0.1.0",
-  "devices": [],
-  "assets": [],
-  "networks": [],
-  "links": [],
-  "l2_links": [],
-  "policies": []
-}
-```
-
-The Rust graph engine consumes that document and emits a validated graph:
-
-```json
-{
-  "schema_version": "0.1.0",
-  "nodes": [],
-  "edges": [],
-  "metadata": {}
-}
-```
-
-## Phased execution
-
-1. Stabilize the current graph/test baseline.
-2. Define JSON schemas for normalized topology input and graph output.
-3. Add a small Rust CLI proof of concept that reads topology JSON and exports
-   D3 JSON or GraphML.
-4. Compare Rust output with existing Go graph output using golden fixtures.
-5. Switch the export path only after parity tests pass.
-
-## First Rust proof-of-concept crate
-
-Recommended crate layout:
-
-```text
-graphlayer-core-rs/
-├── Cargo.toml
-└── crates/
-    ├── graphlayer-models/
-    ├── graphlayer-graph/
-    ├── graphlayer-export/
-    └── graphlayer-cli/
-```
-
-Recommended initial dependencies:
-
-```toml
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "1"
-petgraph = "0.6"
-clap = { version = "4", features = ["derive"] }
-quick-xml = "0.36"
-```
-
-## Immediate remediation targets
-
-- Keep non-benchmark Python tests green by separating benchmark tests from the
-  default test command.
-- Keep focused Go graph/reference checks green while broader experimental
-  packages are repaired.
-- Fix graph-builder handling of partial topology records before porting logic
-  to Rust.
+Fixtures must be synthetic or sanitized and must not contain credentials, raw
+customer configurations, or unredacted logs.
