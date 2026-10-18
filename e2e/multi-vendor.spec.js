@@ -149,6 +149,7 @@ test('applies PAN security policy to the original DNAT address and post-NAT zone
   await page.goto('/');
   await page.locator('#load-panos-sample').click();
   const configInput = page.locator('#config-input');
+  await expect(configInput).toHaveValue(/set rulebase nat rules client-static source-translation static-ip translated-address 198\.51\.100\.42/);
   const original = await configInput.inputValue();
   expect(original).toContain('set rulebase nat rules client-static source-translation static-ip translated-address 198.51.100.42');
   expect(original).toContain('set rulebase security rules allow-https to untrust');
