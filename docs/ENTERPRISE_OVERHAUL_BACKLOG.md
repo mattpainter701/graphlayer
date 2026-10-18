@@ -57,6 +57,8 @@ The next [policy workspace slice](POLICY_WORKSPACE.md) adds service/object depen
 
 ## M3 — Topology, identity and end-to-end paths
 
+The [multi-firewall slice](MULTI_FIREWALL_INVESTIGATIONS.md) extends G09/G10/G11 with explicit snapshot-pinned ASA links, per-hop routing/static NAT, assumed established TCP/UDP reply traces, source evidence and local replay/export. It requires symmetric supported configuration paths and does not close branch exploration, dynamic state, tunnels, mixed vendors or the wider acceptance criteria below.
+
 The [local routing/NAT slice](ROUTING_NAT_INVESTIGATIONS.md) begins G07/G08/G11 with single-ASA configured IPv4 routes, bounded static object NAT and evidence-backed path stages. It preserves older records and tests the complete local workflow. This does not close dynamic routing, full NAT, state/return paths, tunnels, multi-vendor or multi-hop acceptance below.
 
 | ID | Package / owner | Depends on | Acceptance |

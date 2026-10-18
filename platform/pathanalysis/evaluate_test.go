@@ -45,6 +45,64 @@ func TestDNATUsesRealAddressForACLAndSelectsDirectConnectedRealInterface(t *test
 	}
 }
 
+func TestEvaluateReturnRequiresRecomputedForwardEvidence(t *testing.T) {
+	in := baseInput()
+	in.IngressInterface = "inside"
+	in.Flow.Source = "10.1.0.10"
+	in.Flow.Destination = "198.51.100.20"
+	in.Config.Chains[0].Interface = "inside"
+	fwd, err := Evaluate(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fwd.Disposition != "modeled_forward" {
+		t.Fatalf("forward disposition = %q; reasons=%v", fwd.Disposition, fwd.Reasons)
+	}
+	ret := Input{Scope: in.Scope, Config: in.Config, IngressInterface: fwd.EgressInterface, Flow: reverseFlow(fwd.EgressFlow, in.Scope)}
+	forged := fwd
+	forged.Policy = nil
+	if _, err := EvaluateReturn(ret, forged); err == nil {
+		t.Fatal("accepted forged forward permit")
+	}
+	changed := ret
+	changed.Config = ret.Config
+	changed.Config.Path = copyPathConfig(ret.Config.Path)
+	changed.Config.Path.NATComplete = false
+	if _, err := EvaluateReturn(changed, fwd); err == nil {
+		t.Fatal("accepted forward result from different configuration evidence")
+	}
+	got, err := EvaluateReturn(ret, fwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Disposition != "modeled_forward" || got.EgressFlow != reverseFlow(fwd.OriginalFlow, in.Scope) {
+		t.Fatalf("unexpected established return: %#v", got)
+	}
+	asymmetric := ret
+	asymmetric.Config.Path = copyPathConfig(ret.Config.Path)
+	level := 50
+	asymmetric.Config.Path.Interfaces = append(asymmetric.Config.Path.Interfaces, firewall.PathInterface{Name: "alternate", Address: "10.2.0.1/24", SecurityLevel: &level, Resolved: true})
+	asymmetric.Config.Path.Routes = append(asymmetric.Config.Path.Routes,
+		firewall.PathRoute{ID: "alternate-connected", Kind: "connected", Prefix: "10.2.0.0/24", Interface: "alternate"},
+		firewall.PathRoute{ID: "alternate-client", Kind: "static", Prefix: "10.1.0.10/32", Interface: "alternate", NextHop: "10.2.0.2", Distance: 1},
+	)
+	got, err = EvaluateReturn(asymmetric, fwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Disposition != "indeterminate" || got.EgressFlow != (policy.Flow{}) {
+		t.Fatalf("asymmetric source route was modeled: %#v", got)
+	}
+}
+
+func copyPathConfig(in *firewall.PathConfig) *firewall.PathConfig {
+	out := *in
+	out.Interfaces = append([]firewall.PathInterface(nil), in.Interfaces...)
+	out.Routes = append([]firewall.PathRoute(nil), in.Routes...)
+	out.NATRules = append([]firewall.PathNATRule(nil), in.NATRules...)
+	return &out
+}
+
 func TestStaticObjectNATUsesSpecificObjectBeforeBroadObject(t *testing.T) {
 	in := baseInput()
 	in.Config.Path.NATRules = []firewall.PathNATRule{

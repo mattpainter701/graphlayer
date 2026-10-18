@@ -13,6 +13,8 @@ The [policy workspace](docs/POLICY_WORKSPACE.md) adds service objects/groups, se
 rule inventories and typed object dependency inspection, while preserving older saved evidence.
 The [routing/NAT workflow](docs/ROUTING_NAT_INVESTIGATIONS.md) adds explicit-ingress,
 configuration-derived ASA paths with translated tuples, route selection and source-backed stages.
+The [multi-firewall workflow](docs/MULTI_FIREWALL_INVESTIGATIONS.md) composes explicitly linked ASA snapshots,
+checks configured forward and return paths, and explains the established-session assumption.
 See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported syntax, limits,
 launch commands and tests. This is a single-user investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.

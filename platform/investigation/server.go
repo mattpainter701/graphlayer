@@ -182,6 +182,9 @@ func (a *App) trustedRequest(r *http.Request) bool {
 
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if a.networkAPI(w, r, parts) {
+		return
+	}
 	if len(parts) == 3 && parts[1] == "sample" && parts[2] == "path" {
 		if r.Method != http.MethodGet {
 			methodError(w)

@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const state = { csrf: '', snapshots: [], snapshot: null, investigation: null, pathInvestigation: null, busy: false, scopeRequest: 0, toastTimer: 0, selectedObjectID: '', selectedRuleID: '', inventoryPage: 0, objectPage: 0, evidenceTrigger: null };
+  const state = { csrf: '', snapshots: [], snapshot: null, investigation: null, pathInvestigation: null, networkInvestigation: null, networkSnapshots: new Map(), busy: false, scopeRequest: 0, toastTimer: 0, selectedObjectID: '', selectedRuleID: '', inventoryPage: 0, objectPage: 0, evidenceTrigger: null };
   const inventoryPageSize = 100;
   const objectPageSize = 50;
   const apiRoot = '/api';
@@ -35,6 +35,7 @@
         invalid_flow: 'Use concrete IP addresses and valid protocol/port values for this investigation.',
         invalid_path: 'Use a supported ingress interface and a concrete IPv4 flow with valid protocol/port values.',
         path_unavailable: 'This snapshot does not include a usable routing and NAT model. Reimport the configuration after checking its supported path settings.',
+        invalid_network_path: 'Check that each device has a unique ID and snapshot, that every supplied link and endpoint uses a modeled interface, and that the flow is a concrete IPv4 tuple.',
         path_too_large: 'The path investigation exceeds the local artifact budget. No partial result was saved.',
         invalid_import: 'Provide an ASA configuration and a display name of at most 128 characters.',
         import_failed: 'The configuration could not be imported as a supported ASA policy snapshot. Earlier snapshots are unchanged.',
@@ -137,6 +138,15 @@
     const pathReady = Boolean(pathAvailable && $('path-ingress').value);
     $('path-evaluate-button').disabled = state.busy || !pathReady;
     $('path-export-button').disabled = state.busy || !state.pathInvestigation;
+    $('network-evaluate').disabled = state.busy || !networkFormValid();
+    $('network-export').disabled = state.busy || !state.networkInvestigation;
+    $('network-load-sample').disabled = state.busy;
+    $('network-add-node').disabled = state.busy || document.querySelectorAll('.network-node-row').length >= 16;
+    $('network-add-link').disabled = state.busy || document.querySelectorAll('.network-link-row').length >= 32;
+    document.querySelectorAll('.network-history-open,.network-remove-row').forEach((button) => { button.disabled = state.busy; });
+    document.querySelectorAll('#network-path input,#network-path select').forEach((input) => { input.disabled = state.busy; });
+    ['network-flow-source-port','network-flow-destination-port'].forEach((id) => { $(id).disabled = state.busy || !['tcp','udp'].includes($('network-flow-protocol').value); });
+    $('refresh-network-history').disabled = state.busy;
     ['path-ingress', 'path-source', 'path-destination', 'path-protocol'].forEach((id) => { const node = $(id); if (node) node.disabled = state.busy || !pathAvailable; });
     $('refresh-path-history').disabled = state.busy;
     const pathUsesPorts = $('path-protocol').value === 'tcp' || $('path-protocol').value === 'udp';
@@ -756,10 +766,233 @@
     finally { state.busy = false; refreshControls(); }
   }
 
-  function showEvidence(item, trigger = document.activeElement) {
-    if (!state.snapshot || !item) return;
+  function networkFormValid() {
+    const nodes = [...document.querySelectorAll('.network-node-row')];
+    if (nodes.length < 2 || nodes.length > 16) return false;
+    const ids = nodes.map((row) => row.querySelector('.network-node-id').value.trim());
+    if (ids.some((id) => !id) || new Set(ids).size !== ids.length || nodes.some((row) => !row.querySelector('.network-snapshot-id').value)) return false;
+    const source = $('network-source-node').value; const destination = $('network-destination-node').value;
+    if (!ids.includes(source) || !ids.includes(destination) || !source || !destination) return false;
+    if (!$('network-source-interface').value.trim() || !$('network-destination-interface').value.trim() || !$('network-flow-source').value.trim() || !$('network-flow-destination').value.trim()) return false;
+    return [...document.querySelectorAll('.network-link-row')].length <= 32 && [...document.querySelectorAll('.network-link-row')].every((row) => row.querySelector('.network-link-a-node').value && row.querySelector('.network-link-b-node').value && row.querySelector('.network-link-a-interface').value.trim() && row.querySelector('.network-link-b-interface').value.trim());
+  }
+
+  function clearNetworkResult() { state.networkInvestigation = null; $('network-result').hidden = true; refreshControls(); }
+
+  function networkNodeRows() { return [...document.querySelectorAll('.network-node-row')]; }
+  function nodeIDs() { return networkNodeRows().map((row) => row.querySelector('.network-node-id').value.trim()).filter(Boolean); }
+
+  function refreshNetworkTopology() {
+    const ids = nodeIDs();
+    document.querySelectorAll('.network-link-a-node,.network-link-b-node,#network-source-node,#network-destination-node').forEach((select) => {
+      const current = select.value;
+      select.replaceChildren(new Option('Select device', ''), ...ids.map((id) => new Option(id, id)));
+      if (ids.includes(current)) select.value = current;
+    });
+    networkNodeRows().forEach((row) => {
+      const select = row.querySelector('.network-snapshot-id'); const current = select.value;
+      select.replaceChildren(new Option('Select snapshot', ''), ...state.snapshots.map((snapshot) => new Option(summaryName(snapshot), snapshot.id)));
+      if (state.snapshots.some((snapshot) => snapshot.id === current)) select.value = current;
+    });
+    refreshControls();
+  }
+
+  function addNetworkNode(node = {}) {
+    if (networkNodeRows().length >= 16) return;
+    const row = el('div', 'network-row network-node-row');
+    const idWrap = el('label', 'field'); idWrap.append(el('span', '', 'DEVICE ID'));
+    const id = document.createElement('input'); id.className = 'network-node-id'; id.value = node.node_id || `firewall-${networkNodeRows().length + 1}`; id.autocomplete = 'off'; idWrap.append(id);
+    const snapWrap = el('label', 'field'); snapWrap.append(el('span', '', 'CONFIGURATION SNAPSHOT'));
+    const snapshot = document.createElement('select'); snapshot.className = 'network-snapshot-id'; snapWrap.append(snapshot);
+    const remove = el('button', 'small-icon-button network-remove-row', '×'); remove.type = 'button'; remove.setAttribute('aria-label', 'Remove device');
+    row.append(idWrap, snapWrap, remove); $('network-nodes').append(row);
+    const update = () => { refreshNetworkTopology(); clearNetworkResult(); };
+    id.addEventListener('input', update); snapshot.addEventListener('change', update);
+    remove.addEventListener('click', () => { row.remove(); refreshNetworkTopology(); clearNetworkResult(); });
+    refreshNetworkTopology();
+    if (node.snapshot_id) snapshot.value = node.snapshot_id;
+  }
+
+  function addNetworkLink(link = {}) {
+    if (document.querySelectorAll('.network-link-row').length >= 32) return;
+    const row = el('div', 'network-row network-link-row');
+    const field = (label, cls, value, select = false) => {
+      const wrap = el('label', 'field'); wrap.append(el('span', '', label));
+      const input = select ? document.createElement('select') : document.createElement('input'); input.className = cls; if (select) input.add(new Option('Select device', '')); input.value = value || ''; input.autocomplete = 'off'; wrap.append(input); return wrap;
+    };
+    const aNode = field('END A DEVICE', 'network-link-a-node', link.a && link.a.node_id, true);
+    const aInterface = field('END A INTERFACE', 'network-link-a-interface', link.a && link.a.interface);
+    const bNode = field('END B DEVICE', 'network-link-b-node', link.b && link.b.node_id, true);
+    const bInterface = field('END B INTERFACE', 'network-link-b-interface', link.b && link.b.interface);
+    const remove = el('button', 'small-icon-button network-remove-row', '×'); remove.type = 'button'; remove.setAttribute('aria-label', 'Remove link');
+    row.append(aNode, aInterface, el('span', 'network-link-arrow', '↔'), bNode, bInterface, remove); $('network-links').append(row);
+    row.querySelectorAll('input,select').forEach((input) => input.addEventListener('input', () => { clearNetworkResult(); refreshControls(); }));
+    row.querySelectorAll('select').forEach((input) => input.addEventListener('change', () => { clearNetworkResult(); refreshControls(); }));
+    remove.addEventListener('click', () => { row.remove(); clearNetworkResult(); refreshControls(); });
+    refreshNetworkTopology();
+    if (link.a) row.querySelector('.network-link-a-node').value = link.a.node_id;
+    if (link.b) row.querySelector('.network-link-b-node').value = link.b.node_id;
+    refreshControls();
+  }
+
+  function networkPayload() {
+    const protocol = $('network-flow-protocol').value; const hasPorts = protocol === 'tcp' || protocol === 'udp';
+    return {
+      nodes: networkNodeRows().map((row) => ({ node_id: row.querySelector('.network-node-id').value.trim(), snapshot_id: row.querySelector('.network-snapshot-id').value })),
+      links: [...document.querySelectorAll('.network-link-row')].map((row) => ({ a: { node_id: row.querySelector('.network-link-a-node').value, interface: row.querySelector('.network-link-a-interface').value.trim() }, b: { node_id: row.querySelector('.network-link-b-node').value, interface: row.querySelector('.network-link-b-interface').value.trim() } })),
+      source: { node_id: $('network-source-node').value, interface: $('network-source-interface').value.trim() },
+      destination: { node_id: $('network-destination-node').value, interface: $('network-destination-interface').value.trim() },
+      flow: { source: $('network-flow-source').value.trim(), destination: $('network-flow-destination').value.trim(), protocol, source_port: hasPorts ? Number($('network-flow-source-port').value) || 0 : 0, destination_port: hasPorts ? Number($('network-flow-destination-port').value) || 0 : 0 }
+    };
+  }
+
+  function networkRequestJSON(value) {
+    const normalized = JSON.parse(JSON.stringify(value));
+    if (normalized && normalized.flow) {
+      if (Number(normalized.flow.source_port) === 0) delete normalized.flow.source_port;
+      if (Number(normalized.flow.destination_port) === 0) delete normalized.flow.destination_port;
+    }
+    const sort = (item) => Array.isArray(item) ? item.map(sort) : item && typeof item === 'object'
+      ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, sort(item[key])])) : item;
+    return JSON.stringify(sort(normalized));
+  }
+
+  function appendNetworkEvidence(container, refs) {
+    const seen = new Set();
+    const items = (Array.isArray(refs) ? refs : []).filter((ref) => { const key = `${ref.snapshot_id}:${ref.ref}`; if (seen.has(key)) return false; seen.add(key); return true; });
+    if (!items.length) { container.append(el('span', 'path-no-evidence', 'No source references were returned for this hop.')); return; }
+    const links = el('div', 'path-evidence-links'); container.append(links);
+    let page = 0; const size = 16; const pager = el('div', 'pagination-controls path-evidence-pages');
+    const prev = el('button', 'text-button', 'Previous sources'); prev.type = 'button'; const next = el('button', 'text-button', 'Next sources'); next.type = 'button'; const count = el('span');
+    const draw = () => { links.replaceChildren(); items.slice(page * size, (page + 1) * size).forEach((ref) => {
+      const cached = state.networkSnapshots.get(ref.snapshot_id); const item = cached && (cached.evidence || []).find((entry) => entry.id === ref.ref);
+      const button = el('button', 'evidence-link', item ? `${cached.hostname || ref.snapshot_id.slice(0, 8)} · ${item.kind || 'Source'} · lines ${item.start_line}–${item.end_line}` : `Source ${String(ref.snapshot_id).slice(0, 8)} · ${ref.ref}`); button.type = 'button'; button.title = item && item.summary || String(ref.ref || ''); button.dataset.snapshotId = ref.snapshot_id; button.dataset.evidenceRef = ref.ref; button.addEventListener('click', async () => {
+        const investigationID = state.networkInvestigation && state.networkInvestigation.id;
+        try { const snap = await networkSnapshot(ref.snapshot_id); if (!state.networkInvestigation || state.networkInvestigation.id !== investigationID) throw new Error('The investigation changed before its source was opened.'); const evidence = (snap.evidence || []).find((entry) => String(entry.id) === String(ref.ref)); if (!evidence) throw new Error('Evidence reference is unavailable in its snapshot.'); showEvidence(evidence, button, snap); }
+        catch (error) { showToast(error.message, 'error'); }
+      }); links.append(button); });
+      count.textContent = `${page * size + 1}–${Math.min((page + 1) * size, items.length)} of ${items.length} sources`; prev.disabled = page === 0; next.disabled = (page + 1) * size >= items.length; };
+    prev.addEventListener('click', () => { if (page > 0) { page--; draw(); } }); next.addEventListener('click', () => { if ((page + 1) * size < items.length) { page++; draw(); } });
+    if (items.length > size) { pager.append(prev, count, next); container.append(pager); } draw();
+  }
+
+  async function networkSnapshot(id) {
+    if (state.networkSnapshots.has(id)) return state.networkSnapshots.get(id);
+    const body = await request(`/snapshots/${encodeURIComponent(id)}`); if (!body.snapshot) throw new Error('A referenced device snapshot is unavailable.');
+    state.networkSnapshots.set(id, body.snapshot); return body.snapshot;
+  }
+
+  function renderNetworkHops(container, title, hops) {
+    container.replaceChildren(el('h3', '', title));
+    (hops || []).forEach((hop, index) => {
+      const card = el('article', 'path-stage'); const heading = el('div', 'path-stage-heading');
+      heading.append(el('span', 'path-stage-number', String(index + 1).padStart(2, '0')));
+      const label = el('div', 'path-stage-title'); label.append(el('strong', '', hop.node_id || 'Firewall'), el('span', '', hop.path && hop.path.disposition || 'unknown')); heading.append(label); card.append(heading);
+      const path = hop.path || {}; const route = path.selected_route;
+      card.append(el('p', 'path-stage-detail', `Snapshot ${hop.snapshot_id || 'unknown'} · ingress ${path.ingress_interface || path.ingress || 'unavailable'} · egress ${path.egress_interface || 'unavailable'}${route ? ` · route ${route.prefix || 'unknown'} via ${route.interface || 'unknown'}${route.next_hop ? ` · next hop ${route.next_hop}` : ''}${route.kind ? ` · ${route.kind}` : ''}` : ''}`));
+      const snapshot = state.networkSnapshots.get(hop.snapshot_id); const warnings = snapshot && snapshot.path && snapshot.path.warnings || [];
+      warnings.slice(0, 20).forEach((warning) => card.append(el('p', 'path-stage-detail', `${warning.code || 'Warning'} · physical line ${warning.line || '?'}: ${warning.message || 'Unsupported path configuration'}`)));
+      if (warnings.length > 20) card.append(el('p', 'path-stage-detail', `${warnings.length - 20} additional configuration warnings; inspect the snapshot source and exported record.`));
+      const tuples = el('div', 'path-stage-tuples'); appendPathTuple(tuples, 'ORIGINAL', path.original_flow); appendPathTuple(tuples, 'POLICY', path.policy_flow); appendPathTuple(tuples, 'EGRESS', path.egress_flow || path.final_flow); if (tuples.childElementCount) card.append(tuples);
+      const qualify = (refs) => (refs || []).map((ref) => typeof ref === 'object' && ref !== null ? ref : ({ snapshot_id: hop.snapshot_id, ref }));
+      const stages = Array.isArray(path.stages) ? path.stages : Array.isArray(path.hops) ? path.hops : [];
+      stages.forEach((stage) => {
+        card.append(el('p', 'path-stage-detail', `${stage.name || stage.kind || 'Stage'} · ${stage.status || stage.disposition || 'unavailable'}: ${boundedPathText(stage.detail || stage.reason || '', 700)}`));
+        const stageTuples = el('div', 'path-stage-tuples'); appendPathTuple(stageTuples, 'BEFORE', stage.before); appendPathTuple(stageTuples, 'AFTER', stage.after); if (stageTuples.childElementCount) card.append(stageTuples);
+        const stageRefs = [...qualify(stage.evidence_refs), ...(stage.evidence || [])];
+        if (stageRefs.length) { const evidence = el('div', 'path-stage-detail'); evidence.append(el('strong', '', 'Stage evidence')); appendNetworkEvidence(evidence, stageRefs); card.append(evidence); }
+      });
+      const refs = [...(hop.evidence || []), ...qualify(path.evidence_refs), ...qualify(route && route.evidence_refs)]; if (refs.length) { const evidence = el('div', 'path-stage-detail'); evidence.append(el('strong', '', 'Hop evidence')); appendNetworkEvidence(evidence, refs); card.append(evidence); } container.append(card);
+    });
+    if (!(hops || []).length) container.append(el('p', 'path-stage-detail', 'No hops were returned.'));
+  }
+
+  function renderNetworkInvestigation(investigation) {
+    if (!investigation || !investigation.result) throw new Error('Network investigation response was incomplete.');
+    state.networkInvestigation = investigation; const result = investigation.result;
+    $('network-result').hidden = false; $('network-disposition').textContent = String(result.disposition || 'indeterminate').replaceAll('_', ' ').toUpperCase();
+    $('network-disposition').className = `path-disposition path-${String(result.disposition || 'indeterminate').replaceAll('_', '-')}`;
+    $('network-result-scope').textContent = `${investigation.created_at ? new Date(investigation.created_at).toLocaleString() : 'Saved result'} · ${investigation.id || ''}`;
+    $('network-flow-summary').replaceChildren(); appendPathTuple($('network-flow-summary'), 'ORIGINAL FLOW', result.original_flow || investigation.request && investigation.request.flow); appendPathTuple($('network-flow-summary'), 'FORWARD FINAL FLOW', result.forward && result.forward.final_flow); appendPathTuple($('network-flow-summary'), 'RETURN FINAL FLOW', result.return && result.return.final_flow);
+    renderNetworkHops($('network-forward-hops'), 'Forward path', result.forward && result.forward.hops);
+    renderNetworkHops($('network-return-hops'), 'Return path', result.return && result.return.hops);
+    const fill = (id, values, fallback) => { const list = $(id); list.replaceChildren(); (Array.isArray(values) && values.length ? values : [fallback]).forEach((value) => list.append(el('li', '', boundedPathText(value, 1200)))); };
+    fill('network-reasons', [...(result.reasons || []), ...((result.forward && result.forward.reasons) || []), ...((result.return && result.return.reasons) || [])], 'No reason details were returned.');
+    fill('network-assumptions', result.assumptions, 'No additional assumptions were returned.'); refreshControls();
+  }
+
+  async function evaluateNetwork() {
+    if (!networkFormValid()) return;
+    const payload = networkPayload(); const submitted = JSON.stringify(payload); const button = $('network-evaluate'); setBusy(button, true, 'Tracing…');
+    try {
+      const body = await request('/network-investigations', { method: 'POST', body: submitted });
+      await Promise.all(payload.nodes.map((node) => networkSnapshot(node.snapshot_id)));
+      if (JSON.stringify(networkPayload()) !== submitted) throw new Error('Network topology or flow changed while the request was running. The response was not displayed.');
+      if (!body.investigation || !body.investigation.result || networkRequestJSON(body.investigation.request) !== networkRequestJSON(payload)) throw new Error('The network response did not match the submitted topology. The result was not displayed.');
+      renderNetworkInvestigation(body.investigation); await loadNetworkHistory();
+    } catch (error) { showToast(error.message, 'error'); }
+    finally { setBusy(button, false); refreshControls(); }
+  }
+
+  function renderNetworkHistory(items) {
+    const list = $('network-history-list'); list.replaceChildren();
+    if (!items.length) { list.append(el('div', 'history-empty', 'No saved multi-firewall investigations yet.')); return; }
+    items.slice(0, 8).forEach((item) => { const row = el('div', 'history-row'); const disposition = String(item.disposition || 'indeterminate').replaceAll('_', '-');
+      row.append(el('span', `history-decision path-history-decision path-${disposition}`, String(item.disposition || '?').slice(0, 1).toUpperCase()));
+      const details = el('div', 'history-details'); details.append(el('strong', '', `${item.source && item.source.node_id || '?'} → ${item.destination && item.destination.node_id || '?'} · ${item.node_count || 0} devices`)); details.append(el('span', '', `${item.created_at ? new Date(item.created_at).toLocaleString() : 'Saved'} · ${item.disposition || 'indeterminate'}`));
+      const open = el('button', 'history-open network-history-open', 'Open →'); open.type = 'button'; open.addEventListener('click', () => reopenNetworkInvestigation(item.id)); row.append(details, open); list.append(row);
+    });
+  }
+
+  async function loadNetworkHistory() { const body = await request('/network-investigations'); renderNetworkHistory(Array.isArray(body.investigations) ? body.investigations : []); }
+
+  async function reopenNetworkInvestigation(id) {
+    if (state.busy) return; const before = JSON.stringify(networkPayload()); state.busy = true; refreshControls();
+    try { const body = await request(`/network-investigations/${encodeURIComponent(id)}`); const investigation = body.investigation; if (!investigation || !investigation.request) throw new Error('Saved network investigation was incomplete.');
+      await Promise.all(investigation.request.nodes.map((node) => networkSnapshot(node.snapshot_id)));
+      if (JSON.stringify(networkPayload()) !== before) throw new Error('Network topology or flow changed while history was loading. The saved result was not displayed.');
+      const req = investigation.request; $('network-nodes').replaceChildren(); $('network-links').replaceChildren(); req.nodes.forEach(addNetworkNode); req.links.forEach(addNetworkLink); refreshNetworkTopology();
+      req.nodes.forEach((node, index) => { const row = networkNodeRows()[index]; row.querySelector('.network-node-id').value = node.node_id; row.querySelector('.network-snapshot-id').value = node.snapshot_id; });
+      req.links.forEach((link, index) => { const row = document.querySelectorAll('.network-link-row')[index]; row.querySelector('.network-link-a-node').value = link.a.node_id; row.querySelector('.network-link-a-interface').value = link.a.interface; row.querySelector('.network-link-b-node').value = link.b.node_id; row.querySelector('.network-link-b-interface').value = link.b.interface; });
+      refreshNetworkTopology(); $('network-source-node').value = req.source.node_id; $('network-source-interface').value = req.source.interface; $('network-destination-node').value = req.destination.node_id; $('network-destination-interface').value = req.destination.interface;
+      $('network-flow-source').value = req.flow.source; $('network-flow-destination').value = req.flow.destination; $('network-flow-protocol').value = req.flow.protocol; $('network-flow-source-port').value = req.flow.source_port || ''; $('network-flow-destination-port').value = req.flow.destination_port || '';
+      renderNetworkInvestigation(investigation); $('network-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (error) { showToast(error.message, 'error'); } finally { state.busy = false; refreshControls(); }
+  }
+
+  async function loadNetworkSample() {
+    const button = $('network-load-sample'); setBusy(button, true, 'Importing sample…');
+    try {
+      const sample = await request('/sample/network'); if (!Array.isArray(sample.configs) || sample.configs.length < 2) throw new Error('The multi-firewall sample was incomplete.');
+      const imported = [];
+      for (const device of sample.configs) {
+        const response = await request('/imports', { method: 'POST', body: JSON.stringify({ name: device.name || `${device.node_id}.cfg`, config: device.config }) });
+        if (!response.snapshot || !response.snapshot.id) throw new Error(`The ${device.node_id || 'sample'} configuration did not return a snapshot.`);
+        state.networkSnapshots.set(response.snapshot.id, response.snapshot);
+        imported.push({ node_id: device.node_id, snapshot_id: response.snapshot.id });
+      }
+      const snapshots = await request('/snapshots'); state.snapshots = Array.isArray(snapshots.snapshots) ? snapshots.snapshots : [];
+      await loadSnapshots(state.snapshot && state.snapshot.id || '');
+      $('network-nodes').replaceChildren(); $('network-links').replaceChildren(); imported.forEach(addNetworkNode);
+      imported.forEach((node, index) => { const row = networkNodeRows()[index]; row.querySelector('.network-node-id').value = node.node_id; row.querySelector('.network-snapshot-id').value = node.snapshot_id; });
+      (sample.links || []).forEach(addNetworkLink); refreshNetworkTopology();
+      $('network-source-node').value = sample.source.node_id; $('network-source-interface').value = sample.source.interface; $('network-destination-node').value = sample.destination.node_id; $('network-destination-interface').value = sample.destination.interface;
+      Object.entries(sample.flow || {}).forEach(([key, value]) => { const id = `network-flow-${key.replaceAll('_', '-')}`; if ($(id)) $(id).value = String(value); });
+      $('network-status').textContent = `${imported.length} sample firewall snapshots imported. Review device IDs and operator supplied links before tracing.`;
+      clearNetworkResult(); refreshControls();
+    } catch (error) { showToast(error.message, 'error'); $('network-status').textContent = error.message; }
+    finally { setBusy(button, false); refreshControls(); }
+  }
+
+  function exportNetworkResult() {
+    if (!state.networkInvestigation) return; const blob = new Blob([JSON.stringify(state.networkInvestigation, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a');
+    const safeId = String(state.networkInvestigation.id || 'network-result').replace(/[^a-zA-Z0-9._-]/g, '_'); link.href = url; link.download = `network-investigation-${safeId}.json`; document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+  }
+
+  function showEvidence(item, trigger = document.activeElement, snapshot = state.snapshot) {
+    if (!snapshot || !item) return;
     state.evidenceTrigger = trigger && trigger.isConnected ? trigger : null;
-    const lines = state.snapshot.source_lines || [];
+    const lines = snapshot.source_lines || [];
     const from = Math.max(1, Number(item.start_line) || 1);
     const to = Math.max(from, Number(item.end_line) || from);
     const selected = lines.filter((line) => line.number >= from && line.number <= to);
@@ -780,7 +1013,7 @@
         const text = el('span', 'line-content', line.text);
         row.append(num, text); pre.append(row, document.createTextNode('\n'));
       });
-      $('source-caption').textContent = `${item.kind || 'SOURCE'} · SPAN ${from}–${to}${pageCount > 1 ? ` · page ${page + 1} of ${pageCount} (up to 200 lines)` : ''}`;
+      $('source-caption').textContent = `${snapshot.hostname || snapshot.name || 'Snapshot'} · ${snapshot.id ? snapshot.id.slice(0, 12) : ''} · ${item.kind || 'SOURCE'} · SPAN ${from}–${to}${pageCount > 1 ? ` · page ${page + 1} of ${pageCount} (up to 200 lines)` : ''}`;
       if (!pageLines.length) pre.textContent = `Source lines ${from}–${to} are unavailable in this snapshot.`;
       previous.disabled = page === 0; next.disabled = page >= pageCount - 1;
     };
@@ -1133,6 +1366,14 @@
   }
 
   function wireEvents() {
+    $('network-load-sample').addEventListener('click', loadNetworkSample);
+    $('network-add-node').addEventListener('click', () => addNetworkNode());
+    $('network-add-link').addEventListener('click', () => addNetworkLink());
+    $('network-evaluate').addEventListener('click', evaluateNetwork);
+    $('network-export').addEventListener('click', exportNetworkResult);
+    $('refresh-network-history').addEventListener('click', () => loadNetworkHistory().catch((error) => showToast(error.message, 'error')));
+    document.querySelectorAll('#network-source-interface,#network-destination-interface,#network-flow-source,#network-flow-destination,#network-flow-source-port,#network-flow-destination-port').forEach((node) => node.addEventListener('input', () => { clearNetworkResult(); refreshControls(); }));
+    ['network-source-node','network-destination-node','network-flow-protocol'].forEach((id) => $(id).addEventListener('change', () => { const enabled = ['tcp','udp'].includes($('network-flow-protocol').value); ['network-flow-source-port','network-flow-destination-port'].forEach((port) => { $(port).disabled = !enabled; if (!enabled) $(port).value = ''; }); clearNetworkResult(); refreshControls(); }));
     $('config-input').addEventListener('input', () => { $('config-meta').textContent = `${$('config-input').value.length.toLocaleString()} characters`; $('config-meta').dataset.name = ''; refreshControls(); });
     $('file-input').addEventListener('change', async (event) => {
       const file = event.target.files && event.target.files[0];
@@ -1196,13 +1437,14 @@
   }
 
   async function start() {
-    wireEvents(); refreshControls();
+    wireEvents(); addNetworkNode({ node_id: 'firewall-1' }); addNetworkNode({ node_id: 'firewall-2' }); refreshControls();
     try {
       const session = await request('/session');
       state.csrf = session.csrf_token || '';
       if (!state.csrf) throw new Error('The local session could not be initialized. Reload the page.');
       await loadSnapshots();
       await loadHistory();
+      await loadNetworkHistory();
     } catch (error) { showToast(error.message, 'error'); }
   }
 
