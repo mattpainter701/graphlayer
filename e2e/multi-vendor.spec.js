@@ -202,7 +202,7 @@ test('keeps unsupported FortiGate central NAT indeterminate', async ({ page }) =
   await evaluate(page);
   await expect(page.locator('#network-disposition')).toContainText(/indeterminate/i);
   await expect(page.locator('#network-reasons')).toContainText(/vendor routing, policy, or translation evidence is incomplete/i);
-  await expect(page.locator('#network-forward-hops .path-stage').last()).toContainText(/central.?nat/i);
+  await expect(page.locator('#network-forward-hops .path-stage').last()).toContainText('central_snat_unsupported');
 });
 
 test('preserves FortiGate CLI policy order when numeric identifiers run backwards', async ({ page }) => {
