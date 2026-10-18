@@ -22,6 +22,8 @@ async function submitConfig(page, config) {
     return Boolean(snapshotId);
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator('#chain-select')).toBeEnabled();
+  await expect(page).toHaveURL(/#investigation$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
   const response = await api(page, `/api/snapshots/${encodeURIComponent(snapshotId)}`);
   expect(response.status).toBe(200);
   return response.body.snapshot;

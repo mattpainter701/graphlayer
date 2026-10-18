@@ -1,4 +1,4 @@
-/* Topology workbench presentation. Graph geometry and path semantics stay in app.js/Rust. */
+/* Topology workbench presentation for graph data supplied by the application. */
 .topology-workbench { --topology-ink:#172b3c; --topology-muted:#718296; --topology-line:#d8e1e8; --topology-panel:#fff; --topology-accent:#396b91; padding:0; overflow:hidden; border:1px solid #dce4ea; border-radius:12px; background:#f7f9fb; box-shadow:0 14px 34px rgba(25,47,66,.08); }
 .topology-workbench > h3 { padding:18px 20px 0; color:var(--topology-ink); font-size:16px; letter-spacing:-.02em; }
 .topology-workbench > .exploration-legend { margin:5px 20px 14px; max-width:1000px; color:#64778a; font-size:11px; }
@@ -33,18 +33,19 @@
 .topology-inspector-heading { padding-bottom:13px; border-bottom:1px solid #e6ebef; }
 .topology-eyebrow { margin-bottom:4px; color:#8392a0; font-size:9px; font-weight:750; letter-spacing:.1em; }
 .topology-inspector-heading h4 { margin:0; overflow-wrap:anywhere; color:#20394e; font-size:17px; letter-spacing:-.025em; }
-.topology-summary { display:grid; grid-template-columns:minmax(84px,.7fr) minmax(0,1.3fr); gap:7px 10px; margin:13px 0 15px; font-size:10px; }
+.topology-summary { display:grid; grid-template-columns:minmax(84px,.7fr) minmax(0,1.3fr); gap:7px 10px; margin:13px 0 15px; font-size:11px; }
 .topology-summary dt { color:#82909d; }
 .topology-summary dd { min-width:0; margin:0; overflow-wrap:anywhere; color:#42596c; font-weight:550; }
 .topology-summary dd:last-child { font:9px ui-monospace,SFMono-Regular,Consolas,monospace; }
 .topology-inspector-section { padding:12px 0; border-top:1px solid #e9edf0; }
 .topology-inspector-section h5 { margin:0 0 8px; color:#40586d; font-size:10px; font-weight:750; letter-spacing:.055em; text-transform:uppercase; }
-.topology-config-status,.topology-config-item,.topology-tuple,.topology-runtime-unavailable { margin:6px 0; color:#637689; font-size:10px; line-height:1.55; overflow-wrap:anywhere; }
-.topology-hop-card { margin:7px 0; padding:8px; border:1px solid #e1e8ed; border-radius:7px; background:#f8fafb; color:#4f6578; font-size:10px; line-height:1.55; overflow-wrap:anywhere; }
+.topology-config-status,.topology-config-item,.topology-tuple,.topology-runtime-unavailable { margin:6px 0; color:#637689; font-size:11px; line-height:1.55; overflow-wrap:anywhere; }
+.topology-hop-card { margin:7px 0; padding:8px; border:1px solid #e1e8ed; border-radius:7px; background:#f8fafb; color:#4f6578; font-size:11px; line-height:1.55; overflow-wrap:anywhere; }
 .topology-runtime-unavailable { padding:8px; border-left:2px solid #c49a4c; background:#fbf7ee; color:#796944; }
 .topology-source-row { display:flex; align-items:center; flex-wrap:wrap; gap:5px; margin:6px 0 8px; }
-.topology-source-row .topology-meta-label { flex-basis:100%; font-size:8px; }
-.topology-source-button { max-width:100%; padding:4px 6px; border:1px solid #d7e2e9; border-radius:5px; background:#fff; color:#436b87; font:9px ui-sans-serif,system-ui,sans-serif; cursor:pointer; }
+.topology-source-row .topology-meta-label { flex-basis:100%; font-size:10px; }
+.topology-source-button { max-width:100%; padding:5px 7px; border:1px solid #d7e2e9; border-radius:5px; background:#fff; color:#436b87; font:11px ui-sans-serif,system-ui,sans-serif; cursor:pointer; }
+.topology-omitted-note { margin:4px 0 6px; color:#7a8996; font-size:10px; line-height:1.45; }
 .topology-source-button:hover { background:#edf4f8; }
 .topology-workbench-note { margin:0; padding:9px 16px 11px; border-top:1px solid #e4eaee; background:#fff; color:#81909d; font-size:9px; line-height:1.5; }
 .topology-node { transition:opacity .15s ease,filter .15s ease; }

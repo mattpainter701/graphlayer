@@ -6,6 +6,7 @@
   const inventoryPageSize = 100;
   const objectPageSize = 50;
   const apiRoot = '/api';
+  const networkSnapshotRequests = new Map();
 
   function navigateAppPage(page, anchor) {
     document.dispatchEvent(new CustomEvent('graphlayer:navigate', { detail: { page, anchor } }));
@@ -807,25 +808,33 @@
 
   function clearExplorationResult() { state.networkExploration = null; if ($('exploration-result')) $('exploration-result').hidden = true; }
 
-  function notifyTopology(request, exploration = null, branchIndex = 0, returnIndex = 0) {
+  function notifyTopology(request, exploration = null, branchIndex = 0, returnIndex = 0, investigation = null) {
     const snapshots = (request.nodes || []).map((node) => ({ node_id: node.node_id, snapshot: state.networkSnapshots.get(node.snapshot_id) || state.snapshots.find((item) => item.id === node.snapshot_id) }));
-    document.dispatchEvent(new CustomEvent('graphlayer:topology-updated', { detail: { mode: exploration ? 'result' : 'draft', request, exploration, branchIndex, returnIndex, snapshots } }));
+    document.dispatchEvent(new CustomEvent('graphlayer:topology-updated', { detail: { mode: exploration ? 'result' : investigation ? 'trace' : 'draft', request, exploration, investigation, branchIndex, returnIndex, snapshots } }));
   }
 
   function renderDeclaredTopology() {
     const request = networkPayload();
     renderExplorationTopology({ request }, null, null);
     notifyTopology(request);
+    const submitted = networkRequestJSON(request);
+    const missing = [...new Set((request.nodes || []).map((node) => node.snapshot_id).filter((id) => id && !state.networkSnapshots.has(id)))];
+    if (missing.length) Promise.all(missing.map(networkSnapshot)).then(() => {
+      if (!state.networkExploration && !state.networkInvestigation && networkRequestJSON(networkPayload()) === submitted) {
+        renderExplorationTopology({ request }, null, null);
+        notifyTopology(request);
+      }
+    }).catch((error) => { if (networkRequestJSON(networkPayload()) === submitted) showToast(error.message, 'error'); });
   }
 
   async function openTopologyEvidence(detail) {
-    const record = state.networkExploration;
+    const record = state.networkExploration || state.networkInvestigation;
     const request = record ? record.request : networkPayload();
     const submitted = networkRequestJSON(request);
     if (!detail || typeof detail.snapshot_id !== 'string' || typeof detail.ref !== 'string' || !(request.nodes || []).some((node) => node.snapshot_id === detail.snapshot_id)) return;
     try {
       const snapshot = await networkSnapshot(detail.snapshot_id);
-      if (state.networkExploration !== record || (!record && networkRequestJSON(networkPayload()) !== submitted)) throw new Error('The topology changed before its source was opened.');
+      if ((state.networkExploration || state.networkInvestigation) !== record || (!record && networkRequestJSON(networkPayload()) !== submitted)) throw new Error('The topology changed before its source was opened.');
       const evidence = (snapshot.evidence || []).find((item) => item.id === detail.ref);
       if (!evidence) throw new Error('Evidence reference is unavailable in its snapshot.');
       showEvidence(evidence, detail.trigger, snapshot);
@@ -930,8 +939,12 @@
 
   async function networkSnapshot(id) {
     if (state.networkSnapshots.has(id)) return state.networkSnapshots.get(id);
-    const body = await request(`/snapshots/${encodeURIComponent(id)}`); if (!body.snapshot) throw new Error('A referenced device snapshot is unavailable.');
-    state.networkSnapshots.set(id, body.snapshot); return body.snapshot;
+    if (!networkSnapshotRequests.has(id)) networkSnapshotRequests.set(id, (async () => {
+      const body = await request(`/snapshots/${encodeURIComponent(id)}`);
+      if (!body.snapshot || body.snapshot.id !== id) throw new Error('A referenced device snapshot is unavailable.');
+      state.networkSnapshots.set(id, body.snapshot); return body.snapshot;
+    })().finally(() => networkSnapshotRequests.delete(id)));
+    return networkSnapshotRequests.get(id);
   }
 
   function renderNetworkHops(container, title, hops, expectedRecord = state.networkInvestigation) {
@@ -962,6 +975,7 @@
 
   function renderNetworkInvestigation(investigation) {
     if (!investigation || !investigation.result) throw new Error('Network investigation response was incomplete.');
+    clearExplorationResult();
     state.networkInvestigation = investigation; const result = investigation.result;
     $('network-result').hidden = false; $('network-disposition').textContent = String(result.disposition || 'indeterminate').replaceAll('_', ' ').toUpperCase();
     $('network-disposition').className = `path-disposition path-${String(result.disposition || 'indeterminate').replaceAll('_', '-')}`;
@@ -971,7 +985,10 @@
     renderNetworkHops($('network-return-hops'), 'Return path', result.return && result.return.hops, investigation);
     const fill = (id, values, fallback) => { const list = $(id); list.replaceChildren(); (Array.isArray(values) && values.length ? values : [fallback]).forEach((value) => list.append(el('li', '', boundedPathText(value, 1200)))); };
     fill('network-reasons', [...(result.reasons || []), ...((result.forward && result.forward.reasons) || []), ...((result.return && result.return.reasons) || [])], 'No reason details were returned.');
-    fill('network-assumptions', result.assumptions, 'No additional assumptions were returned.'); refreshControls();
+    fill('network-assumptions', result.assumptions, 'No additional assumptions were returned.');
+    renderExplorationTopology(investigation, result, { direction: result.return, disposition: result.return && result.return.disposition });
+    notifyTopology(investigation.request || {}, null, 0, 0, investigation);
+    refreshControls();
   }
 
   function renderExplorationTopology(exploration, branch, returnCandidate) {
@@ -1006,6 +1023,7 @@
 
   function renderNetworkExploration(exploration) {
     if (!exploration || !exploration.result) throw new Error('Network exploration response was incomplete.');
+    state.networkInvestigation = null; $('network-result').hidden = true;
     state.networkExploration = exploration; $('exploration-result').hidden = false;
     const result = exploration.result; const branches = result.branches || []; const branchSelect = $('exploration-branch'); const returnSelect = $('exploration-return');
     const pathLabel = (hops) => { const ids = (hops || []).map((hop) => hop.node_id).filter(Boolean); const compact = ids.length > 4 ? [...ids.slice(0, 2), '…', ids[ids.length - 1]] : ids; return compact.join(' → ') || 'path unavailable'; };

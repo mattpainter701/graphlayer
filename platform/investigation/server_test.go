@@ -98,6 +98,29 @@ func responseJSON(t *testing.T, r *http.Response) map[string]any {
 	return value
 }
 
+func TestHTTPStaticAssetAllowlist(t *testing.T) {
+	b, _ := newTestBrowser(t)
+	for _, path := range []string{"/assets/unknown.js", "/assets/../server.go", "/assets/../../go.mod", "/assetsx/app.js", "/web/index.html"} {
+		resp, err := b.request("GET", path, nil, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s status = %d, want 404", path, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+	resp, err := b.request("HEAD", "/assets/topology.js", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != 200 || len(data) != 0 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/javascript") {
+		t.Fatalf("HEAD topology script: status=%d body=%d err=%v", resp.StatusCode, len(data), err)
+	}
+}
+
 func TestHTTPImportEvaluateHistoryAndSecurityHeaders(t *testing.T) {
 	b, _ := newTestBrowser(t)
 	for _, path := range []string{"/", "/assets/app.js", "/assets/style.css", "/assets/shell.js", "/assets/shell.css", "/assets/topology.js", "/assets/topology.css"} {

@@ -19,12 +19,14 @@ async function sample(page) {
 
 async function enterWorkspace(page) {
   await page.goto('/#workspace');
+  await expect(page).toHaveURL(/#workspace$/);
   await expect(page.locator('#workspace-title')).not.toHaveText(/Loading workspace/i);
   await expect(page.locator('#workspace-refresh')).toBeEnabled();
 }
 
 async function enterImports(page) {
   await page.goto('/#imports');
+  await expect(page).toHaveURL(/#imports$/);
   await expect(page.locator('#batch-load-sample')).toBeVisible();
 }
 
@@ -108,15 +110,33 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await expect(page.locator('#active-set-members .dataset-member')).toHaveCount(4);
 
   await fs.mkdir(screenshots, { recursive: true });
-  await page.locator('[data-app-page="imports"]').screenshot({ path: path.join(screenshots, 'workspace-imports-desktop.png') });
+  await page.locator('[data-app-page="workspace"]').screenshot({ path: path.join(screenshots, 'workspace-imports-desktop.png') });
   await page.locator('#active-set-open-network').click();
-  await expect(page).toHaveURL(/#network-path$/);
+  await expect(page.locator('[data-app-page="topology"]')).toBeVisible();
+  await expect(page.locator('.nav-item[href="#network-path"]')).toHaveClass(/active/);
   await expect(page.locator('.network-node-row')).toHaveCount(4);
   await expect(page.locator('#topology-stage')).toBeVisible();
   await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(4);
   await expect(page.locator('#topology-caption')).toContainText(/Declared topology draft.*analysis not run/i);
   expect(await page.locator('.network-snapshot-id').evaluateAll((inputs) => inputs.map((input) => input.value))).toEqual(set.members.map((member) => member.snapshot_id));
   await expect(page.locator('.network-link-row')).toHaveCount(0);
+  const draftSnapshotId = set.members[0].snapshot_id;
+  const draftSnapshotResponse = await page.evaluate(async (id) => (await fetch(`/api/snapshots/${encodeURIComponent(id)}`)).json(), draftSnapshotId);
+  const draftSnapshot = draftSnapshotResponse.snapshot;
+  expect(draftSnapshot).toBeTruthy();
+  expect(draftSnapshot.path.interfaces.length).toBeGreaterThan(0);
+  expect(draftSnapshot.path.routes.length).toBeGreaterThan(0);
+  await expect(page.locator('#topology-inspector')).toContainText(draftSnapshot.hostname);
+  await expect(page.locator('#topology-inspector')).toContainText(draftSnapshotId);
+  await expect(page.locator('#topology-inspector')).toContainText(`Interfaces ${draftSnapshot.path.interfaces.length} · routes ${draftSnapshot.path.routes.length} · NAT rules ${draftSnapshot.path.nat_rules.length}`);
+  const draftEvidence = page.locator('#topology-inspector .topology-source-button').first();
+  await expect(draftEvidence).toBeVisible();
+  await draftEvidence.click();
+  await expect(page.locator('#source-lines')).toBeVisible();
+  await expect(page.locator('#source-caption')).toContainText(draftSnapshot.hostname);
+  await expect(page.locator('#source-caption')).toContainText(draftSnapshotId.slice(0, 12));
+  await page.getByRole('button', { name: /close source evidence/i }).click();
+
   const ids = await page.locator('.network-node-id').evaluateAll((inputs) => inputs.map((input) => input.value));
   const links = [[0,'ethernet1/2',1,'left'],[0,'ethernet1/2',2,'port1'],[1,'right',3,'port1'],[2,'port2',3,'port1']];
   for (const [a, aInterface, b, bInterface] of links) {
@@ -164,6 +184,45 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-mobile.png') });
   await expectResponsive(page, [320,390,768,920,1024,1120,1280,1440]);
+});
+
+test('direct inventory and objects routes keep one navigation selection and preserve the import draft through history', async ({ page }) => {
+  await page.goto('/#policy-inventory');
+  await expect(page).toHaveURL(/#policy-inventory$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('.nav-item.active')).toHaveCount(1);
+  await expect(page.locator('.nav-item.active')).toHaveAttribute('href', '#policy-inventory');
+
+  await page.goto('/#objects');
+  await expect(page).toHaveURL(/#objects$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('.nav-item.active')).toHaveCount(1);
+  await expect(page.locator('.nav-item.active')).toHaveAttribute('href', '#objects');
+  await expect(page.locator('#objects')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
+  await page.locator('#batch-load-sample').click();
+  await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
+  await page.locator('#batch-set-name').fill('Draft retained across routes');
+
+  await page.getByRole('link', { name: 'Policy inventory' }).click();
+  await expect(page).toHaveURL(/#policy-inventory$/);
+  await expect(page.locator('.nav-item.active')).toHaveCount(1);
+  await page.goBack();
+  await expect(page).toHaveURL(/#imports$/);
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
+  await expect(page.locator('#batch-set-name')).toHaveValue('Draft retained across routes');
+  await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
+  await expect(page.locator('.nav-item.active')).toHaveCount(1);
+
+  await page.goForward();
+  await expect(page).toHaveURL(/#policy-inventory$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('.nav-item.active')).toHaveCount(1);
+  await page.goBack();
+  await expect(page.locator('#batch-set-name')).toHaveValue('Draft retained across routes');
+  await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
 });
 
 test('invalid and duplicate files preserve the published baseline and sanitized preview never renders credentials', async ({ page }) => {

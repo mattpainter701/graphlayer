@@ -19,6 +19,8 @@ async function importPathSample(page, mutate) {
   await page.locator('#config-input').fill(source);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect(page.locator('#path-controls')).toBeVisible({ timeout: 10_000 });
+  await expect(page).toHaveURL(/#investigation$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
   const selectedId = await page.locator('#snapshot-select').inputValue();
   return page.evaluate(async (id) => (await fetch(`/api/snapshots/${encodeURIComponent(id)}`)).json(), selectedId)
     .then(response => response.snapshot);

@@ -42,6 +42,8 @@ async function importSample(page) {
   await expect(page.locator('#config-input')).toHaveValue(/\S/);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect(page.locator('#chain-select')).toBeEnabled();
+  await expect(page).toHaveURL(/#investigation$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
   const summaries = await jsonFromPage(page, '/api/snapshots');
   expect(summaries.status).toBe(200);
   const snapshotId = summaries.body.snapshots[0].id;

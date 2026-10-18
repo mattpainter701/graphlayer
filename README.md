@@ -18,6 +18,9 @@ checks configured forward and return paths, and explains the established-session
 The [multi-vendor milestone](docs/MULTI_VENDOR_INVESTIGATIONS.md) adds native PAN-OS set-format and FortiOS CLI imports with their own policy/NAT semantics and mixed-vendor evidence traces.
 The [path exploration milestone](docs/PATH_EXPLORATION.md) keeps branching routes and asymmetric configured returns separate, with a topology view, source evidence and immutable exploration history.
 The [workspace and import foundation](docs/WORKSPACE_IMPORTS.md) adds sites, named snapshot sets, reviewed batch imports and a redesigned onboarding shell with atomic baseline publication.
+The [topology workspace](docs/TOPOLOGY_WORKSPACE.md) separates workspace, imports,
+investigation and topology pages, with device search, an interactive canvas and
+snapshot-qualified configuration evidence.
 See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported syntax, limits,
 launch commands and tests. This is a single-user investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.
@@ -35,7 +38,7 @@ cd platform
 go run ./cmd/graphlayer-investigate --listen 127.0.0.1:8088
 ```
 
-Open `http://127.0.0.1:8088`, load the labeled ASA sample, import it, select its
+Open `http://127.0.0.1:8088`, choose **Sources & imports**, load the labeled ASA sample, import it, select its
 `OUTSIDE-IN` chain, and evaluate a flow. The sample passes through the actual parser;
 the application does not use precomputed demonstration results.
 

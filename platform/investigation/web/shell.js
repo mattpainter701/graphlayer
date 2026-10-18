@@ -79,6 +79,7 @@
       const routeChanged = changed || activeAnchor !== anchor;
       activePage = page;
       activeAnchor = anchor;
+      if (changed && !anchor) window.scrollTo({ top: 0, behavior: 'instant' });
       if (routeChanged) {
         document.dispatchEvent(new CustomEvent('graphlayer:page-changed', {
           detail: { page, anchor: anchor || undefined, changed }

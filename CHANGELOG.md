@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add focused Workspace, Sources & imports, Investigation and Network path pages, with direct links, browser history navigation and a shared source-evidence drawer.
+- Add a searchable topology workspace with declared drafts, pan/zoom/fit, device focus, forward/return overlays and an inspector for snapshot-pinned routing, NAT, coverage and source evidence. Graph controls change presentation without recomputing or changing saved analysis.
+
 - Run ASA forwarding inventory parsing in a required Rust engine, preserving routing/NAT evidence and released data contracts. Package the native worker with the application and reject unavailable or invalid analysis engines without falling back to Go parsing.
 - Require Rust for parsers, connectors and analysis behavior through repository instructions, a pinned Cargo workspace and CI-enforced legacy language boundaries. Track the remaining Go/Python migration explicitly.
 
