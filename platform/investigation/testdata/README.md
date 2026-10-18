@@ -49,3 +49,8 @@ refuses to overwrite a populated output directory. Normal CI consumes the
 committed golden files and does not regenerate them. The v6 compatibility test
 adds an exploration, reopens the mixed workspace and verifies both old and new
 records without rewriting the released bytes.
+
+`workspace-v6/` contains four snapshots and a branching exploration captured
+from the actual PR #17 release. Its [provenance](workspace-v6/README.md) and v7
+compatibility test cover workspace/site/set publication without rewriting old
+records or changing their investigation replay.

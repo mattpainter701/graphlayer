@@ -135,7 +135,14 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await page.locator('#workspace-home').screenshot({ path: path.join(screenshots, 'workspace-imports-mobile.png') });
   for (const width of [320,390,768,1440]) {
     await page.setViewportSize({ width, height: 900 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    const bounds = await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      overflowing: [...document.querySelectorAll('body *')].map((element) => {
+        const box = element.getBoundingClientRect();
+        return { id: element.id, className: element.getAttribute('class'), left: box.left, right: box.right, width: box.width };
+      }).filter((box) => box.width && box.right > window.innerWidth + 1).slice(0, 25),
+    }));
+    expect(bounds.width, JSON.stringify(bounds.overflowing)).toBeLessThanOrEqual(width);
   }
 });
 
