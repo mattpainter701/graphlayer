@@ -9,9 +9,9 @@ import (
 )
 
 const maxRules = 10000
-const ContractVersion = "graphlayer-policy-v1"
+const ContractVersion = "graphlayer-policy-v2"
 
-var supported = []string{"IPv4/IPv6 literal and CIDR address matching", "numeric protocol matching (including TCP, UDP, ICMP, ICMPv6 aliases)", "numeric source/destination ports and inclusive ranges", "ordered first-match rules", "enabled state", "explicit complete-policy default action", "snapshot/device/context scope"}
+var supported = []string{"IPv4/IPv6 literal, CIDR and any/any4/any6 address matching", "numeric protocol matching (including TCP, UDP, ICMP, ICMPv6 aliases) and rule-only IP protocol wildcard", "numeric source/destination ports and inclusive ranges", "ordered first-match rules", "enabled state", "explicit complete-policy default action", "snapshot/device/context scope"}
 var unsupportedDimensionLabels = map[string]bool{"application": true, "user": true, "schedule": true, "nat": true, "route": true, "return_path": true, "stateful": true, "zone_inheritance": true, "negation": true, "object_expansion": true, "vendor_default": true, "device_state": true}
 
 func ValidateScope(s Scope) error {
@@ -56,6 +56,9 @@ func Validate(b Bundle, f Flow) error {
 		}
 		if strings.TrimSpace(r.Source) == "" || strings.TrimSpace(r.Destination) == "" || strings.TrimSpace(r.Protocol) == "" {
 			return fmt.Errorf("rule %q must specify source, destination, and protocol", r.ID)
+		}
+		if anyProtocol(r.Protocol) && (r.SourcePort != "" || r.DestinationPort != "") {
+			return fmt.Errorf("rule %q cannot combine an IP protocol wildcard with port predicates", r.ID)
 		}
 		if p, err := parseProtocol(r.Protocol); err == nil && p != 6 && p != 17 && (r.SourcePort != "" || r.DestinationPort != "") {
 			return fmt.Errorf("rule %q has port predicates on a non-TCP/UDP protocol", r.ID)
@@ -188,7 +191,9 @@ func matchRule(r Rule, f Flow) match {
 	checks := append([]match(nil), addrChecks...)
 	p1, e1 := parseProtocol(r.Protocol)
 	p2, e2 := parseProtocol(f.Protocol)
-	if e1 != nil {
+	if anyProtocol(r.Protocol) {
+		checks = append(checks, yesMatch)
+	} else if e1 != nil {
 		unknownFound = true
 	} else if e2 == nil {
 		if p1 == p2 {
@@ -249,7 +254,7 @@ func ruleUnsupportedDimensions(r Rule) []string {
 	if _, err := parseAddressPredicate(r.Destination); err != nil {
 		dims = append(dims, "destination address expression")
 	}
-	if _, err := parseProtocol(r.Protocol); err != nil {
+	if _, err := parseProtocol(r.Protocol); err != nil && !anyProtocol(r.Protocol) {
 		dims = append(dims, "protocol expression")
 	}
 	if r.SourcePort != "" {
@@ -302,6 +307,12 @@ func parseAddressPredicate(s string) ([]netip.Prefix, error) {
 	if strings.EqualFold(s, "any") {
 		return nil, nil
 	}
+	if strings.EqualFold(s, "any4") {
+		return []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}, nil
+	}
+	if strings.EqualFold(s, "any6") {
+		return []netip.Prefix{netip.MustParsePrefix("::/0")}, nil
+	}
 	if p, e := netip.ParsePrefix(s); e == nil {
 		if p.Addr().Zone() != "" || p.Addr().Is4In6() {
 			return nil, fmt.Errorf("scoped or IPv4-mapped addresses are unsupported")
@@ -329,6 +340,10 @@ func rejectedAddressForm(s string) bool {
 	}
 	return false
 }
+func anyProtocol(s string) bool {
+	return strings.EqualFold(strings.TrimSpace(s), "any") || strings.EqualFold(strings.TrimSpace(s), "ip")
+}
+
 func parseProtocol(s string) (int, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "tcp":

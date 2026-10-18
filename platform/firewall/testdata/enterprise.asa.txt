@@ -1,0 +1,21 @@
+hostname edge-fw
+!
+object network WEB-01
+ host 10.20.4.15
+ description Sanitized HTTPS application endpoint
+!
+object network CLIENT-NET
+ subnet 192.0.2.0 255.255.255.0
+!
+object-group network APPROVED-CLIENTS
+ network-object object CLIENT-NET
+!
+access-list OUTSIDE-IN extended permit tcp object-group APPROVED-CLIENTS object WEB-01 eq https log
+access-list OUTSIDE-IN extended deny tcp any object WEB-01 eq ssh log
+access-list OUTSIDE-IN extended permit tcp any object UNRESOLVED-APP eq 8443
+access-group OUTSIDE-IN in interface outside
+!
+username sanitized-user password 5 PASSWORD_CANARY_VALUE
+snmp-server community COMMUNITY_CANARY_VALUE
+tunnel-group sanitized-vpn ipsec-attributes
+ ikev1 pre-shared-key TUNNEL_KEY_CANARY_VALUE

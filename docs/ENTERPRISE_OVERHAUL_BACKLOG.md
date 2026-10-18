@@ -21,6 +21,8 @@ Read with [the product/architecture plan](ENTERPRISE_OVERHAUL_PLAN.md). IDs are 
 
 ## M1 — One real enterprise investigation
 
+The first local delivery slice is implemented in the [ASA investigation application](FIREWALL_INVESTIGATION.md). It covers the parser-to-evidence-to-browser path and its automated tests. The guide records each delivered boundary and the remaining enterprise acceptance work; durable jobs, enterprise identity, migrations and generated API clients below are still open.
+
 | ID | Package / owner | Depends on | Acceptance |
 |---|---|---|---|
 | I01 | First-vendor parser adapter / domain/backend | F07,F10,F11 | Real sanitized config generates a scoped policy bundle; unresolved constructs reported, not discarded |

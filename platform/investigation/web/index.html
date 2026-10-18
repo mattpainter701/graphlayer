@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>GraphLayer · Firewall investigation</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail" aria-label="Primary navigation">
+      <a class="brand" href="#workspace" aria-label="GraphLayer home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-copy"><strong>GraphLayer</strong><small>NETWORK OPERATIONS</small></span>
+      </a>
+      <div class="rail-label">WORKSPACE</div>
+      <nav class="nav-list">
+        <a class="nav-item active" href="#investigation" aria-current="page"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Investigations</span><span class="nav-current" aria-hidden="true"></span></a>
+        <a class="nav-item" href="#imports"><span class="nav-icon icon-upload" aria-hidden="true"></span><span>Sources &amp; imports</span></a>
+        <a class="nav-item" href="#rules"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Policy chains</span></a>
+      </nav>
+      <div class="rail-spacer"></div>
+      <div class="rail-foot"><span class="local-dot"></span><span>Local workspace</span><span class="lock-icon" aria-label="Local session">⌑</span></div>
+    </aside>
+
+    <main class="main" id="workspace">
+      <header class="topbar">
+        <div class="crumb"><span class="crumb-muted">Workspace</span><span class="crumb-slash">/</span><strong>Investigations</strong></div>
+        <div class="topbar-right"><span class="session-pill"><span class="session-dot"></span>Local session</span><button class="icon-button" id="refresh-button" type="button" aria-label="Refresh snapshots and history" title="Refresh">↻</button></div>
+      </header>
+
+      <section class="page-heading" id="investigation">
+        <div><div class="eyebrow">POLICY ANALYSIS <span class="eyebrow-line"></span></div><h1>Firewall investigation</h1><p class="heading-copy">Trace one concrete flow through an imported, ordered access policy.</p></div>
+        <button class="button button-secondary" id="export-button" type="button" disabled><span aria-hidden="true">↓</span> Export result</button>
+      </section>
+
+      <section class="scope-strip" aria-label="Selected snapshot scope">
+        <div class="scope-cell"><span class="scope-label">SNAPSHOT</span><strong id="scope-snapshot">No snapshot selected</strong></div>
+        <span class="scope-divider"></span>
+        <div class="scope-cell"><span class="scope-label">DEVICE / CONTEXT</span><strong id="scope-device">—</strong></div>
+        <span class="scope-divider"></span>
+        <div class="scope-cell scope-state"><span class="scope-label">SOURCE FINGERPRINT</span><span class="state-value"><span class="integrity-dot" id="integrity-dot"></span><strong id="scope-hash">Waiting for import</strong></span></div>
+        <div class="scope-actions"><label class="select-label" for="snapshot-select">ACTIVE SNAPSHOT</label><select id="snapshot-select" aria-label="Active snapshot"><option value="">No snapshots</option></select></div>
+      </section>
+
+      <div class="workspace-grid">
+        <section class="panel import-panel" id="imports" aria-labelledby="import-title">
+          <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">01</span><div><h2 id="import-title">Configuration source</h2><p>Import a sanitized Cisco ASA running configuration.</p></div></div><span class="panel-kicker">INPUT</span></div>
+          <div class="import-actions">
+            <label class="button button-secondary file-button" for="file-input"><span aria-hidden="true">＋</span> Choose config file</label>
+            <input id="file-input" data-testid="file-input" type="file" accept=".txt,.cfg,.conf,.config,text/plain" class="visually-hidden">
+            <button class="text-button" id="load-sample" data-testid="load-sample" type="button">Load labeled ASA sample <span aria-hidden="true">↗</span></button>
+          </div>
+          <label class="sr-only" for="config-input">Paste ASA running configuration</label>
+          <textarea id="config-input" data-testid="config-input" class="config-input" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Paste running configuration…&#10;&#10;Example:&#10;access-list OUTSIDE_IN extended permit tcp any host 10.20.4.15 eq 443"></textarea>
+          <div class="config-footer"><span id="config-meta">Paste text or choose a local file</span><button class="button button-primary button-small" id="import-button" data-testid="import-button" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Import configuration</span><span aria-hidden="true">→</span></button></div>
+          <div id="import-report" class="import-report empty-report" aria-live="polite"><span class="report-icon" aria-hidden="true">⌁</span><span>Imported configuration details will appear here.</span></div>
+        </section>
+
+        <section class="panel flow-panel" aria-labelledby="flow-title">
+          <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">02</span><div><h2 id="flow-title">Define a flow</h2><p>Choose the attached ACL chain and enter a specific tuple.</p></div></div><span class="panel-kicker">QUERY</span></div>
+          <div class="chain-context"><div class="field"><label for="chain-select">ATTACHED ACL CHAIN <span class="required">*</span></label><select id="chain-select" data-testid="chain-select" disabled><option value="">Import a config to select a chain</option></select></div><div class="chain-meta" id="chain-meta"><span class="chain-dot"></span><span>Select a snapshot first</span></div></div>
+          <div class="tuple-grid">
+            <div class="field"><label for="flow-source">SOURCE ADDRESS <span class="required">*</span></label><input id="flow-source" data-testid="flow-source" type="text" inputmode="decimal" placeholder="192.0.2.42" value="192.0.2.42" autocomplete="off"></div>
+            <div class="field"><label for="flow-destination">DESTINATION ADDRESS <span class="required">*</span></label><input id="flow-destination" data-testid="flow-destination" type="text" inputmode="decimal" placeholder="10.20.4.15" value="10.20.4.15" autocomplete="off"></div>
+            <div class="field"><label for="flow-protocol">PROTOCOL <span class="required">*</span></label><select id="flow-protocol" data-testid="flow-protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option><option value="icmpv6">ICMPv6</option></select></div>
+            <div class="field"><label for="flow-source-port">SOURCE PORT</label><input id="flow-source-port" data-testid="flow-source-port" type="number" min="1" max="65535" value="52000" inputmode="numeric"></div>
+            <div class="field"><label for="flow-destination-port">DESTINATION PORT</label><input id="flow-destination-port" data-testid="flow-destination-port" type="number" min="1" max="65535" value="443" inputmode="numeric"></div>
+          </div>
+          <div class="flow-footer"><p class="form-hint"><span aria-hidden="true">ⓘ</span> A policy decision describes this ACL only.</p><button class="button button-primary" id="evaluate-button" data-testid="evaluate-button" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Evaluate flow</span><span aria-hidden="true">→</span></button></div>
+        </section>
+      </div>
+
+      <section class="result-panel panel" aria-labelledby="result-title">
+        <div class="panel-heading result-heading"><div class="panel-title-wrap"><span class="step-number">03</span><div><h2 id="result-title">Decision &amp; evidence</h2><p>Every outcome is tied to the selected snapshot and source.</p></div></div><span id="result-time" class="result-time"></span></div>
+        <div id="result-empty" class="result-empty"><span class="empty-glyph" aria-hidden="true"><span></span><span></span><span></span></span><strong>Ready to investigate</strong><p>Import a configuration, select its attached chain, then evaluate a flow.</p></div>
+        <div id="result-content" hidden>
+          <div class="decision-banner" id="decision-banner"><div class="decision-symbol" id="decision-symbol" aria-hidden="true"></div><div class="decision-copy"><span id="decision-kicker" class="decision-kicker">POLICY DECISION</span><strong id="decision" data-testid="decision">—</strong><span id="decision-detail"></span></div><div class="policy-only"><span class="policy-only-icon" aria-hidden="true">i</span><span>Policy only<br><strong>Routing, NAT &amp; return path not evaluated</strong></span></div></div>
+          <div class="evaluated-flow" id="result-flow" aria-label="Evaluated flow"></div>
+          <div class="result-columns">
+            <section class="trace-section" id="rules" aria-labelledby="trace-title"><div class="section-heading"><div><h3 id="trace-title">Ordered rule trace</h3><p id="trace-subtitle">Rules considered in evaluation order</p></div><span class="count-badge" id="trace-count">0 rules</span></div><div class="table-scroll"><table class="trace-table"><thead><tr><th scope="col">STATUS</th><th scope="col">RULE</th><th scope="col">ACTION</th><th scope="col">SOURCE</th><th scope="col">DESTINATION</th><th scope="col">PROTOCOL / PORT</th><th scope="col">EVIDENCE</th></tr></thead><tbody id="trace-body"></tbody></table></div><div id="trace-empty" class="subtle-empty" hidden>No rules were considered for this evaluation.</div></section>
+            <aside class="evidence-section" id="evidence-panel" data-testid="evidence-panel" aria-labelledby="evidence-title"><div class="section-heading"><div><h3 id="evidence-title">Source evidence</h3><p>Sanitized configuration · physical lines</p></div><span class="evidence-shield" aria-label="Sanitized source">⌑</span></div><div id="evidence-cards" class="evidence-cards"><div class="evidence-placeholder">Select a rule in the trace to inspect its source.</div></div><div id="source-lines" data-testid="source-lines" class="source-view" hidden><div class="source-toolbar"><span id="source-caption">SOURCE LINES</span><button id="close-source" type="button" class="small-icon-button" aria-label="Close source evidence">×</button></div><pre id="source-text" tabindex="0" aria-label="Sanitized source lines"></pre></div></aside>
+          </div>
+          <div id="result-explanation" class="explanation-grid"><div class="explanation-block"><span class="explanation-label">WHY THIS RESULT</span><ul id="reason-list"></ul></div><div class="explanation-block"><span class="explanation-label">UNRESOLVED OR UNSUPPORTED</span><ul id="unsupported-list"></ul></div><div class="explanation-block"><span class="explanation-label">EVALUATION BOUNDARY</span><ul id="assumption-list"></ul></div></div>
+        </div>
+      </section>
+
+      <section class="panel history-panel" aria-labelledby="history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">◷</span><div><h2 id="history-title">Recent investigations</h2><p>Saved locally for review and replay.</p></div></div><button class="text-button" id="refresh-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="history-list" data-testid="history-list" class="history-list"><div class="history-empty">No saved investigations yet.</div></div></section>
+
+      <footer class="footer"><span><span class="footer-mark">G</span> GraphLayer <span class="footer-sep">·</span> Local investigation workspace</span><span>Policy analysis · Cisco ASA</span></footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

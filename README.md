@@ -6,11 +6,21 @@ graph representations, and exports them for visualization and comparison.
 
 The enterprise overhaul is defined in the [product and architecture plan](docs/ENTERPRISE_OVERHAUL_PLAN.md),
 [execution backlog](docs/ENTERPRISE_OVERHAUL_BACKLOG.md), and [baseline audit](docs/ENTERPRISE_OVERHAUL_AUDIT.md).
-The first implementation establishes a conservative, offline policy-evaluation contract and
-repairs confidence/reference-data validation. It is a foundation for the planned operator
-application; the committed repository does not yet provide that enterprise UI or an
-end-to-end network reachability simulator. See [current implementation and checks](docs/ENTERPRISE_FOUNDATION.md)
-for commands and supported scope.
+The application now imports Cisco ASA running configurations into immutable, sanitized
+evidence snapshots and evaluates concrete flows through a selected attached ACL. Its local
+browser UI shows ordered rule traces, physical source lines, warnings and saved investigations.
+See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported syntax, limits,
+launch commands and tests. This is a single-user policy investigation application;
+enterprise service deployment and end-to-end network reachability remain planned work.
+
+```powershell
+cd platform
+go run ./cmd/graphlayer-investigate --listen 127.0.0.1:8088
+```
+
+Open `http://127.0.0.1:8088`, load the labeled ASA sample, import it, select its
+`OUTSIDE-IN` chain, and evaluate a flow. The sample passes through the actual parser;
+the application does not use precomputed demonstration results.
 
 ## 📁 Repository Structure
 
