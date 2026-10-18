@@ -49,6 +49,17 @@ async function explore(page) {
   return responseBody.exploration;
 }
 
+async function expectTopologyLabelsInsideCanvas(page) {
+  const overflow = await page.locator('#exploration-topology').evaluate((svg) => {
+    const view = svg.viewBox.baseVal;
+    return [...svg.querySelectorAll('text')].filter((label) => {
+      const box = label.getBBox();
+      return box.x < view.x || box.y < view.y || box.x + box.width > view.x + view.width || box.y + box.height > view.y + view.height;
+    }).map((label) => label.textContent);
+  });
+  expect(overflow).toEqual([]);
+}
+
 async function expectEvidenceReadableAndOwned(page, hopLocator) {
   const hops = hopLocator.locator('.path-stage');
   const count = await hops.count();
@@ -114,6 +125,11 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   await expectEvidenceReadableAndOwned(page, page.locator('#exploration-forward-hops'));
   await expectEvidenceReadableAndOwned(page, page.locator('#exploration-return-hops'));
 
+  const northNode = page.getByRole('button', { name: /^north, operator supplied topology node/i });
+  await northNode.focus();
+  await northNode.press('Enter');
+  await expect(page.locator('#exploration-forward-hops .path-stage[data-node-id="north"]')).toBeFocused();
+
   await page.locator('#exploration-topology-list button.topology-list-node').filter({ hasText: 'south' }).click();
   await expect(page.locator('#exploration-return-hops .path-stage[data-node-id="south"]')).toBeFocused();
   await branchSelect.selectOption(String(result.branches.indexOf(south)));
@@ -135,8 +151,10 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   expect(await page.locator('#network-flow-source').inputValue()).toBe(exploration.request.flow.source);
 
   await fs.mkdir(screenshotRoot, { recursive: true });
+  await expectTopologyLabelsInsideCanvas(page);
   await page.screenshot({ path: path.join(screenshotRoot, 'path-exploration-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  await expectTopologyLabelsInsideCanvas(page);
   await page.screenshot({ path: path.join(screenshotRoot, 'path-exploration-mobile.png'), fullPage: true });
   const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
   expect(dimensions.viewport).toBe(390);
