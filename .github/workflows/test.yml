@@ -25,18 +25,6 @@ jobs:
             ./models/... ./reference/iana/... ./policy/... ./cmd/graphlayer-policy/... \
             ./vendors/cisco/asa/... ./firewall/... ./investigation/... ./cmd/graphlayer-investigate/... ./pathanalysis/... ./networkpath/...
 
-      - name: Capture actual released v5 compatibility artifacts
-        if: always()
-        run: node e2e/capture-released-v5.js "${RUNNER_TEMP}/released-v5-workspace"
-
-      - name: Upload released v5 compatibility artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: released-v5-workspace
-          path: ${{ runner.temp }}/released-v5-workspace/
-          if-no-files-found: error
-
       - name: Check policy and investigation concurrency
         working-directory: platform
         run: go test -race ./policy ./firewall ./investigation ./pathanalysis ./networkpath
