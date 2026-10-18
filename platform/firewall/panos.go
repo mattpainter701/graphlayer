@@ -19,7 +19,10 @@ const panosPathVersion = "panos-path-v1"
 //go:embed testdata/panos_sample.txt
 var panosSample embed.FS
 
-func SamplePANOS() []byte { b, _ := panosSample.ReadFile("testdata/panos_sample.txt"); return b }
+func SamplePANOS() []byte {
+	b, _ := panosSample.ReadFile("testdata/panos_sample.txt")
+	return []byte(strings.ReplaceAll(string(b), "\r\n", "\n"))
+}
 
 type panLine struct {
 	n int

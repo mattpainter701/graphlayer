@@ -1,15 +1,52 @@
 package investigation
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/mattpainter701/graphlayer/platform/firewall"
 	"github.com/mattpainter701/graphlayer/platform/policy"
 )
+
+type delayedImportResponse struct {
+	*httptest.ResponseRecorder
+	started chan struct{}
+	release chan struct{}
+}
+
+func (w *delayedImportResponse) Write(b []byte) (int, error) {
+	close(w.started)
+	<-w.release
+	return w.ResponseRecorder.Write(b)
+}
+
+func TestSequentialImportAdmissionDoesNotWaitForPreviousResponseDelivery(t *testing.T) {
+	s, _ := openTestStore(t)
+	app, err := NewHandler(s, "127.0.0.1:8088")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := json.Marshal(map[string]string{"name": "PAN", "vendor": "paloalto-panos", "config": string(firewall.SamplePANOS())})
+	writer := &delayedImportResponse{httptest.NewRecorder(), make(chan struct{}), make(chan struct{})}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.importConfig(writer, httptest.NewRequest(http.MethodPost, "/api/imports", bytes.NewReader(first)))
+	}()
+	defer func() { close(writer.release); <-done }()
+	<-writer.started
+	second, _ := json.Marshal(map[string]string{"name": "Forti", "vendor": "fortinet-fortigate", "config": string(firewall.SampleFortiGate())})
+	response := httptest.NewRecorder()
+	app.importConfig(response, httptest.NewRequest(http.MethodPost, "/api/imports", bytes.NewReader(second)))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("completed prior import retained parsing admission: %d %s", response.Code, response.Body.String())
+	}
+}
 
 func TestHTTPVendorSamplesUseStrictSelectorsAndRedactFailures(t *testing.T) {
 	b, _ := newTestBrowser(t)

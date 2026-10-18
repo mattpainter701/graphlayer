@@ -32,7 +32,7 @@ var fortiSample embed.FS
 // SampleFortiGate returns the sanitized native CLI example.
 func SampleFortiGate() []byte {
 	b, _ := fortiSample.ReadFile("testdata/fortigate_sample.txt")
-	return b
+	return []byte(strings.ReplaceAll(string(b), "\r\n", "\n"))
 }
 
 type fortiEntry struct {

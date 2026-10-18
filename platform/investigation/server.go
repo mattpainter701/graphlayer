@@ -408,12 +408,19 @@ func (a *App) importConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	select {
 	case a.importing <- struct{}{}:
-		defer func() { <-a.importing }()
 	default:
 		apiError(w, 429, "import_busy", "Another import is running. Try again shortly.")
 		return
 	}
-	snap, created, err := a.store.ImportVendor(req.Name, []byte(req.Config), req.Vendor)
+	// Release parsing/persistence admission before publishing a response: a
+	// client may begin its next sequential import as soon as it reads JSON.
+	var snap *Snapshot
+	var created bool
+	var err error
+	func() {
+		defer func() { <-a.importing }()
+		snap, created, err = a.store.ImportVendor(req.Name, []byte(req.Config), req.Vendor)
+	}()
 	if errors.Is(err, ErrRecordTooLarge) {
 		apiError(w, 413, "snapshot_too_large", "The expanded snapshot exceeds the 8 MiB artifact budget. Earlier snapshots are unchanged.")
 		return
