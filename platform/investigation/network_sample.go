@@ -8,6 +8,7 @@ type NetworkSampleConfig struct {
 	NodeID string `json:"node_id"`
 	Name   string `json:"name"`
 	Config string `json:"config"`
+	Vendor string `json:"vendor,omitempty"`
 }
 
 type NetworkSample struct {

@@ -79,7 +79,7 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run real ASA browser workflow
+      - name: Run native firewall and mixed-vendor browser workflows
         run: npm run test:e2e
 
       - name: Upload browser screenshots and diagnostics
@@ -102,6 +102,6 @@ jobs:
         with:
           go-version-file: platform/go.mod
 
-      - name: Test native ASA parser and investigation storage
+      - name: Test native vendor parsers and investigation storage
         working-directory: platform
         run: go test ./vendors/cisco/asa ./firewall ./policy ./investigation ./cmd/graphlayer-investigate ./pathanalysis ./networkpath

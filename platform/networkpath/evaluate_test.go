@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/mattpainter701/graphlayer/platform/firewall"
+	"github.com/mattpainter701/graphlayer/platform/pathanalysis"
 	"github.com/mattpainter701/graphlayer/platform/policy"
 )
 
@@ -57,6 +58,30 @@ func TestEvaluateComposesExplicitTwoFirewallForwardPath(t *testing.T) {
 	}
 	if len(got.Forward.Hops[0].Evidence) == 0 || got.Forward.Hops[0].Evidence[0].SnapshotID != "snap-asa-a" {
 		t.Fatalf("evidence is not namespaced by snapshot: %#v", got.Forward.Hops[0].Evidence)
+	}
+}
+
+func TestEvaluateComposesMixedPANOSAndFortiGatePath(t *testing.T) {
+	in := fixtureInput()
+	in.Nodes[0].Config.Vendor = "paloalto-panos"
+	in.Nodes[0].Config.Path.Version = "panos-path-v1"
+	in.Nodes[0].Config.Path.PolicyComplete = true
+	in.Nodes[0].Config.Path.Interfaces[0].Zone = "outside"
+	in.Nodes[0].Config.Path.Interfaces[1].Zone = "transit"
+	in.Nodes[0].Config.Path.Policies = []firewall.PathPolicyRule{{ID: "pan-allow", From: "outside", To: "transit", Match: policy.Rule{ID: "pan-allow", Position: 0, Enabled: true, Action: "permit", Source: "any", Destination: "any", Protocol: "tcp"}}}
+	in.Nodes[1].Config.Vendor = "fortinet-fortigate"
+	in.Nodes[1].Config.Path.Version = "fortios-path-v1"
+	in.Nodes[1].Config.Path.PolicyComplete = true
+	in.Nodes[1].Config.Path.Policies = []firewall.PathPolicyRule{{ID: "forti-allow", From: "transit-in", To: "destination", Match: policy.Rule{ID: "forti-allow", Position: 0, Enabled: true, Action: "permit", Source: "any", Destination: "any", Protocol: "tcp"}}}
+	got, err := Evaluate(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EngineContractVersion != VendorContractVersion || got.Forward.Disposition != "modeled_forward" || got.Return.Disposition != "modeled_forward" || got.Disposition != "modeled_round_trip" {
+		t.Fatalf("mixed vendor topology did not produce a modeled round trip: %#v", got)
+	}
+	if len(got.Forward.Hops) != 2 || got.Forward.Hops[0].Path.EngineContractVersion != pathanalysis.VendorContractVersion || got.Forward.Hops[1].Path.EngineContractVersion != pathanalysis.VendorContractVersion {
+		t.Fatalf("vendor path dispatch was not used at every hop: %#v", got.Forward.Hops)
 	}
 }
 

@@ -390,6 +390,7 @@ func (a *App) importConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name   string `json:"name"`
 		Config string `json:"config"`
+		Vendor string `json:"vendor"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -403,16 +404,23 @@ func (a *App) importConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		req.Name = "ASA configuration"
+		req.Name = "Firewall configuration"
 	}
 	select {
 	case a.importing <- struct{}{}:
-		defer func() { <-a.importing }()
 	default:
 		apiError(w, 429, "import_busy", "Another import is running. Try again shortly.")
 		return
 	}
-	snap, created, err := a.store.Import(req.Name, []byte(req.Config))
+	// Release parsing/persistence admission before publishing a response: a
+	// client may begin its next sequential import as soon as it reads JSON.
+	var snap *Snapshot
+	var created bool
+	var err error
+	func() {
+		defer func() { <-a.importing }()
+		snap, created, err = a.store.ImportVendor(req.Name, []byte(req.Config), req.Vendor)
+	}()
 	if errors.Is(err, ErrRecordTooLarge) {
 		apiError(w, 413, "snapshot_too_large", "The expanded snapshot exceeds the 8 MiB artifact budget. Earlier snapshots are unchanged.")
 		return
@@ -422,7 +430,7 @@ func (a *App) importConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, ErrInvalidConfig) {
-		apiError(w, 422, "import_failed", "The configuration could not be imported as a supported ASA policy snapshot. Earlier snapshots are unchanged.")
+		apiError(w, 422, "import_failed", "Use supported ASA running-config, PAN-OS set-format or FortiOS single-VDOM CLI configuration. Earlier snapshots are unchanged.")
 		return
 	}
 	if err != nil {

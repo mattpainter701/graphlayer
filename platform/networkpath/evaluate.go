@@ -15,9 +15,16 @@ const (
 	maxHops  = 16
 )
 
-// Evaluate follows only explicitly linked, configuration-derived ASA hops.
+// Evaluate follows only explicitly linked, configuration-derived firewall hops.
 func Evaluate(in Input) (Result, error) {
-	r := Result{EngineContractVersion: ContractVersion, OriginalFlow: in.Flow, Forward: Direction{Disposition: "indeterminate", Hops: []Hop{}, Reasons: []string{}}, Return: Direction{Disposition: "not_evaluated", Hops: []Hop{}, Reasons: []string{}}, Disposition: "indeterminate", Reasons: []string{}, Assumptions: []string{"configuration and topology are supplied evidence, not live device or link state", "only static IPv4 forwarding supported by the single-device path model is evaluated", "a modeled return leg assumes the reverse TCP/UDP tuple belongs to the established session represented by the forward permit; live connection state is not queried"}}
+	contract := ContractVersion
+	for _, n := range in.Nodes {
+		if n.Config.Vendor != "" && !pathanalysis.IsASAVendor(n.Config.Vendor) {
+			contract = VendorContractVersion
+			break
+		}
+	}
+	r := Result{EngineContractVersion: contract, OriginalFlow: in.Flow, Forward: Direction{Disposition: "indeterminate", Hops: []Hop{}, Reasons: []string{}}, Return: Direction{Disposition: "not_evaluated", Hops: []Hop{}, Reasons: []string{}}, Disposition: "indeterminate", Reasons: []string{}, Assumptions: []string{"configuration and topology are supplied evidence, not live device or link state", "only static IPv4 forwarding supported by the single-device path model is evaluated", "a modeled return leg assumes the reverse TCP/UDP tuple belongs to the established session represented by the forward permit; live connection state is not queried"}}
 	uncertain := func(reason string) (Result, error) {
 		r.Forward.Reasons = append(r.Forward.Reasons, reason)
 		r.Reasons = append(r.Reasons, reason)

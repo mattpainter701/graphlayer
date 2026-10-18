@@ -12,13 +12,21 @@ import (
 )
 
 // Evaluate explains one configuration-derived, single-device forward path.
-func Evaluate(in Input) (Result, error) { return evaluate(in, nil) }
+func Evaluate(in Input) (Result, error) {
+	if in.Config.Vendor != "" && !isASAVendor(in.Config.Vendor) {
+		return vendorEvaluate(in, nil)
+	}
+	return evaluate(in, nil)
+}
 
 // EvaluateReturn evaluates the reverse leg of a previously modeled path. It
 // bypasses only the new inbound ACL decision, relying on the supplied forward
 // permit as established TCP/UDP state, and requires the exact reverse tuple and
 // exact inverse NAT result before returning modeled_forward.
 func EvaluateReturn(in Input, forward Result) (Result, error) {
+	if in.Config.Vendor != "" && !isASAVendor(in.Config.Vendor) {
+		return vendorReturn(in, forward)
+	}
 	if forward.Disposition != "modeled_forward" || forward.Policy == nil || forward.Policy.Disposition != "permit" {
 		return Result{}, fmt.Errorf("forward result must establish a modeled permitted path")
 	}

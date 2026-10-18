@@ -30,7 +30,7 @@ type PathSummary struct {
 }
 
 func pathInput(s *Snapshot, ingress string, flow policy.Flow) pathanalysis.Input {
-	scope := policy.Scope{SnapshotID: s.ID, DeviceID: "asa-" + digest([]byte(s.Hostname))[:16], Context: s.Context}
+	scope := policy.Scope{SnapshotID: s.ID, DeviceID: snapshotDeviceID(s), Context: s.Context}
 	flow.Scope = scope
 	return pathanalysis.Input{Scope: scope, Config: s.Config, IngressInterface: ingress, Flow: flow}
 }
@@ -115,7 +115,7 @@ func (s *Store) PathSummaries() []PathSummary {
 }
 
 func (s *Store) validatePathInvestigation(inv *PathInvestigation) error {
-	if !validID(inv.ID) || inv.CreatedAt.IsZero() || inv.Result.EngineContractVersion != pathanalysis.ContractVersion {
+	if !validID(inv.ID) || inv.CreatedAt.IsZero() || (inv.Result.EngineContractVersion != pathanalysis.ContractVersion && inv.Result.EngineContractVersion != pathanalysis.VendorContractVersion) {
 		return errors.New("invalid path investigation identity or version")
 	}
 	data, exists := s.snapshots[inv.SnapshotID]
