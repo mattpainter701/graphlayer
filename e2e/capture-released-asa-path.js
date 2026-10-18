@@ -71,7 +71,6 @@ try {
 import (
     "encoding/json"
     "os"
-    "strings"
     "testing"
 
     asa "github.com/mattpainter701/graphlayer/platform/vendors/cisco/asa"
