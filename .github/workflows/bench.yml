@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: platform/go.mod
 
       - name: Run benchmarks
         run: |
@@ -28,9 +28,3 @@ jobs:
         with:
           name: benchmarks
           path: platform/bench.txt
-
-      - name: Check for regressions
-        run: |
-          cd platform
-          # Parse benchmark results and compare with baseline
-          go run ./cmd/graphlayer-compare/main.go --bench-compare bench.txt

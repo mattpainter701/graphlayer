@@ -77,10 +77,16 @@ type ConfidenceProfile struct {
 	// EvidenceCount is the number of independent evidence items.
 	EvidenceCount int `json:"evidence_count"`
 
+	// CorroboratingSourceCount is the number of distinct sources that support
+	// an agreed field value. It is separate from EvidenceCount, which counts
+	// attribute evidence items and is not a source count.
+	CorroboratingSourceCount int `json:"corroborating_source_count"`
+
 	// CorroborationBoost is the bonus applied from multi-source agreement.
 	CorroborationBoost float64 `json:"corroboration_boost"`
 
-	// StalenessDecay is the penalty applied from data aging.
+	// StalenessDecay is the fraction of confidence removed by data aging. The
+	// attribute scores and corroboration contribution already reflect it.
 	StalenessDecay float64 `json:"staleness_decay"`
 
 	// LastUpdated is when the confidence was last computed.
@@ -137,11 +143,6 @@ func (cp *ConfidenceProfile) SetOverall() {
 	// Apply corroboration boost (capped at 1.0)
 	if cp.CorroborationBoost > 0 {
 		cp.Overall = clampScore(cp.Overall + cp.CorroborationBoost)
-	}
-
-	// Apply staleness decay
-	if cp.StalenessDecay > 0 {
-		cp.Overall = clampScore(cp.Overall - cp.StalenessDecay)
 	}
 
 	cp.Tier = cp.ComputeTier()

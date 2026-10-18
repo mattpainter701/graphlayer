@@ -1,0 +1,9 @@
+{
+  "scope": {"snapshot_id":"demo-2026-10-17","device_id":"edge-fw-01","context":"default"},
+  "complete": true,
+  "default_action":"deny",
+  "rules":[
+    {"id":"deny-admin","position":10,"enabled":true,"action":"deny","source":"any","destination":"10.20.0.0/16","protocol":"tcp","source_port":"","destination_port":"22","evidence_refs":["demo-artifact#rule-10"]},
+    {"id":"allow-web","position":20,"enabled":true,"action":"permit","source":"192.0.2.0/24","destination":"10.20.4.15","protocol":"tcp","source_port":"","destination_port":"443","evidence_refs":["demo-artifact#rule-20"]}
+  ]
+}

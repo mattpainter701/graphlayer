@@ -249,7 +249,7 @@ func (ce *ConfidenceEngine) PropagateConfidence(
 	for _, field := range derivedFields {
 		derivedBaseWeight := models.SourceWeights[derivedSource]
 		// Blend: 60% propagated, 40% derived source weight
-		fieldScore := (propagatedOverall * 0.6) + (derivedBaseWeight * 0.4)
+		fieldScore := math.Min(propagatedOverall, (propagatedOverall*0.6)+(derivedBaseWeight*0.4))
 		fieldScore = clamp(fieldScore)
 
 		profile.AddAttribute(field,
@@ -295,35 +295,46 @@ func (ce *ConfidenceEngine) ApplyCorroboration(
 	evidence []models.CorroborationEvidence,
 	baseProfile *models.ConfidenceProfile,
 ) *models.ConfidenceProfile {
-	if len(evidence) < 2 {
-		// No corroboration possible with fewer than 2 sources
-		return baseProfile
-	}
-
-	// Count unique independent sources
-	sourceSet := make(map[models.ConfidenceSource]bool)
-	sourceNames := make(map[string]bool)
-
+	// Only sources that agree on the same field and value corroborate one
+	// another. Counting unrelated facts from different sources would inflate
+	// confidence without supporting the same claim.
+	agreement := make(map[string]map[string]map[string]bool)
 	for _, ev := range evidence {
-		sourceSet[ev.SourceType] = true
-		sourceNames[ev.SourceName] = true
+		if ev.Field == "" || ev.Value == "" || ev.SourceName == "" {
+			continue
+		}
+		key := ev.Field + "\x00" + ev.Value
+		if agreement[key] == nil {
+			agreement[key] = make(map[string]map[string]bool)
+		}
+		identity := ev.SourceName
+		if ce.CorroborationConfig.RequireIndependentSources {
+			identity = string(ev.SourceType)
+		}
+		if agreement[key][identity] == nil {
+			agreement[key][identity] = make(map[string]bool)
+		}
+		agreement[key][identity][ev.SourceName] = true
+	}
+	corroboratingSources := 0
+	for _, sourceGroups := range agreement {
+		count := len(sourceGroups)
+		if count > corroboratingSources {
+			corroboratingSources = count
+		}
 	}
 
-	var corroboratingSources int
-	if ce.CorroborationConfig.RequireIndependentSources {
-		corroboratingSources = len(sourceSet)
-	} else {
-		corroboratingSources = len(sourceNames)
+	boost := 0.0
+	if corroboratingSources >= 2 {
+		// The evidence supplied here defines the current contribution. Replacing
+		// the old contribution makes repeated calls idempotent and lets removed
+		// or conflicting evidence clear a previously earned boost.
+		boost = ce.CorroborationConfig.BoostPerSource * float64(corroboratingSources-1)
+		boost = math.Min(boost, ce.CorroborationConfig.MaxBoost)
+		// A profile already aged by staleness has its corroboration contribution
+		// reduced by the same remaining-confidence factor as its attributes.
+		boost *= clamp(1 - baseProfile.StalenessDecay)
 	}
-
-	if corroboratingSources < 2 {
-		return baseProfile
-	}
-
-	// Compute boost: boostPerSource * (corroboratingSources - 1)
-	// First source provides the base, each additional adds a boost
-	boost := ce.CorroborationConfig.BoostPerSource * float64(corroboratingSources-1)
-	boost = math.Min(boost, ce.CorroborationConfig.MaxBoost)
 
 	// Create a new profile with the boost applied
 	boosted := models.NewConfidenceProfile()
@@ -335,7 +346,11 @@ func (ce *ConfidenceEngine) ApplyCorroboration(
 	}
 	boosted.Attributes = append(boosted.Attributes, baseProfile.Attributes...)
 	boosted.EvidenceSources = append(boosted.EvidenceSources, baseProfile.EvidenceSources...)
-	boosted.EvidenceCount = baseProfile.EvidenceCount + corroboratingSources
+	boosted.EvidenceCount = baseProfile.EvidenceCount
+	if corroboratingSources < 2 {
+		corroboratingSources = 0
+	}
+	boosted.CorroboratingSourceCount = corroboratingSources
 	boosted.CorroborationBoost = boost
 	boosted.StalenessDecay = baseProfile.StalenessDecay
 
@@ -354,29 +369,10 @@ func (ce *ConfidenceEngine) CorroborateAcrossSources(
 	result := make(map[string]*models.ConfidenceProfile, len(records))
 
 	for name, profile := range records {
-		// Build evidence list from all OTHER sources
-		var evidence []models.CorroborationEvidence
-		for otherName, otherProfile := range records {
-			if otherName == name {
-				continue
-			}
-			// Check if this other source has at least one matching attribute
-			for field, otherScore := range otherProfile.PerAttribute {
-				if myScore, ok := profile.PerAttribute[field]; ok {
-					// Both have this field — corroboration!
-					evidence = append(evidence, models.CorroborationEvidence{
-						SourceType: otherProfile.EvidenceSources[0],
-						SourceName: otherName,
-						Field:      field,
-						Value:      fmt.Sprintf("%.2f matches %.2f", myScore, otherScore),
-						Timestamp:  time.Now(),
-					})
-					break // One matching field is enough to count this source
-				}
-			}
-		}
-
-		result[name] = ce.ApplyCorroboration(evidence, profile)
+		// Profiles contain confidence scores but no observed values. Shared field
+		// names therefore cannot establish agreement; callers with values should
+		// use ApplyCorroboration with explicit value-bearing evidence.
+		result[name] = profile
 	}
 
 	return result
@@ -401,16 +397,16 @@ func (ce *ConfidenceEngine) ApplyStalenessDecay(
 	ageHours := now.Sub(lastRefreshed).Hours()
 	ageDays := ageHours / 24.0
 
-	if ageDays <= 0 {
-		return profile
-	}
-
 	var decayFactor float64
-	switch ce.StalenessConfig.DecayModel {
-	case "linear":
-		decayFactor = ce.computeLinearDecay(ageDays)
-	default: // exponential
-		decayFactor = ce.computeExponentialDecay(ageDays)
+	if ageDays <= 0 {
+		decayFactor = 1
+	} else {
+		switch ce.StalenessConfig.DecayModel {
+		case "linear":
+			decayFactor = ce.computeLinearDecay(ageDays)
+		default: // exponential
+			decayFactor = ce.computeExponentialDecay(ageDays)
+		}
 	}
 
 	// Clamp decay to max age
@@ -418,15 +414,28 @@ func (ce *ConfidenceEngine) ApplyStalenessDecay(
 		decayFactor = 0.0
 	}
 
+	previousFactor := clamp(1 - profile.StalenessDecay)
+	adjustmentFactor := 0.0
+	if previousFactor > 0 {
+		adjustmentFactor = decayFactor / previousFactor
+	} else if decayFactor == 0 {
+		adjustmentFactor = 1
+	}
 	decayed := models.NewConfidenceProfile()
 	decayed.PerAttribute = make(models.PerAttributeConfidence)
 	for k, v := range profile.PerAttribute {
-		decayed.PerAttribute[k] = clamp(v * decayFactor)
+		decayed.PerAttribute[k] = clamp(v * adjustmentFactor)
 	}
 	decayed.Attributes = append(decayed.Attributes, profile.Attributes...)
+	for i := range decayed.Attributes {
+		if score, ok := decayed.PerAttribute[decayed.Attributes[i].Field]; ok {
+			decayed.Attributes[i].Score = score
+		}
+	}
 	decayed.EvidenceSources = append(decayed.EvidenceSources, profile.EvidenceSources...)
 	decayed.EvidenceCount = profile.EvidenceCount
-	decayed.CorroborationBoost = profile.CorroborationBoost
+	decayed.CorroborationBoost = profile.CorroborationBoost * adjustmentFactor
+	decayed.CorroboratingSourceCount = profile.CorroboratingSourceCount
 	decayed.StalenessDecay = clamp(1.0 - decayFactor)
 	decayed.LastUpdated = now
 
@@ -558,7 +567,7 @@ func (ce *ConfidenceEngine) passesFilter(profile *models.ConfidenceProfile, filt
 
 	// Require minimum corroboration
 	if filter.RequireCorroboration > 0 {
-		if profile.EvidenceCount < filter.RequireCorroboration {
+		if profile.CorroboratingSourceCount < filter.RequireCorroboration {
 			return false
 		}
 	}

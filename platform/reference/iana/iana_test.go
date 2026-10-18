@@ -21,6 +21,52 @@ func TestNewIANALoader(t *testing.T) {
 	}
 }
 
+func TestEmbeddedCatalogFallbackIsBounded(t *testing.T) {
+	for _, name := range []string{
+		"data/protocol-numbers.csv",
+		"data/service-names-port-numbers.csv",
+		"data/ieee-ethertypes.csv",
+	} {
+		if _, err := embeddedData.ReadFile(name); err != nil {
+			t.Fatalf("embedded catalog input %q is unavailable: %v", name, err)
+		}
+	}
+
+	loader := NewIANALoader()
+	if _, ok := loader.GetProtocolName("999"); ok {
+		t.Fatal("non-IANA sentinel 999 must not be returned as a protocol")
+	}
+	if got := len(loader.EtherTypeMap); got != 3 {
+		t.Fatalf("bounded EtherType fallback has %d entries, want 3", got)
+	}
+}
+
+func TestEmbeddedCSVRegistryRowsParseBySchema(t *testing.T) {
+	loader := NewIANALoader()
+	loader.parseProtocolCSVData("Decimal,Keyword,Protocol,IPv6 Extension Header\n253,example-proto,Example Protocol,\n256,out-of-range,Out of range,\n254-255,example-range,Range assignment,\n254,unassigned,Unassigned,\n")
+	if number, ok := loader.GetProtocolNumber("example-proto"); !ok || number != "253" {
+		t.Fatalf("CSV protocol lookup = (%q, %v), want (253, true)", number, ok)
+	}
+	for _, name := range []string{"out-of-range", "example-range", "unassigned"} {
+		if _, ok := loader.GetProtocolNumber(name); ok {
+			t.Errorf("CSV protocol %q should have been skipped", name)
+		}
+	}
+
+	loader.parseServiceCSVData("Service Name,Port Number,Transport Protocol,Description\nexample-svc,4242,tcp,Example service\nexample-high-port,65536,tcp,Invalid port\nexample-port-range,4243-4244,tcp,Port range\n")
+	if name, ok := loader.GetServiceFromPort("4242", "tcp"); !ok || name != "example-svc" {
+		t.Fatalf("CSV reverse service lookup = (%q, %v), want (example-svc, true)", name, ok)
+	}
+	if ports, ok := loader.GetPortsForService("example-svc", "tcp"); !ok || len(ports) != 1 || ports[0] != "4242" {
+		t.Fatalf("CSV service ports = (%v, %v), want ([4242], true)", ports, ok)
+	}
+	for _, name := range []string{"example-high-port", "example-port-range"} {
+		if _, ok := loader.GetAllProtocolsForService(name); ok {
+			t.Errorf("CSV service %q should have been skipped", name)
+		}
+	}
+}
+
 // TestGetProtocolNumber tests protocol name to number lookups
 func TestGetProtocolNumber(t *testing.T) {
 	loader := NewIANALoader()
@@ -39,6 +85,8 @@ func TestGetProtocolNumber(t *testing.T) {
 		{"GRE", "gre", ProtocolGRE, true},
 		{"OSPF", "ospf", ProtocolOSPF, true},
 		{"Case insensitive", "TCP", ProtocolTCP, true},
+		{"Any selector alias", "any", ProtocolAny, true},
+		{"TCP/UDP selector alias", "tcp-udp", ProtocolTCPUDP, true},
 		{"Unknown protocol", "foobar-protocol", "", false},
 	}
 
@@ -71,6 +119,8 @@ func TestGetProtocolName(t *testing.T) {
 		{"UDP", ProtocolUDP, "udp", true},
 		{"ICMP", ProtocolICMP, "icmp", true},
 		{"Unknown number", "999", "", false},
+		{"Any selector is not a registry protocol", ProtocolAny, "", false},
+		{"TCP/UDP selector is not a registry protocol", ProtocolTCPUDP, "", false},
 	}
 
 	for _, tt := range tests {
@@ -267,9 +317,8 @@ func TestGetEtherTypeName(t *testing.T) {
 				t.Errorf("GetEtherTypeName(%s): expected exists=%v, got %v", tt.etherType, tt.shouldExist, ok)
 			}
 
-			// For EtherTypes, just log the result (descriptions may vary)
-			if tt.shouldExist && name != "" {
-				t.Logf("GetEtherTypeName(%s): got '%s'", tt.etherType, name)
+			if tt.shouldExist && name != tt.expectedName {
+				t.Errorf("GetEtherTypeName(%s): got %q, want %q", tt.etherType, name, tt.expectedName)
 			}
 		})
 	}

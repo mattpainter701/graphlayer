@@ -3,3 +3,10 @@
 *.conf filter=lfs diff=lfs merge=lfs -text
 *.ini filter=lfs diff=lfs merge=lfs -text
 *.db filter=lfs diff=lfs merge=lfs -text
+
+# Small, source-controlled configuration and IANA registry inputs must remain
+# ordinary text. A missing LFS object must not make test discovery or embed
+# data silently degrade to a pointer file.
+/pytest.ini -filter !diff -merge text
+/platform/reference/iana/data/*.csv -filter !diff -merge text
+/platform/reference/iana/data/*.txt -filter !diff -merge text

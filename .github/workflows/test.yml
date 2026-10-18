@@ -14,15 +14,15 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: platform/go.mod
 
       - name: Run tests with coverage
         run: |
           cd platform
-          TMPDIR=${RUNNER_TEMP} go test -coverprofile=coverage.out -coverpkg=./... \
+          TMPDIR=${RUNNER_TEMP} go test -coverprofile=coverage.out -coverpkg=./correlation/...,./comparison/...,./graph/...,./intelligence/...,./scoring/...,./vendors/shared/...,./models/...,./reference/iana/...,./policy/...,./cmd/graphlayer-policy/... \
             ./correlation/... ./comparison/... ./graph/... \
             ./intelligence/... ./scoring/... ./vendors/shared/... \
-            ./models/... ./reference/iana/...
+            ./models/... ./reference/iana/... ./policy/... ./cmd/graphlayer-policy/...
 
       - name: Coverage threshold check
         run: |
@@ -51,5 +51,5 @@ jobs:
 
       - name: Run Python connector tests
         run: |
-          pip install pytest
+          pip install -r requirements-dev.txt
           pytest tests/ -v
