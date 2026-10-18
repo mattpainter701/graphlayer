@@ -61,3 +61,5 @@ sample_data/
 /playwright/.cache/
 /.e2e-runtime/
 /platform/.e2e-runtime/
+/.e2e-exploration-runtime/
+/platform/.e2e-exploration-runtime/

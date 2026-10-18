@@ -16,6 +16,7 @@ configuration-derived ASA paths with translated tuples, route selection and sour
 The [multi-firewall workflow](docs/MULTI_FIREWALL_INVESTIGATIONS.md) composes explicitly linked ASA snapshots,
 checks configured forward and return paths, and explains the established-session assumption.
 The [multi-vendor milestone](docs/MULTI_VENDOR_INVESTIGATIONS.md) adds native PAN-OS set-format and FortiOS CLI imports with their own policy/NAT semantics and mixed-vendor evidence traces.
+The [path exploration milestone](docs/PATH_EXPLORATION.md) keeps branching routes and asymmetric configured returns separate, with a topology view, source evidence and immutable exploration history.
 See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported syntax, limits,
 launch commands and tests. This is a single-user investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.

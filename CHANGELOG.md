@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add multi-vendor configured path exploration with bounded equal-best route branches, independent asymmetric return candidates, per-branch routing/policy/NAT source evidence and explicit session uncertainty.
+- Add an interactive topology view, branch selection, saved exploration replay/export and a native four-firewall diamond sample. Preserve released workspace-v1 through v5 records while adding validated workspace-v6 exploration artifacts.
+
 - Add native PAN-OS set-format and FortiOS CLI imports to multi-vendor path investigations, with vendor-specific zone/interface policy, configured static routing/NAT, established-session return analysis and snapshot-qualified source evidence.
 - Add a parsed Palo Alto → ASA → FortiGate workflow, vendor format selection, mixed-vendor replay/export and end-to-end coverage. Preserve released workspace-v1 through v4 artifacts while introducing validated workspace-v5 vendor models; unsupported controls remain indeterminate.
 

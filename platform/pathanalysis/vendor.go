@@ -73,6 +73,10 @@ func findVendorInterface(kind vendorKind, all []firewall.PathInterface, name str
 // FortiGate forwarding. Device-specific policy and NAT never enter the ASA
 // evaluator.
 func vendorEvaluate(in Input, established *Result) (Result, error) {
+	return vendorEvaluateWithRoute(in, established, routeChoice{})
+}
+
+func vendorEvaluateWithRoute(in Input, established *Result, choice routeChoice) (Result, error) {
 	if err := policy.ValidateScope(in.Scope); err != nil {
 		return Result{}, fmt.Errorf("scope: %w", err)
 	}
@@ -189,7 +193,11 @@ func vendorEvaluate(in Input, established *Result) (Result, error) {
 	noNAT := false
 	if established == nil && kind == vendorPAN {
 		var why string
-		preRoute, why = bestRoute(p.Routes, p.Interfaces, flow.Destination)
+		if choice.PreNAT != "" {
+			preRoute, why = selectedBestRoute(p.Routes, p.Interfaces, flow.Destination, choice.PreNAT)
+		} else {
+			preRoute, why = bestRoute(p.Routes, p.Interfaces, flow.Destination)
+		}
 		if preRoute == nil {
 			if strings.HasPrefix(why, "no supported connected or static route matches") {
 				stage("route").Status = "blocked"
@@ -311,7 +319,11 @@ func vendorEvaluate(in Input, established *Result) (Result, error) {
 	}
 	var chosenRoute *firewall.PathRoute
 	var routeWhy string
-	chosenRoute, routeWhy = bestRoute(p.Routes, p.Interfaces, flow.Destination)
+	if choice.PostNAT != "" {
+		chosenRoute, routeWhy = selectedBestRoute(p.Routes, p.Interfaces, flow.Destination, choice.PostNAT)
+	} else {
+		chosenRoute, routeWhy = bestRoute(p.Routes, p.Interfaces, flow.Destination)
+	}
 	if chosenRoute == nil {
 		if strings.HasPrefix(routeWhy, "no supported connected or static route matches") {
 			stage("route").Status = "blocked"
@@ -492,6 +504,10 @@ func vendorEvaluate(in Input, established *Result) (Result, error) {
 }
 
 func vendorReturn(in Input, forward Result) (Result, error) {
+	return vendorReturnWithRoute(in, forward, "", false)
+}
+
+func vendorReturnWithRoute(in Input, forward Result, routeID string, forwardAlreadyVerified bool) (Result, error) {
 	if forward.EngineContractVersion != VendorContractVersion || forward.Disposition != "modeled_forward" || forward.Policy == nil || forward.Policy.Disposition != "permit" {
 		return Result{}, fmt.Errorf("forward result must establish a modeled permitted vendor path")
 	}
@@ -503,9 +519,11 @@ func vendorReturn(in Input, forward Result) (Result, error) {
 	if in.Scope != forward.Scope || !vendorNameMatch(kind, in.IngressInterface, forward.EgressInterface) || in.Flow != reverseFlow(forward.EgressFlow, in.Scope) {
 		return Result{}, fmt.Errorf("return scope, ingress, and tuple must exactly reverse the forward path")
 	}
-	verified, err := vendorEvaluate(Input{Scope: forward.Scope, Config: in.Config, IngressInterface: forward.IngressInterface, Flow: forward.OriginalFlow}, nil)
-	if err != nil || !reflect.DeepEqual(verified, forward) {
-		return Result{}, fmt.Errorf("forward result does not match supplied configuration evidence")
+	if !forwardAlreadyVerified {
+		verified, err := vendorEvaluate(Input{Scope: forward.Scope, Config: in.Config, IngressInterface: forward.IngressInterface, Flow: forward.OriginalFlow}, nil)
+		if err != nil || !reflect.DeepEqual(verified, forward) {
+			return Result{}, fmt.Errorf("forward result does not match supplied configuration evidence")
+		}
 	}
 	p := in.Config.Path
 	flow := in.Flow
@@ -533,7 +551,7 @@ func vendorReturn(in Input, forward Result) (Result, error) {
 		}
 	}
 	policyFlow = flow
-	res, err := vendorEvaluate(Input{Scope: in.Scope, Config: in.Config, IngressInterface: in.IngressInterface, Flow: flow}, &forward)
+	res, err := vendorEvaluateWithRoute(Input{Scope: in.Scope, Config: in.Config, IngressInterface: in.IngressInterface, Flow: flow}, &forward, routeChoice{PostNAT: routeID})
 	if err != nil {
 		return res, err
 	}
@@ -576,7 +594,9 @@ func vendorReturn(in Input, forward Result) (Result, error) {
 	}
 	if !vendorNameMatch(kind, res.EgressInterface, forward.IngressInterface) {
 		res.Disposition = "indeterminate"
-		res.EgressFlow = policy.Flow{}
+		if routeID == "" {
+			res.EgressFlow = policy.Flow{}
+		}
 		res.Reasons = append(res.Reasons, "return route does not use the forward ingress interface")
 		st := stageByName(res.Stages, "egress")
 		st.Status = "unresolved"
@@ -585,7 +605,9 @@ func vendorReturn(in Input, forward Result) (Result, error) {
 	}
 	if res.EgressFlow != reverseFlow(forward.OriginalFlow, in.Scope) {
 		res.Disposition = "indeterminate"
-		res.EgressFlow = policy.Flow{}
+		if routeID == "" {
+			res.EgressFlow = policy.Flow{}
+		}
 		res.Reasons = append(res.Reasons, "return translation is not an exact inverse of the forward tuple")
 		st := stageByName(res.Stages, "egress")
 		st.Status = "unresolved"

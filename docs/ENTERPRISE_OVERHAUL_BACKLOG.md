@@ -57,6 +57,8 @@ The next [policy workspace slice](POLICY_WORKSPACE.md) adds service/object depen
 
 ## M3 — Topology, identity and end-to-end paths
 
+The [path exploration slice](PATH_EXPLORATION.md) advances G06/G07/G09/G10/G11 with bounded configured route branches, independent asymmetric return candidates, sticky session uncertainty and an accessible topology view tied to snapshot-qualified evidence. Runtime ECMP selection, dynamic routing, recursive routing, HA/session synchronization, tunnels and broader vendor syntax remain open.
+
 The [multi-vendor slice](MULTI_VENDOR_INVESTIGATIONS.md) adds native PAN-OS/FortiOS imports and vendor-specific configured policy/NAT stages to mixed forward/return investigations. It advances adapter and path acceptance with an actual three-vendor workflow; broad syntax parity, App-ID, dynamic state, tunnels, HA and mixed-vendor branch search remain open.
 
 The [multi-firewall slice](MULTI_FIREWALL_INVESTIGATIONS.md) extends G09/G10/G11 with explicit snapshot-pinned ASA links, per-hop routing/static NAT, assumed established TCP/UDP reply traces, source evidence and local replay/export. It requires symmetric supported configuration paths and does not close branch exploration, dynamic state, tunnels, mixed vendors or the wider acceptance criteria below.

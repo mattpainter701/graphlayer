@@ -12,10 +12,15 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     ...devices['Desktop Chrome'],
   },
-  webServer: {
+  webServer: [{
     command: 'node ./e2e/start-server.js',
     url: 'http://127.0.0.1:8088/api/session',
     reuseExistingServer: false,
     timeout: 120_000,
-  },
+  }, {
+    command: 'node ./e2e/start-server.js --exploration',
+    url: 'http://127.0.0.1:8089/api/session',
+    reuseExistingServer: false,
+    timeout: 120_000,
+  }],
 });
