@@ -48,6 +48,7 @@ type NetworkSummary struct {
 	Source             networkpath.Endpoint `json:"source"`
 	Destination        networkpath.Endpoint `json:"destination"`
 	NodeCount          int                  `json:"node_count"`
+	BranchCount        int                  `json:"branch_count,omitempty"`
 	SourceAddress      string               `json:"source_address"`
 	DestinationAddress string               `json:"destination_address"`
 	Protocol           string               `json:"protocol"`
@@ -230,5 +231,5 @@ func (s *Store) validateNetworkInvestigation(inv *NetworkInvestigation) error {
 
 // Caller holds the store lock, or is initializing an unpublished store.
 func (s *Store) investigationCount() int {
-	return len(s.investigations) + len(s.paths) + len(s.networks)
+	return len(s.investigations) + len(s.paths) + len(s.networks) + len(s.explorations)
 }

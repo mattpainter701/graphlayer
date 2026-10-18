@@ -7,8 +7,18 @@ import (
 )
 
 func (a *App) networkAPI(w http.ResponseWriter, r *http.Request, parts []string) bool {
+	if a.explorationAPI(w, r, parts) {
+		return true
+	}
 	if len(parts) == 3 && parts[1] == "sample" {
 		switch parts[2] {
+		case "network-exploration":
+			if r.Method != http.MethodGet {
+				methodError(w)
+			} else {
+				writeJSON(w, 200, explorationNetworkSample())
+			}
+			return true
 		case "network-multivendor":
 			if r.Method != http.MethodGet {
 				methodError(w)

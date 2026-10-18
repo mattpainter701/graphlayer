@@ -19,13 +19,28 @@ func Evaluate(in Input) (Result, error) {
 	return evaluate(in, nil)
 }
 
+// evaluateWithRoute evaluates one explicitly selected route while retaining
+// the original configuration as the source of all route and NAT evidence.
+type routeChoice struct{ PreNAT, PostNAT string }
+
+func evaluateWithRoute(in Input, established *Result, choice routeChoice) (Result, error) {
+	if in.Config.Vendor != "" && !isASAVendor(in.Config.Vendor) {
+		return vendorEvaluateWithRoute(in, established, choice)
+	}
+	return evaluateRoute(in, established, choice.PostNAT)
+}
+
 // EvaluateReturn evaluates the reverse leg of a previously modeled path. It
 // bypasses only the new inbound ACL decision, relying on the supplied forward
 // permit as established TCP/UDP state, and requires the exact reverse tuple and
 // exact inverse NAT result before returning modeled_forward.
 func EvaluateReturn(in Input, forward Result) (Result, error) {
+	return evaluateReturn(in, forward, "", false)
+}
+
+func evaluateReturn(in Input, forward Result, routeID string, forwardAlreadyVerified bool) (Result, error) {
 	if in.Config.Vendor != "" && !isASAVendor(in.Config.Vendor) {
-		return vendorReturn(in, forward)
+		return vendorReturnWithRoute(in, forward, routeID, forwardAlreadyVerified)
 	}
 	if forward.Disposition != "modeled_forward" || forward.Policy == nil || forward.Policy.Disposition != "permit" {
 		return Result{}, fmt.Errorf("forward result must establish a modeled permitted path")
@@ -41,17 +56,21 @@ func EvaluateReturn(in Input, forward Result) (Result, error) {
 	if in.Flow != want {
 		return Result{}, fmt.Errorf("return tuple must exactly reverse the forward egress tuple")
 	}
-	verified, err := Evaluate(Input{Scope: forward.Scope, Config: in.Config, IngressInterface: forward.IngressInterface, Flow: forward.OriginalFlow})
-	if err != nil || !reflect.DeepEqual(verified, forward) {
-		return Result{}, fmt.Errorf("forward result does not match the supplied configuration evidence")
+	if !forwardAlreadyVerified {
+		verified, err := Evaluate(Input{Scope: forward.Scope, Config: in.Config, IngressInterface: forward.IngressInterface, Flow: forward.OriginalFlow})
+		if err != nil || !reflect.DeepEqual(verified, forward) {
+			return Result{}, fmt.Errorf("forward result does not match the supplied configuration evidence")
+		}
 	}
-	res, err := evaluate(in, &forward)
+	res, err := evaluateRoute(in, &forward, routeID)
 	if err != nil || res.Disposition != "modeled_forward" {
 		return res, err
 	}
 	if !strings.EqualFold(res.EgressInterface, forward.IngressInterface) {
 		res.Disposition = "indeterminate"
-		res.EgressFlow = policy.Flow{}
+		if routeID == "" {
+			res.EgressFlow = policy.Flow{}
+		}
 		res.Reasons = append(res.Reasons, "return route does not use the forward ingress interface")
 		for i := range res.Stages {
 			if res.Stages[i].Name == "egress" {
@@ -63,7 +82,9 @@ func EvaluateReturn(in Input, forward Result) (Result, error) {
 	}
 	if res.EgressFlow != reverseFlow(forward.OriginalFlow, in.Scope) || !sameIDs(res.NATRuleIDs, forward.NATRuleIDs) {
 		res.Disposition = "indeterminate"
-		res.EgressFlow = policy.Flow{}
+		if routeID == "" {
+			res.EgressFlow = policy.Flow{}
+		}
 		res.Reasons = append(res.Reasons, "return translation does not exactly reverse the modeled forward tuple")
 		for i := range res.Stages {
 			if res.Stages[i].Name == "egress" {
@@ -112,6 +133,10 @@ func sameIDs(a, b []string) bool {
 }
 
 func evaluate(in Input, established *Result) (Result, error) {
+	return evaluateRoute(in, established, "")
+}
+
+func evaluateRoute(in Input, established *Result, routeID string) (Result, error) {
 	if err := policy.ValidateScope(in.Scope); err != nil {
 		return Result{}, fmt.Errorf("scope: %w", err)
 	}
@@ -356,7 +381,11 @@ func evaluate(in Input, established *Result) (Result, error) {
 		stage("route").Detail = "destination NAT selects its real interface and destination is directly connected"
 	} else {
 		var why string
-		chosen, why = bestRoute(p.Routes, p.Interfaces, flow.Destination)
+		if routeID != "" {
+			chosen, why = selectedBestRoute(p.Routes, p.Interfaces, flow.Destination, routeID)
+		} else {
+			chosen, why = bestRoute(p.Routes, p.Interfaces, flow.Destination)
+		}
 		if chosen == nil {
 			stage("route").Status = "unresolved"
 			stage("route").Detail = why
@@ -557,6 +586,86 @@ func bestRoute(routes []firewall.PathRoute, interfaces []firewall.PathInterface,
 		}
 	}
 	return &r, "selected"
+}
+
+func bestRoutes(routes []firewall.PathRoute, interfaces []firewall.PathInterface, destination string) ([]firewall.PathRoute, string) {
+	a, err := netip.ParseAddr(destination)
+	if err != nil || !a.Is4() {
+		return nil, "route destination is not valid IPv4"
+	}
+	var candidates []firewall.PathRoute
+	longest := -1
+	for _, r := range routes {
+		p, e := netip.ParsePrefix(r.Prefix)
+		kind := strings.ToLower(r.Kind)
+		if e != nil || !p.Addr().Is4() || p != p.Masked() || !p.Contains(a) || r.Interface == "" || r.ID == "" || (kind != "connected" && kind != "static") {
+			continue
+		}
+		if p.Bits() > longest {
+			longest, candidates = p.Bits(), nil
+		}
+		if p.Bits() == longest {
+			candidates = append(candidates, r)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, "no supported connected or static route matches the destination"
+	}
+	min := candidates[0].Distance
+	for _, r := range candidates[1:] {
+		if r.Distance < min {
+			min = r.Distance
+		}
+	}
+	var best []firewall.PathRoute
+	for _, r := range candidates {
+		if r.Distance == min {
+			best = append(best, r)
+		}
+	}
+	// Keep every equal-best route in the choice set. A bad next hop remains an
+	// unresolved candidate; dropping it could turn a partial route model into a
+	// false permit on another equal-cost route.
+	sort.SliceStable(best, func(i, j int) bool { return best[i].ID < best[j].ID })
+	return best, "selected"
+}
+
+func selectedBestRoute(routes []firewall.PathRoute, interfaces []firewall.PathInterface, destination, routeID string) (*firewall.PathRoute, string) {
+	choices, why := bestRoutes(routes, interfaces, destination)
+	for i := range choices {
+		if choices[i].ID == routeID {
+			if reason := validateSelectedRoute(choices[i], routes, interfaces); reason != "" {
+				return nil, reason
+			}
+			return &choices[i], "selected"
+		}
+	}
+	return nil, why
+}
+
+func validateSelectedRoute(r firewall.PathRoute, routes []firewall.PathRoute, interfaces []firewall.PathInterface) string {
+	if !strings.EqualFold(r.Kind, "static") {
+		return ""
+	}
+	nh, err := netip.ParseAddr(r.NextHop)
+	if err != nil || !nh.Is4() {
+		return "selected static route has no valid IPv4 next hop"
+	}
+	valid := false
+	for _, connected := range routes {
+		p, e := netip.ParsePrefix(connected.Prefix)
+		if e == nil && strings.EqualFold(connected.Kind, "connected") && strings.EqualFold(connected.Interface, r.Interface) && usableNextHop(nh, p) && connectedMatchesInterface(connected, interfaces) {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return "static route next hop is not validated by a connected route on its egress interface"
+	}
+	if address, ok := interfaceAddress(interfaces, r.Interface); !ok || address == nh {
+		return "static route next hop equals or cannot be distinguished from its egress interface address"
+	}
+	return ""
 }
 
 func validateRouteInputs(routes []firewall.PathRoute, interfaces []firewall.PathInterface) string {

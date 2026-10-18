@@ -1,5 +1,7 @@
 # Multi-vendor path investigations
 
+This guide records the released workspace-v5 milestone. [Path exploration](PATH_EXPLORATION.md) adds configured route branching, asymmetric return candidates and a topology view in workspace-v6, while preserving these native adapters and saved results.
+
 GraphLayer imports a bounded subset of native Cisco ASA, Palo Alto PAN-OS and FortiGate FortiOS configuration exports into snapshot-pinned forward/return investigations. Each hop uses its vendor's policy and translation semantics. The model uses supplied configuration and operator-declared links; it does not query devices or establish live connectivity.
 
 ## Operator workflow
