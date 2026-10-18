@@ -112,6 +112,7 @@ fn is_zero(value: &i32) -> bool {
 #[derive(Default)]
 struct Builder {
     evidence: Vec<Evidence>,
+    evidence_ids: HashSet<String>,
     refs: Vec<String>,
     source: BTreeMap<i32, String>,
     warnings: Vec<Warning>,
@@ -137,7 +138,7 @@ impl Builder {
                 self.source.insert(*n, sanitize_line(&l.text));
             }
         }
-        if !self.evidence.iter().any(|e| e.id == id) {
+        if self.evidence_ids.insert(id.clone()) {
             self.evidence.push(Evidence {
                 id: id.clone(),
                 start_line: line,
