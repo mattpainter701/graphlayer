@@ -235,6 +235,9 @@ func TestPropagateConfidence(t *testing.T) {
 			t.Errorf("inferred propagation (%.4f) should be < config propagation (%.4f)",
 				inferredProp.Overall, configProp.Overall)
 		}
+		if configProp.Overall > deviceProfile.Overall {
+			t.Errorf("propagated confidence %.4f exceeds parent %.4f", configProp.Overall, deviceProfile.Overall)
+		}
 	})
 }
 
@@ -296,6 +299,27 @@ func TestApplyCorroboration(t *testing.T) {
 		}
 	})
 
+	t.Run("repeated calls replace current corroboration contribution", func(t *testing.T) {
+		twoSources := []models.CorroborationEvidence{
+			{SourceType: models.ConfidenceSourceConfig, SourceName: "config", Field: "hostname", Value: "switch1"},
+			{SourceType: models.ConfidenceSourceConnector, SourceName: "inventory", Field: "hostname", Value: "switch1"},
+		}
+		once := engine.ApplyCorroboration(twoSources, baseProfile)
+		twice := engine.ApplyCorroboration(twoSources, once)
+		if twice.CorroborationBoost != once.CorroborationBoost {
+			t.Fatalf("repeated evidence inflated boost from %.3f to %.3f", once.CorroborationBoost, twice.CorroborationBoost)
+		}
+		stronger := append(twoSources, models.CorroborationEvidence{SourceType: models.ConfidenceSourceManual, SourceName: "review", Field: "hostname", Value: "switch1"})
+		replaced := engine.ApplyCorroboration(stronger, twice)
+		if replaced.CorroborationBoost <= twice.CorroborationBoost || replaced.CorroborationBoost > engine.CorroborationConfig.MaxBoost {
+			t.Fatalf("stronger evidence should replace with larger bounded contribution; got %.3f", replaced.CorroborationBoost)
+		}
+		cleared := engine.ApplyCorroboration([]models.CorroborationEvidence{{SourceType: models.ConfidenceSourceConfig, SourceName: "config", Field: "hostname", Value: "other"}}, replaced)
+		if cleared.CorroborationBoost != 0 || cleared.CorroboratingSourceCount != 0 {
+			t.Fatalf("unsupported prior corroboration remained: boost %.3f count %d", cleared.CorroborationBoost, cleared.CorroboratingSourceCount)
+		}
+	})
+
 	t.Run("three-source corroboration", func(t *testing.T) {
 		evidence := []models.CorroborationEvidence{
 			{SourceType: models.ConfidenceSourceConfig, SourceName: "ssh-cisco-ios", Field: "hostname", Value: "switch1"},
@@ -350,11 +374,24 @@ func TestCorroborateAcrossSources(t *testing.T) {
 		t.Errorf("expected 2 results, got %d", len(result))
 	}
 
-	// Both should have corroboration boost since they have matching fields
+	// Profiles contain scores but no field values, so matching field names do
+	// not prove that their underlying observations agree.
 	for name, profile := range result {
-		if profile.CorroborationBoost <= 0.0 {
-			t.Errorf("source %s should have corroboration boost, got %.4f", name, profile.CorroborationBoost)
+		if profile.CorroborationBoost != 0.0 {
+			t.Errorf("source %s received an unsupported corroboration boost %.4f", name, profile.CorroborationBoost)
 		}
+	}
+}
+
+func TestApplyCorroborationRequiresSameValue(t *testing.T) {
+	engine := NewConfidenceEngine()
+	base := engine.ScoreInterfaceAttributes(models.ConfidenceSourceConfig, models.ConfidenceSourceConfig, models.ConfidenceSourceConfig, models.ConfidenceSourceConfig)
+	result := engine.ApplyCorroboration([]models.CorroborationEvidence{
+		{SourceType: models.ConfidenceSourceConfig, SourceName: "config", Field: "hostname", Value: "router-a"},
+		{SourceType: models.ConfidenceSourceConnector, SourceName: "inventory", Field: "hostname", Value: "router-b"},
+	}, base)
+	if result.CorroborationBoost != 0 || result.CorroboratingSourceCount != 0 {
+		t.Fatalf("conflicting values must not corroborate: boost %.3f, count %d", result.CorroborationBoost, result.CorroboratingSourceCount)
 	}
 }
 
@@ -395,8 +432,8 @@ func TestApplyStalenessDecay(t *testing.T) {
 				expected, result.Overall)
 		}
 
-		if result.StalenessDecay < 0.40 || result.StalenessDecay > 0.60 {
-			t.Errorf("staleness decay should be ~0.5 at half-life, got %.4f", result.StalenessDecay)
+		if math.Abs(result.StalenessDecay-0.5) > 0.01 {
+			t.Errorf("staleness decay metric should be ~0.5 at half-life, got %.4f", result.StalenessDecay)
 		}
 	})
 
@@ -407,6 +444,47 @@ func TestApplyStalenessDecay(t *testing.T) {
 
 		if result.Overall != 0.0 {
 			t.Errorf("at max age confidence should be 0.0, got %.4f", result.Overall)
+		}
+	})
+
+	t.Run("staleness and corroboration apply once in either order", func(t *testing.T) {
+		now := time.Now()
+		refreshed := now.Add(-30 * 24 * time.Hour)
+		evidence := []models.CorroborationEvidence{
+			{SourceType: models.ConfidenceSourceConfig, SourceName: "config", Field: "hostname", Value: "router-a"},
+			{SourceType: models.ConfidenceSourceConnector, SourceName: "inventory", Field: "hostname", Value: "router-a"},
+		}
+		staleThenCorroborated := engine.ApplyCorroboration(evidence, engine.ApplyStalenessDecay(baseProfile, refreshed, now))
+		corroboratedThenStale := engine.ApplyStalenessDecay(engine.ApplyCorroboration(evidence, baseProfile), refreshed, now)
+		if math.Abs(staleThenCorroborated.Overall-corroboratedThenStale.Overall) > 1e-9 {
+			t.Fatalf("order changed overall confidence: %.6f vs %.6f", staleThenCorroborated.Overall, corroboratedThenStale.Overall)
+		}
+		if math.Abs(staleThenCorroborated.StalenessDecay-0.5) > 0.01 {
+			t.Fatalf("expected half-life decay metric 0.5, got %.4f", staleThenCorroborated.StalenessDecay)
+		}
+	})
+
+	t.Run("repeated staleness uses current decay and keeps detail consistent", func(t *testing.T) {
+		now := time.Now()
+		refreshed := now.Add(-30 * 24 * time.Hour)
+		first := engine.ApplyStalenessDecay(baseProfile, refreshed, now)
+		repeated := engine.ApplyStalenessDecay(first, refreshed, now)
+		if math.Abs(repeated.Overall-first.Overall) > 1e-9 {
+			t.Fatalf("same staleness calculation compounded: %.6f vs %.6f", repeated.Overall, first.Overall)
+		}
+		for _, attr := range repeated.Attributes {
+			if score, ok := repeated.PerAttribute[attr.Field]; ok && math.Abs(attr.Score-score) > 1e-12 {
+				t.Errorf("attribute detail %s score %.6f differs from map %.6f", attr.Field, attr.Score, score)
+			}
+		}
+		// Applying a fresher observation time restores the score from the prior
+		// decay factor instead of compounding the earlier stale result.
+		fresh := engine.ApplyStalenessDecay(repeated, now, now)
+		if math.Abs(fresh.Overall-baseProfile.Overall) > 1e-9 {
+			t.Fatalf("fresh timestamp did not restore undecayed score: %.6f vs %.6f", fresh.Overall, baseProfile.Overall)
+		}
+		if math.Abs(first.Overall-baseProfile.Overall) < 1e-6 {
+			t.Fatal("staleness call mutated the source profile")
 		}
 	})
 
@@ -569,8 +647,8 @@ func TestComputeSummaryStats(t *testing.T) {
 		if stats.TotalRecords != 2 {
 			t.Errorf("expected 2 records, got %d", stats.TotalRecords)
 		}
-		if stats.RecordsByTier[models.ConfidenceTierHigh] < 1 {
-			t.Error("expected at least 1 high confidence record")
+		if stats.RecordsByTier[models.ConfidenceTierMedium] < 1 {
+			t.Error("expected at least 1 medium confidence record")
 		}
 		// Average should be between the two
 		if stats.AverageConfidence <= lowProfile.Overall || stats.AverageConfidence >= highProfile.Overall {
@@ -673,6 +751,14 @@ func TestFilterByConfidence(t *testing.T) {
 		result := engine.FilterByConfidence([]*models.ConfidenceProfile{boosted, lowProfile}, filter)
 		if len(result) != 1 {
 			t.Errorf("require 2 corroborating sources should return boosted only, got %d", len(result))
+		}
+
+		// Evidence item count can be high without independent corroboration.
+		uncorroborated := models.NewConfidenceProfile()
+		uncorroborated.EvidenceCount = 20
+		result = engine.FilterByConfidence([]*models.ConfidenceProfile{uncorroborated}, filter)
+		if len(result) != 0 {
+			t.Error("attribute evidence count must not satisfy a source corroboration requirement")
 		}
 	})
 

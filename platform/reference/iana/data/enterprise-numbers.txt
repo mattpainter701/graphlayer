@@ -1,1 +1,2 @@
-# IANA placeholder
+# IANA enterprise-number registry is not vendored. This file records the
+# intentional absence of the catalog while satisfying go:embed.

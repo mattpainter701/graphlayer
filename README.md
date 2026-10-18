@@ -4,6 +4,14 @@ GraphLayer is a multi-vendor network topology graph engine. It ingests network
 device configurations and operational state, normalizes topology data, builds
 graph representations, and exports them for visualization and comparison.
 
+The enterprise overhaul is defined in the [product and architecture plan](docs/ENTERPRISE_OVERHAUL_PLAN.md),
+[execution backlog](docs/ENTERPRISE_OVERHAUL_BACKLOG.md), and [baseline audit](docs/ENTERPRISE_OVERHAUL_AUDIT.md).
+The first implementation establishes a conservative, offline policy-evaluation contract and
+repairs confidence/reference-data validation. It is a foundation for the planned operator
+application; the committed repository does not yet provide that enterprise UI or an
+end-to-end network reachability simulator. See [current implementation and checks](docs/ENTERPRISE_FOUNDATION.md)
+for commands and supported scope.
+
 ## 📁 Repository Structure
 
 ```

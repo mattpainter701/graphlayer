@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -35,7 +36,7 @@ func NewIANALoader() *IANALoader {
 	loader := &IANALoader{
 		ProtocolMap:       make(ProtocolMap),
 		ServiceMap:        make(ServiceMap),
-		EtherTypeMap:      EtherTypeMap{},
+		EtherTypeMap:      builtinEtherTypes(),
 		ReverseServiceMap: make(ReverseServiceMap),
 	}
 
@@ -84,13 +85,13 @@ func NewIANALoaderFromFiles(dataDir string) (*IANALoader, error) {
 
 // loadProtocols loads IANA protocol numbers from embedded data
 func (l *IANALoader) loadProtocols() {
-	data, err := embeddedData.ReadFile("../data/iana_protocol_numbers.txt")
+	data, err := embeddedData.ReadFile("data/protocol-numbers.csv")
 	if err != nil {
 		// Silently fail - base protocol map is already loaded
 		return
 	}
 
-	l.parseProtocolData(string(data))
+	l.parseProtocolCSVData(string(data))
 }
 
 // loadProtocolsFromFile loads IANA protocol numbers from external file
@@ -153,9 +154,41 @@ func (l *IANALoader) parseProtocolData(data string) {
 	}
 }
 
+// parseProtocolCSVData parses the embedded IANA CSV schema. The external TXT
+// loader continues to use parseProtocolData for its legacy whitespace format.
+func (l *IANALoader) parseProtocolCSVData(data string) {
+	records, err := csv.NewReader(strings.NewReader(data)).ReadAll()
+	if err != nil || len(records) < 2 {
+		return
+	}
+	numberColumn := findCSVColumn(records[0], "decimal", "protocol number")
+	keywordColumn := findCSVColumn(records[0], "keyword")
+	if numberColumn < 0 || keywordColumn < 0 {
+		return
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, row := range records[1:] {
+		if numberColumn >= len(row) || keywordColumn >= len(row) {
+			continue
+		}
+		number := strings.TrimSpace(row[numberColumn])
+		keyword := strings.ToLower(strings.TrimSpace(row[keywordColumn]))
+		if number == "" || keyword == "" || strings.Contains(keyword, "unassigned") || strings.Contains(keyword, "reserved") {
+			continue
+		}
+		protocolNumber, err := strconv.Atoi(number)
+		if err != nil || protocolNumber < 0 || protocolNumber > 255 {
+			continue
+		}
+		l.ProtocolMap[keyword] = number
+	}
+}
+
 // loadServices loads IANA service name and port number mappings
 func (l *IANALoader) loadServices() {
-	data, err := embeddedData.ReadFile("../data/iana_service_names_port_numbers.txt")
+	data, err := embeddedData.ReadFile("data/service-names-port-numbers.csv")
 	if err != nil {
 		// Fall back to Cisco default services only
 		l.mu.Lock()
@@ -167,7 +200,7 @@ func (l *IANALoader) loadServices() {
 		return
 	}
 
-	l.parseServiceData(string(data))
+	l.parseServiceCSVData(string(data))
 }
 
 // loadServicesFromFile loads services from external file
@@ -273,6 +306,67 @@ func (l *IANALoader) parseServiceData(data string) {
 	l.buildReverseServiceMap()
 }
 
+// parseServiceCSVData parses IANA service registry CSV rows and retains the
+// bounded Cisco defaults when a service is absent from the embedded snapshot.
+func (l *IANALoader) parseServiceCSVData(data string) {
+	records, err := csv.NewReader(strings.NewReader(data)).ReadAll()
+	if err != nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for name, protocols := range CiscoDefaultServices {
+		l.ServiceMap[name] = copyServicePorts(protocols)
+	}
+	if len(records) < 2 {
+		l.buildReverseServiceMap()
+		return
+	}
+	nameColumn := findCSVColumn(records[0], "service name")
+	portColumn := findCSVColumn(records[0], "port number")
+	protocolColumn := findCSVColumn(records[0], "transport protocol", "protocol")
+	if nameColumn < 0 || portColumn < 0 || protocolColumn < 0 {
+		l.buildReverseServiceMap()
+		return
+	}
+	validProtocols := map[string]bool{"tcp": true, "udp": true, "sctp": true, "dccp": true}
+	for _, row := range records[1:] {
+		if nameColumn >= len(row) || portColumn >= len(row) || protocolColumn >= len(row) {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(row[nameColumn]))
+		port := strings.TrimSpace(row[portColumn])
+		protocol := strings.ToLower(strings.TrimSpace(row[protocolColumn]))
+		if name == "" || port == "" || strings.Contains(name, "unassigned") || strings.Contains(name, "reserved") || strings.Contains(port, "-") || !validProtocols[protocol] {
+			continue
+		}
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber < 0 || portNumber > 65535 {
+			continue
+		}
+		if l.ServiceMap[name] == nil {
+			l.ServiceMap[name] = make(map[string][]string)
+		}
+		if !contains(l.ServiceMap[name][protocol], port) {
+			l.ServiceMap[name][protocol] = append(l.ServiceMap[name][protocol], port)
+		}
+	}
+	l.buildReverseServiceMap()
+}
+
+func findCSVColumn(header []string, names ...string) int {
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	for i, column := range header {
+		if wanted[strings.ToLower(strings.TrimSpace(column))] {
+			return i
+		}
+	}
+	return -1
+}
+
 // buildReverseServiceMap creates a reverse mapping from (protocol, port) to service name
 func (l *IANALoader) buildReverseServiceMap() {
 	// Note: mu should already be locked by caller
@@ -289,12 +383,23 @@ func (l *IANALoader) buildReverseServiceMap() {
 
 // loadEtherTypes loads IEEE 802 EtherType mappings
 func (l *IANALoader) loadEtherTypes() {
-	data, err := embeddedData.ReadFile("../data/ieee-802-numbers.csv")
+	data, err := embeddedData.ReadFile("data/ieee-ethertypes.csv")
 	if err != nil {
 		return
 	}
 
 	l.parseEtherTypeData(string(data))
+}
+
+// builtinEtherTypes contains only common values needed when the optional
+// registry snapshot is unavailable. It is deliberately not presented as a
+// complete IEEE catalog.
+func builtinEtherTypes() EtherTypeMap {
+	return EtherTypeMap{
+		"2048":  "IPv4",
+		"2054":  "Address Resolution Protocol",
+		"34525": "IPv6",
+	}
 }
 
 // loadEtherTypesFromFile loads EtherTypes from external file
@@ -361,6 +466,11 @@ func (l *IANALoader) GetProtocolNumber(protocolName string) (string, bool) {
 
 // GetProtocolName returns the protocol name for a given protocol number
 func (l *IANALoader) GetProtocolName(protocolNumber string) (string, bool) {
+	number, err := strconv.Atoi(protocolNumber)
+	if err != nil || number < 0 || number > 255 {
+		return "", false
+	}
+
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
