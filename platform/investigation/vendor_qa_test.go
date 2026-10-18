@@ -32,17 +32,25 @@ func TestSequentialImportAdmissionDoesNotWaitForPreviousResponseDelivery(t *test
 		t.Fatal(err)
 	}
 	first, _ := json.Marshal(map[string]string{"name": "PAN", "vendor": "paloalto-panos", "config": string(firewall.SamplePANOS())})
+	jsonRequest := func(body []byte) *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/api/imports", bytes.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		return r
+	}
 	writer := &delayedImportResponse{httptest.NewRecorder(), make(chan struct{}), make(chan struct{})}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		app.importConfig(writer, httptest.NewRequest(http.MethodPost, "/api/imports", bytes.NewReader(first)))
+		app.importConfig(writer, jsonRequest(first))
 	}()
 	defer func() { close(writer.release); <-done }()
 	<-writer.started
+	if writer.Code != http.StatusCreated {
+		t.Fatalf("first native import failed: %d", writer.Code)
+	}
 	second, _ := json.Marshal(map[string]string{"name": "Forti", "vendor": "fortinet-fortigate", "config": string(firewall.SampleFortiGate())})
 	response := httptest.NewRecorder()
-	app.importConfig(response, httptest.NewRequest(http.MethodPost, "/api/imports", bytes.NewReader(second)))
+	app.importConfig(response, jsonRequest(second))
 	if response.Code != http.StatusCreated {
 		t.Fatalf("completed prior import retained parsing admission: %d %s", response.Code, response.Body.String())
 	}
@@ -178,6 +186,9 @@ func TestVendorImportSanitizesSourceAndUnsupportedFeaturesStayIndeterminate(t *t
 			}
 			resp.Body.Close()
 			config := sample.Config + tc.config
+			if tc.kind == "paloalto-panos" {
+				config = strings.Replace(sample.Config, "rules allow-https application any", "rules allow-https application web-browsing", 1)
+			}
 			payload, _ := json.Marshal(map[string]string{"name": sample.Name + " unsupported feature", "config": config, "vendor": tc.kind})
 			resp, err = b.request(http.MethodPost, "/api/imports", payload, true)
 			if err != nil {
@@ -197,7 +208,7 @@ func TestVendorImportSanitizesSourceAndUnsupportedFeaturesStayIndeterminate(t *t
 			if len(result.Snapshot.Path.Warnings) == 0 {
 				t.Fatalf("%s import did not retain unsupported feature evidence", tc.name)
 			}
-			ingress := "trust"
+			ingress := "ethernet1/1"
 			if tc.kind == "fortinet-fortigate" {
 				ingress = "port1"
 			}

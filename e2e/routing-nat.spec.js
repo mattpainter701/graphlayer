@@ -47,11 +47,13 @@ test('configuration import traces DNAT against real ACL tuple and restores exact
   await expect(page.locator('#path-stages')).toContainText('10.20.4.15');
   await expect(page.locator('#path-stages')).toContainText(/lines \d+–\d+/i);
   await saveLayout(page, 'graphlayer-routing-nat.png');
-  expect(history.investigations).toHaveLength(1);
+  expect(history.investigations.filter(item => item.snapshot_id === snapshot.id)).toHaveLength(1);
 
-  await evaluatePath(page, { destinationPort: 22 });
+  const blockedHistory = await evaluatePath(page, { destinationPort: 22 });
   await expect(page.locator('#path-disposition')).toContainText('BLOCKED');
   await expect(page.locator('#path-stages')).toContainText(/blocked/i);
+  const snapshotHistory = blockedHistory.investigations.filter(item => item.snapshot_id === snapshot.id);
+  expect(snapshotHistory).toHaveLength(2);
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
@@ -62,8 +64,9 @@ test('configuration import traces DNAT against real ACL tuple and restores exact
   const saved = await page.evaluate(async id => (await fetch(`/api/path-investigations/${encodeURIComponent(id)}`)).json(), exported.id);
   expect(exported).toEqual(saved.investigation);
   await page.reload();
-  await expect(page.locator('#path-history-list .history-open')).toHaveCount(2);
-  await page.locator('#path-history-list .history-open').first().click();
+  const snapshotRows = page.locator('#path-history-list .history-row').filter({ hasText: `snapshot ${snapshot.id}` });
+  await expect(snapshotRows).toHaveCount(snapshotHistory.length);
+  await snapshotRows.first().locator('.history-open').click();
   await expect(page.locator('#path-result')).toBeVisible();
   await expect(page.locator('#path-disposition')).toContainText(/MODELED FORWARD|BLOCKED/);
   await expect(page.locator('#path-result-scope')).toContainText(snapshot.hostname);

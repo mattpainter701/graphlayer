@@ -667,7 +667,7 @@ func ParseFortiGateConfig(input []byte) (*Config, error) {
 		ch.EvidenceRefs = append(ch.EvidenceRefs, pol.EvidenceRefs...)
 	}
 	ch.EvidenceRefs = fortiUnique(ch.EvidenceRefs)
-	if len(ch.Rules) > 0 {
+	if len(policyEntries) > 0 {
 		c.Chains = append(c.Chains, ch)
 	}
 	c.Path = p

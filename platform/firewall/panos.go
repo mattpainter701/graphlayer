@@ -515,6 +515,12 @@ func ParsePANOSConfig(input []byte) (*Config, error) {
 		c.RuleOrigins = append(c.RuleOrigins, RuleOrigin{RuleID: rr.ID, ACLName: pp.ID, Line: sourceLineForRef(c, rr.EvidenceRefs)})
 	}
 	for _, w := range p.Warnings {
+		if w.Line > 0 && w.Line <= len(c.SourceLines) {
+			if strings.HasPrefix(c.SourceLines[w.Line-1].Text, "[OMITTED") {
+				c.SourceLines[w.Line-1].Text = "[UNSUPPORTED PATH CONFIGURATION]"
+			}
+			p.EvidenceRefs = append(p.EvidenceRefs, addPanEvidence(c, hash, w.Line, "unsupported_path_input", w.Message))
+		}
 		if w.Code == "unsupported_control" || w.Code == "unsupported_dynamic_route" || w.Code == "unsupported_nat" || w.Code == "unsupported_address" || w.Code == "unsupported_service" {
 			p.RoutingComplete = false
 			p.NATComplete = false
@@ -522,6 +528,9 @@ func ParsePANOSConfig(input []byte) (*Config, error) {
 	}
 	p.Warnings = dedupePanWarnings(p.Warnings)
 	c.Warnings = dedupePanWarnings(c.Warnings)
+	if len(c.Chains) == 0 && len(rules) > 0 {
+		c.Chains = append(c.Chains, Chain{ID: "panos:policies", Name: "PAN-OS unsupported policy inventory", Direction: "zone", Complete: false, Rules: []policy.Rule{}, EvidenceRefs: append([]string(nil), p.EvidenceRefs...), Warnings: append([]Warning(nil), p.Warnings...)})
+	}
 	c.Path = p
 	if hostname != "" {
 		c.Hostname = hostname

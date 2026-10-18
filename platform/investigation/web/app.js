@@ -38,7 +38,7 @@
         invalid_network_path: 'Check that each device has a unique ID and snapshot, that every supplied link and endpoint uses a modeled interface, and that the flow is a concrete IPv4 tuple.',
         path_too_large: 'The path investigation exceeds the local artifact budget. No partial result was saved.',
         invalid_import: 'Provide a supported firewall configuration and a display name of at most 128 characters.',
-        import_failed: 'Use ASA running-config, PAN-OS set-format or FortiOS single-VDOM CLI configuration. XML, inherited rules and unsupported formats require a supported export.',
+        import_failed: 'The configuration could not be imported. Earlier snapshots are unchanged. Use ASA running-config, PAN-OS set-format or FortiOS single-VDOM CLI configuration.',
         config_too_large: 'The configuration exceeds the 2 MiB local import limit.',
         input_too_large: 'The request exceeds the local import size limit.',
         snapshot_too_large: 'The expanded snapshot exceeds the 8 MiB artifact budget. Earlier snapshots are unchanged.',
