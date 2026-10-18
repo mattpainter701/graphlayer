@@ -1,0 +1,72 @@
+/* Four focused application routes over the existing local investigation controls. */
+.app-page { min-width: 0; padding-bottom: 24px; }
+.app-page[hidden] { display: none !important; }
+.page-workspace { padding-top: 4px; }
+.workspace-welcome { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+.workspace-welcome > div:first-child { min-width: 0; }
+.workspace-identity { grid-column: 2; grid-row: 1; }
+.workspace-route-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 18px 0 4px;
+  padding: 15px 17px;
+  border: 1px solid #dce5ed;
+  border-radius: 7px;
+  background: linear-gradient(110deg, #fff, #f7fafd);
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.workspace-route-cta > div { display: grid; gap: 5px; }
+.workspace-route-cta strong { color: var(--ink-800); font-size: 12px; font-weight: 650; }
+.page-imports { padding-top: 2px; }
+.page-imports > .page-heading { padding-top: 26px; }
+.page-imports .import-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.page-imports .import-step { min-width: 0; }
+.page-imports #imports { margin-top: 20px; }
+.page-investigation, .page-topology { display: grid; gap: 16px; align-content: start; padding-top: 4px; }
+.page-investigation .page-heading, .page-imports .page-heading { margin: 0; }
+.page-investigation .scope-strip { margin: 0; }
+.page-investigation .result-panel { margin: 0; }
+.page-investigation > .panel, .page-topology > .panel { min-width: 0; }
+.page-investigation > .inventory-panel, .page-investigation > .objects-panel,
+.page-investigation > .history-panel { margin: 0; }
+.page-investigation #path-history-title { scroll-margin-top: 16px; }
+.page-topology #network-path { margin: 0; }
+.page-topology .network-panel { margin-top: 0; }
+.page-topology .exploration-visual { width: 100%; }
+
+/* Source lines stay available over every route as a dismissible evidence drawer. */
+#source-lines.source-view {
+  position: fixed;
+  z-index: 20;
+  right: 24px;
+  bottom: 20px;
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(46vh, 420px);
+  margin: 0;
+  border-color: #cbd7e2;
+  background: #fff;
+  box-shadow: 0 14px 40px rgba(16, 27, 43, .2);
+}
+#source-lines .source-toolbar { min-height: 34px; padding: 6px 9px 6px 12px; font-size: 8px; }
+#source-lines .source-toolbar #source-caption { margin-right: auto; }
+#source-lines .source-toolbar #source-pagination { margin-right: 10px; }
+#source-lines .source-view pre, #source-lines pre { max-height: calc(min(46vh, 420px) - 38px); font-size: 10px; }
+
+@media (max-width: 1080px) {
+  .page-imports .import-steps { grid-template-columns: 1fr; }
+  .workspace-welcome { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .workspace-identity { grid-column: 1; grid-row: 2; width: 100%; box-sizing: border-box; min-width: 0; }
+  .workspace-route-cta { grid-row: 3; margin-top: 0; }
+}
+@media (max-width: 600px) {
+  .app-page { padding-bottom: 17px; }
+  .page-imports > .page-heading { padding-top: 20px; }
+  .page-investigation, .page-topology { gap: 12px; }
+  .workspace-route-cta { align-items: stretch; flex-direction: column; margin-top: 14px; padding: 13px; }
+  .workspace-route-cta .button { width: 100%; }
+  #source-lines.source-view { right: 10px; bottom: 10px; width: calc(100vw - 20px); max-height: 52vh; }
+  #source-lines .source-view pre, #source-lines pre { max-height: calc(52vh - 38px); }
+}

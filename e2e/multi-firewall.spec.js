@@ -12,7 +12,7 @@ async function readDownload(download) {
 }
 
 async function loadNetworkSample(page, mutateSample) {
-  await page.goto('/');
+  await page.goto('/#network-path');
   if (mutateSample) {
     await page.route('**/api/sample/network', async (route) => {
       const response = await route.fetch();
@@ -45,6 +45,11 @@ test('models the two-firewall NAT round trip, opens hop evidence, exports, and r
   await loadNetworkSample(page);
   await evaluateNetwork(page);
   await expect(page.locator('#network-disposition')).toContainText(/modeled round trip/i, { timeout: 15_000 });
+  await expect(page.locator('#topology-caption')).toContainText(/configured forward\/return trace/i);
+  await expect(page.locator('#exploration-topology .topology-edge.topology-forward')).toHaveCount(1);
+  await expect(page.locator('#exploration-topology .topology-edge.topology-return')).toHaveCount(1);
+  await expect(page.locator('#exploration-topology .topology-node.topology-forward')).toHaveCount(2);
+  await expect(page.locator('#exploration-topology .topology-node.topology-return')).toHaveCount(2);
   const forwardHops = page.locator('#network-forward-hops .path-stage');
   await expect(forwardHops).toHaveCount(2);
   await expect(forwardHops.nth(0)).toContainText('edge');
@@ -56,6 +61,34 @@ test('models the two-firewall NAT round trip, opens hop evidence, exports, and r
     id: row.querySelector('.network-node-id').value,
     snapshotId: row.querySelector('.network-snapshot-id').value,
   })));
+
+  const coreSnapshotId = nodes.find((item) => item.id === 'core').snapshotId;
+  const coreSnapshotResponse = await page.evaluate(async (id) => (await fetch(`/api/snapshots/${encodeURIComponent(id)}`)).json(), coreSnapshotId);
+  const coreSnapshot = coreSnapshotResponse.snapshot;
+  expect(coreSnapshot).toBeTruthy();
+  await page.locator('#topology-device-list .topology-device[data-node-id="core"]').click();
+  await expect(page.locator('#topology-inspector')).toContainText(coreSnapshot.hostname);
+  await expect(page.locator('#topology-inspector')).toContainText(coreSnapshotId);
+  await expect(page.locator('#topology-inspector')).toContainText(/selected path context/i);
+  await expect(page.locator('#topology-inspector')).toContainText('Saved configuration model');
+  await expect(page.locator('#topology-inspector')).toContainText(/Forward trace/i);
+  await expect(page.locator('#topology-inspector')).toContainText(/return trace/i);
+  await expect(page.locator('#topology-inspector')).toContainText(/Forward/);
+  await expect(page.locator('#topology-inspector')).toContainText(/Return/);
+  const coreInterface = coreSnapshot.path.interfaces[0];
+  const coreRoute = coreSnapshot.path.routes[0];
+  expect(coreSnapshot.path.interfaces.length).toBeGreaterThan(0);
+  expect(coreSnapshot.path.routes.length).toBeGreaterThan(0);
+  await expect(page.locator('#topology-inspector')).toContainText(coreInterface.name || coreInterface.physical);
+  await expect(page.locator('#topology-inspector')).toContainText(coreRoute.prefix);
+  const inspectorEvidence = page.locator('#topology-inspector .topology-source-button').first();
+  await expect(inspectorEvidence).toBeVisible();
+  await inspectorEvidence.click();
+  await expect(page.locator('#source-lines')).toBeVisible();
+  await expect(page.locator('#source-caption')).toContainText(coreSnapshot.hostname);
+  await expect(page.locator('#source-caption')).toContainText(coreSnapshotId.slice(0, 12));
+  await page.getByRole('button', { name: /close source evidence/i }).click();
+
   for (const hopIndex of [0, 1]) {
     const hop = forwardHops.nth(hopIndex);
     const evidenceButton = hop.locator('.evidence-link').first();

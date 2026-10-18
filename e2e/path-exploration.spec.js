@@ -14,7 +14,7 @@ async function readDownload(download) {
 }
 
 async function loadSample(page, mutate) {
-  await page.goto('/');
+  await page.goto('/#network-path');
   if (mutate) {
     await page.route('**/api/sample/network-exploration', async (route) => {
       const response = await route.fetch();
@@ -33,6 +33,9 @@ async function loadSample(page, mutate) {
   await expect(page.locator('#network-flow-source')).toHaveValue('10.1.0.42');
   await expect(page.locator('#network-flow-destination')).toHaveValue('203.0.113.15');
   await expect(page.locator('#network-explore')).toBeEnabled();
+  await expect(page.locator('#topology-stage')).toBeVisible();
+  await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(4);
+  await expect(page.locator('#topology-caption')).toContainText(/Declared topology draft.*analysis not run/i);
 }
 
 async function explore(page) {
@@ -91,6 +94,8 @@ async function expectEvidenceReadableAndOwned(page, hopLocator) {
 test('explores both firewall branches, asymmetric and symmetric returns, source evidence, export, and exact replay', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loadSample(page);
+  await expect(page.locator('[data-app-page="topology"]')).toBeVisible();
+  await expect(page.locator('.nav-item[href="#network-path"]')).toHaveClass(/active/);
   const exploration = await explore(page);
   const result = exploration.result;
   expect(result.branches).toHaveLength(2);
@@ -128,10 +133,14 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   const northNode = page.getByRole('button', { name: /^north, operator supplied topology node/i });
   await northNode.focus();
   await northNode.press('Enter');
-  await expect(page.locator('#exploration-forward-hops .path-stage[data-node-id="north"]')).toBeFocused();
+  await expect(page.locator('#topology-inspector')).toContainText('north');
 
-  await page.locator('#exploration-topology-list button.topology-list-node').filter({ hasText: 'south' }).click();
-  await expect(page.locator('#exploration-return-hops .path-stage[data-node-id="south"]')).toBeFocused();
+  await page.locator('#topology-search').fill('south');
+  await page.locator('#topology-device-list .topology-device[data-node-id="south"]').click();
+  await expect(page.locator('#topology-inspector')).toContainText('south');
+  await expect(page.locator('#exploration-topology .topology-node[data-node-id="south"]')).toBeFocused();
+  await page.locator('#topology-fit').click();
+  await expect(page.locator('#topology-zoom')).toHaveText('100%');
   await branchSelect.selectOption(String(result.branches.indexOf(south)));
   await page.locator('#exploration-return').selectOption(String(south.returns.indexOf(southReturn)));
   await expect(page.locator('#exploration-return-status')).toContainText(/session established/i);
@@ -158,6 +167,73 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   await page.screenshot({ path: path.join(screenshotRoot, 'path-exploration-mobile.png'), fullPage: true });
   const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
   expect(dimensions.viewport).toBe(390);
+  expect(dimensions.document, JSON.stringify(dimensions)).toBeLessThanOrEqual(390);
+  expect(dimensions.body, JSON.stringify(dimensions)).toBeLessThanOrEqual(390);
+});
+
+test('topology workspace searches and inspects a branch device, controls the canvas, and opens its saved evidence', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loadSample(page);
+  await expect(page.locator('[data-app-page="topology"]')).toBeVisible();
+  await expect(page.locator('.nav-item[href="#network-path"]')).toHaveClass(/active/);
+  const exploration = await explore(page);
+  expect(exploration.result.branches).toHaveLength(2);
+  expect(exploration.result.disposition).toBe('indeterminate');
+  await expect(page.locator('#topology-stage')).toBeVisible();
+
+  const northSnapshotId = await page.locator('.network-node-row').evaluateAll((rows) => {
+    const row = rows.find((item) => item.querySelector('.network-node-id')?.value === 'north');
+    return row && row.querySelector('.network-snapshot-id')?.value;
+  });
+  expect(northSnapshotId).toMatch(/^[a-f0-9]{64}$/);
+  const snapshotResponse = await page.evaluate(async (id) => (await fetch(`/api/snapshots/${encodeURIComponent(id)}`)).json(), northSnapshotId);
+  const snapshot = snapshotResponse.snapshot;
+  expect(snapshot).toBeTruthy();
+
+  await page.locator('#topology-search').fill('north');
+  const north = page.locator('#topology-device-list .topology-device[data-node-id="north"]');
+  await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(1);
+  await north.click();
+  await expect(page.locator('#topology-inspector')).toContainText('north');
+  await expect(page.locator('#topology-inspector')).toContainText(snapshot.vendor);
+  await expect(page.locator('#topology-inspector')).toContainText(northSnapshotId);
+  await expect(page.locator('#topology-inspector')).toContainText(/selected path context/i);
+  await expect(page.locator('#topology-zoom')).toHaveText('150%');
+  await page.locator('#topology-fit').click();
+  await expect(page.locator('#topology-zoom')).toHaveText('100%');
+
+  const fittedViewBox = await page.locator('#exploration-topology').evaluate((svg) => ({ x: svg.viewBox.baseVal.x, y: svg.viewBox.baseVal.y, width: svg.viewBox.baseVal.width, height: svg.viewBox.baseVal.height }));
+  await page.locator('#topology-zoom-in').click();
+  await expect(page.locator('#topology-zoom')).toHaveText('120%');
+  const zoomedViewBox = await page.locator('#exploration-topology').evaluate((svg) => ({ width: svg.viewBox.baseVal.width, height: svg.viewBox.baseVal.height }));
+  expect(zoomedViewBox.width).toBeLessThan(fittedViewBox.width);
+  expect(zoomedViewBox.height).toBeLessThan(fittedViewBox.height);
+  await page.locator('#topology-fit').click();
+  await expect(page.locator('#topology-zoom')).toHaveText('100%');
+  await expect.poll(() => page.locator('#exploration-topology').evaluate((svg) => ({ x: svg.viewBox.baseVal.x, y: svg.viewBox.baseVal.y, width: svg.viewBox.baseVal.width, height: svg.viewBox.baseVal.height }))).toEqual(fittedViewBox);
+
+  const disposition = await page.locator('#exploration-disposition').innerText();
+  await page.locator('#topology-show-forward').uncheck();
+  await expect(page.locator('#exploration-topology')).toHaveClass(/topology-hide-forward/);
+  await page.locator('#topology-show-return').uncheck();
+  await expect(page.locator('#exploration-topology')).toHaveClass(/topology-hide-return/);
+  await expect(page.locator('#exploration-disposition')).toHaveText(disposition);
+  await page.locator('#topology-show-forward').check();
+  await page.locator('#topology-show-return').check();
+
+  const source = page.locator('#topology-inspector .topology-source-button').first();
+  await expect(source).toBeVisible();
+  await source.click();
+  await expect(page.locator('#source-lines')).toBeVisible();
+  await expect(page.locator('#source-caption')).toContainText(snapshot.hostname);
+  await expect(page.locator('#source-caption')).toContainText(northSnapshotId.slice(0, 12));
+  await page.locator('#close-source').click();
+
+  await fs.mkdir(screenshotRoot, { recursive: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'topology-workspace-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: path.join(screenshotRoot, 'topology-workspace-mobile.png') });
+  const dimensions = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
   expect(dimensions.document, JSON.stringify(dimensions)).toBeLessThanOrEqual(390);
   expect(dimensions.body, JSON.stringify(dimensions)).toBeLessThanOrEqual(390);
 });

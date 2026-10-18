@@ -129,3 +129,23 @@ jobs:
         with:
           name: graphlayer-investigate-windows-amd64
           path: native-bundle/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Smoke test packaged Windows application and sibling Rust worker
+        shell: pwsh
+        run: |
+          $env:GRAPHLAYER_ENGINE = $null
+          $smokeData = Join-Path $env:RUNNER_TEMP 'graphlayer-native-smoke'
+          $smokeOut = Join-Path $env:RUNNER_TEMP 'graphlayer-native-smoke.stdout'
+          $smokeErr = Join-Path $env:RUNNER_TEMP 'graphlayer-native-smoke.stderr'
+          $smokeApp = (Resolve-Path 'native-bundle/graphlayer-investigate.exe').Path
+          $smokeProcess = Start-Process -FilePath $smokeApp -ArgumentList @('--listen', '127.0.0.1:8091', '--data-dir', ('"{0}"' -f $smokeData)) -WindowStyle Hidden -PassThru -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
+          try {
+            python e2e/container-smoke.py
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows application smoke test failed' }
+          } finally {
+            if (-not $smokeProcess.HasExited) { Stop-Process -Id $smokeProcess.Id -ErrorAction SilentlyContinue }
+          }

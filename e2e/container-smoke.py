@@ -1,4 +1,4 @@
-"""Hosted-only packaging check: import through the real container binaries."""
+"""Hosted-only packaging check for container and native Windows binaries."""
 
 import http.cookiejar
 import json
@@ -23,7 +23,20 @@ while True:
             raise RuntimeError("Packaged application did not become ready") from None
         time.sleep(0.2)
 
-config = Path("platform/firewall/testdata/asa_path_sample.txt").read_text()
+for asset, content_type in [
+    ("app.js", "text/javascript"),
+    ("shell.js", "text/javascript"),
+    ("topology.js", "text/javascript"),
+    ("style.css", "text/css"),
+    ("shell.css", "text/css"),
+    ("topology.css", "text/css"),
+]:
+    with client.open(base + "/assets/" + asset, timeout=5) as response:
+        assert response.status == 200
+        assert response.headers.get_content_type() == content_type
+        assert response.read()
+
+config = Path("platform/firewall/testdata/asa_path_sample.txt").read_text(encoding="utf-8")
 request = urllib.request.Request(
     base + "/api/imports",
     data=json.dumps({"name": "container-sample.asa.txt", "vendor": "cisco-asa", "config": config}).encode(),

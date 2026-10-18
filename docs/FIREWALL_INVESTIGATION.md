@@ -14,6 +14,11 @@ The [path exploration increment](PATH_EXPLORATION.md) adds bounded route alterna
 
 The [workspace/import increment](WORKSPACE_IMPORTS.md) adds the local workspace profile, sites, reviewed mixed-vendor batches and named snapshot sets. It records the current workspace-v7 transaction format and preserves released v1–v6 evidence without rewriting it.
 
+The [topology workspace](TOPOLOGY_WORKSPACE.md) gives these workflows separate
+pages and adds device search, canvas navigation and a configuration inspector.
+Start from **Sources & imports** to import a single configuration; successful
+imports open **Investigation**. Use **Network path** for the multi-device canvas.
+
 ## Run it
 
 The current application requires its Rust forwarding parser. Build it first

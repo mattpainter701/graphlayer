@@ -4,9 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>GraphLayer · Firewall investigation</title>
+  <title>GraphLayer · Network operations</title>
   <link rel="stylesheet" href="/assets/style.css">
+  <link rel="stylesheet" href="/assets/shell.css">
+  <link rel="stylesheet" href="/assets/topology.css">
   <script src="/assets/app.js" defer></script>
+  <script src="/assets/topology.js" defer></script>
+  <script src="/assets/shell.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -17,12 +21,12 @@
       </a>
       <div class="rail-label">WORKSPACE</div>
       <nav class="nav-list">
-        <a class="nav-item active" href="#workspace-home" aria-current="page"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Workspace home</span><span class="nav-current" aria-hidden="true"></span></a>
-        <a class="nav-item" href="#investigation"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Investigations</span><span class="nav-current" aria-hidden="true"></span></a>
-        <a class="nav-item" href="#imports"><span class="nav-icon icon-upload" aria-hidden="true"></span><span>Sources &amp; imports</span></a>
-        <a class="nav-item" href="#policy-inventory"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Policy inventory</span></a>
-        <a class="nav-item" href="#network-path"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Network path</span></a>
-        <a class="nav-item" href="#objects"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Objects</span></a>
+        <a class="nav-item active" href="#workspace" aria-label="Workspace home"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Workspace home</span><span class="nav-current" aria-hidden="true"></span></a>
+        <a class="nav-item" href="#investigation" aria-label="Investigations"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Investigations</span><span class="nav-current" aria-hidden="true"></span></a>
+        <a class="nav-item" href="#imports" aria-label="Sources &amp; imports"><span class="nav-icon icon-upload" aria-hidden="true"></span><span>Sources &amp; imports</span></a>
+        <a class="nav-item" href="#policy-inventory" aria-label="Policy inventory"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Policy inventory</span></a>
+        <a class="nav-item" href="#network-path" aria-label="Network path"><span class="nav-icon icon-crosshair" aria-hidden="true"></span><span>Network path</span></a>
+        <a class="nav-item" href="#objects" aria-label="Objects"><span class="nav-icon icon-list" aria-hidden="true"></span><span>Objects</span></a>
       </nav>
       <div class="rail-spacer"></div>
       <div class="rail-foot"><span class="local-dot"></span><span>Local workspace</span><span class="lock-icon" aria-label="Local session">⌑</span></div>
@@ -34,9 +38,9 @@
         <div class="topbar-right"><span class="session-pill"><span class="session-dot"></span>Local session</span><button class="icon-button" id="workspace-refresh" type="button" aria-label="Refresh workspace" title="Refresh">↻</button><button class="icon-button legacy-refresh" id="refresh-button" type="button" aria-label="Refresh snapshots and history" title="Refresh">↻</button></div>
       </header>
 
-      <section class="workspace-home" id="workspace-home" aria-labelledby="workspace-home-title">
+      <section class="app-page page-workspace" data-app-page="workspace" aria-label="Workspace home"><section class="workspace-home" id="workspace-home" aria-labelledby="workspace-home-title">
         <div class="workspace-welcome">
-          <div><div class="eyebrow">NETWORK POLICY WORKSPACE <span class="eyebrow-line"></span></div><h1 id="workspace-home-title">A clear place to investigate network policy</h1><p>Choose a saved dataset, review configuration files, then publish a named set for analysis.</p></div>
+          <div><div class="eyebrow">NETWORK POLICY WORKSPACE <span class="eyebrow-line"></span></div><h1 id="workspace-home-title">A clear place to investigate network policy</h1><p>Choose a saved dataset and continue into a focused network investigation.</p></div><div class="workspace-route-cta"><div><span class="scope-label">READY TO BEGIN</span><strong>Bring in a firewall configuration</strong></div><button class="button button-primary" type="button" data-nav-page="imports">Open sources &amp; imports <span aria-hidden="true">→</span></button></div>
           <div class="workspace-identity"><span class="workspace-avatar" aria-hidden="true">GL</span><div><span id="workspace-name" class="sr-only">Local workspace</span><label class="scope-label" for="workspace-name-input">WORKSPACE NAME</label><input id="workspace-name-input" type="text" maxlength="80" aria-label="Workspace name" value="Local workspace"></div><button id="workspace-rename" class="text-button" type="button">Save</button></div>
         </div>
         <div class="active-set-card" aria-labelledby="active-set-name">
@@ -45,8 +49,10 @@
           <div class="active-set-actions"><button class="button button-primary" id="active-set-open-network" type="button" disabled>Investigate this dataset <span aria-hidden="true">→</span></button><label class="field set-picker" for="snapshot-set-list"><span>SAVED DATASETS</span><select id="snapshot-set-list"><option value="">No saved datasets</option></select></label></div>
         </div>
         <p id="active-set-scope-note" class="active-set-scope-note" hidden></p>
-        <div class="workspace-flow-heading"><div><span class="scope-label">WORKSPACE FLOW</span><h2>Bring configurations into a dataset</h2></div><span class="workspace-revision" id="workspace-revision">Workspace · loading</span></div>
-        <div class="import-steps">
+
+      </section></section>
+
+      <section class="app-page page-imports" data-app-page="imports" hidden aria-label="Sources and imports"><div class="page-heading"><div><div class="eyebrow">DATA SOURCES <span class="eyebrow-line"></span></div><h1>Sources &amp; imports</h1><p class="heading-copy">Validate configurations, save a named dataset, or import one file for a focused review.</p></div></div><div class="workspace-flow-heading"><div><span class="scope-label">WORKSPACE FLOW</span><h2>Bring configurations into a dataset</h2></div><span class="workspace-revision" id="workspace-revision">Workspace · loading</span></div><div class="import-steps">
           <section class="import-step" aria-labelledby="step-files-title"><div class="step-heading"><span class="step-number">01</span><div><span class="scope-label">CHOOSE</span><h3 id="step-files-title">Add configuration files</h3><p>Up to 8 files · 2 MiB total</p></div></div>
             <div class="batch-drop"><span class="drop-icon" aria-hidden="true">↑</span><div><strong>Choose firewall configurations</strong><small>ASA, PAN-OS or FortiOS · files stay in this workspace</small></div><label for="batch-file-input" class="button button-secondary button-small">Browse files</label><input id="batch-file-input" class="visually-hidden" type="file" multiple accept=".txt,.cfg,.conf,.config,text/plain"></div>
             <div class="batch-tools"><button id="batch-load-sample" class="text-button" type="button">Load network exploration sample <span aria-hidden="true">↗</span></button><label class="field vendor-format" for="batch-vendor"><span>FORMAT</span><select id="batch-vendor"><option value="auto">Detect each file</option><option value="cisco-asa">Cisco ASA</option><option value="paloalto-panos">Palo Alto PAN-OS</option><option value="fortinet-fortigate">FortiGate FortiOS</option></select></label></div>
@@ -67,25 +73,7 @@
             <button class="button button-primary publish-button" id="batch-publish" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Publish dataset</span><span aria-hidden="true">→</span></button>
             <div class="publish-note">Publishing saves validated snapshots together and activates the new dataset.</div>
           </section>
-        </div>
-      </section>
-
-      <section class="page-heading" id="investigation">
-        <div><div class="eyebrow">POLICY ANALYSIS <span class="eyebrow-line"></span></div><h1>Firewall investigation</h1><p class="heading-copy">Trace one concrete flow through an imported, ordered access policy.</p></div>
-        <button class="button button-secondary" id="export-button" type="button" disabled><span aria-hidden="true">↓</span> Export result</button>
-      </section>
-
-      <section class="scope-strip" aria-label="Selected snapshot scope">
-        <div class="scope-cell"><span class="scope-label">SNAPSHOT</span><strong id="scope-snapshot">No snapshot selected</strong></div>
-        <span class="scope-divider"></span>
-        <div class="scope-cell"><span class="scope-label">DEVICE / CONTEXT</span><strong id="scope-device">—</strong></div>
-        <span class="scope-divider"></span>
-        <div class="scope-cell scope-state"><span class="scope-label">SOURCE FINGERPRINT</span><span class="state-value"><span class="integrity-dot" id="integrity-dot"></span><strong id="scope-hash">Waiting for import</strong></span></div>
-        <div class="scope-actions"><label class="select-label" for="snapshot-select">ACTIVE SNAPSHOT</label><select id="snapshot-select" aria-label="Active snapshot"><option value="">No snapshots</option></select></div>
-      </section>
-
-      <div class="workspace-grid">
-        <section class="panel import-panel" id="imports" aria-labelledby="import-title">
+        </div><section class="panel import-panel" id="imports" aria-labelledby="import-title">
           <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">01</span><div><h2 id="import-title">Configuration source</h2><p>Import ASA running-config, PAN-OS set-format or FortiOS CLI configuration.</p></div></div><span class="panel-kicker">INPUT</span></div>
           <label class="field vendor-format" for="config-vendor"><span>CONFIGURATION FORMAT</span><select id="config-vendor"><option value="auto">Detect native format</option><option value="cisco-asa">Cisco ASA running-config</option><option value="paloalto-panos">Palo Alto PAN-OS set-format</option><option value="fortinet-fortigate">FortiGate FortiOS CLI</option></select></label>
           <div class="import-actions">
@@ -100,9 +88,19 @@
           <textarea id="config-input" data-testid="config-input" class="config-input" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Paste running configuration…&#10;&#10;Example:&#10;access-list OUTSIDE_IN extended permit tcp any host 10.20.4.15 eq 443"></textarea>
           <div class="config-footer"><span id="config-meta">Paste text or choose a local file</span><button class="button button-primary button-small" id="import-button" data-testid="import-button" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Import configuration</span><span aria-hidden="true">→</span></button></div>
           <div id="import-report" class="import-report empty-report" aria-live="polite"><span class="report-icon" aria-hidden="true">⌁</span><span>Imported configuration details will appear here.</span></div>
-        </section>
+        </section></section>
 
-        <section class="panel flow-panel" aria-labelledby="flow-title">
+      <section class="app-page page-investigation" data-app-page="investigation" hidden aria-label="Investigation"><section class="page-heading" id="investigation">
+        <div><div class="eyebrow">POLICY ANALYSIS <span class="eyebrow-line"></span></div><h1>Firewall investigation</h1><p class="heading-copy">Trace one concrete flow through an imported, ordered access policy.</p></div>
+        <button class="button button-secondary" id="export-button" type="button" disabled><span aria-hidden="true">↓</span> Export result</button>
+      </section><section class="scope-strip" aria-label="Selected snapshot scope">
+        <div class="scope-cell"><span class="scope-label">SNAPSHOT</span><strong id="scope-snapshot">No snapshot selected</strong></div>
+        <span class="scope-divider"></span>
+        <div class="scope-cell"><span class="scope-label">DEVICE / CONTEXT</span><strong id="scope-device">—</strong></div>
+        <span class="scope-divider"></span>
+        <div class="scope-cell scope-state"><span class="scope-label">SOURCE FINGERPRINT</span><span class="state-value"><span class="integrity-dot" id="integrity-dot"></span><strong id="scope-hash">Waiting for import</strong></span></div>
+        <div class="scope-actions"><label class="select-label" for="snapshot-select">ACTIVE SNAPSHOT</label><select id="snapshot-select" aria-label="Active snapshot"><option value="">No snapshots</option></select></div>
+      </section><section class="panel flow-panel" aria-labelledby="flow-title">
           <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">02</span><div><h2 id="flow-title">Define a flow</h2><p>Choose the attached ACL chain and enter a specific tuple.</p></div></div><span class="panel-kicker">QUERY</span></div>
           <div class="chain-context"><div class="field"><label for="chain-select">ATTACHED ACL CHAIN <span class="required">*</span></label><select id="chain-select" data-testid="chain-select" disabled><option value="">Import a config to select a chain</option></select></div><div class="chain-meta" id="chain-meta"><span class="chain-dot"></span><span>Select a snapshot first</span></div></div>
           <div class="tuple-grid">
@@ -113,10 +111,7 @@
             <div class="field"><label for="flow-destination-port">DESTINATION PORT</label><input id="flow-destination-port" data-testid="flow-destination-port" type="number" min="1" max="65535" value="443" inputmode="numeric"></div>
           </div>
           <div class="flow-footer"><p class="form-hint"><span aria-hidden="true">ⓘ</span> A policy decision describes this ACL only.</p><button class="button button-primary" id="evaluate-button" data-testid="evaluate-button" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Evaluate flow</span><span aria-hidden="true">→</span></button></div>
-        </section>
-      </div>
-
-      <section class="panel path-panel" aria-labelledby="path-title">
+        </section><section class="panel path-panel" aria-labelledby="path-title">
         <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">03</span><div><h2 id="path-title">Routing &amp; NAT path</h2><p>Trace one concrete flow through the selected snapshot’s vendor forwarding model.</p></div></div><span class="panel-kicker">PATH QUERY</span></div>
         <div id="path-unavailable" class="path-notice" role="status">Import a snapshot with routing and NAT configuration to investigate a path.</div>
         <div id="path-controls" hidden>
@@ -137,12 +132,44 @@
           <div id="path-stages" class="path-stages" aria-label="Path stages"></div>
           <div class="path-explanations"><section><h3>Reasons</h3><ul id="path-reasons"></ul></section><section><h3>Assumptions &amp; uncertainty</h3><ul id="path-assumptions"></ul></section></div>
         </div>
-      </section>
+      </section><section class="result-panel panel" aria-labelledby="result-title">
+        <div class="panel-heading result-heading"><div class="panel-title-wrap"><span class="step-number">04</span><div><h2 id="result-title">Policy decision &amp; evidence</h2><p>Every outcome is tied to the selected snapshot and source.</p></div></div><span id="result-time" class="result-time"></span></div>
+        <div id="result-empty" class="result-empty"><span class="empty-glyph" aria-hidden="true"><span></span><span></span><span></span></span><strong>Ready to investigate</strong><p>Import a configuration, select its attached chain, then evaluate a flow.</p></div>
+        <div id="result-content" hidden>
+          <div class="decision-banner" id="decision-banner"><div class="decision-symbol" id="decision-symbol" aria-hidden="true"></div><div class="decision-copy"><span id="decision-kicker" class="decision-kicker">POLICY DECISION</span><strong id="decision" data-testid="decision">—</strong><span id="decision-detail"></span></div><div class="policy-only"><span class="policy-only-icon" aria-hidden="true">i</span><span>Policy only<br><strong>Routing, NAT &amp; return path not evaluated</strong></span></div></div>
+          <div class="evaluated-flow" id="result-flow" aria-label="Evaluated flow"></div>
+          <div class="result-columns">
+            <section class="trace-section" id="rules" aria-labelledby="trace-title"><div class="section-heading"><div><h3 id="trace-title">Ordered rule trace</h3><p id="trace-subtitle">Rules considered in evaluation order</p></div><span class="count-badge" id="trace-count">0 rules</span></div><div class="table-scroll"><table class="trace-table"><thead><tr><th scope="col">STATUS</th><th scope="col">RULE</th><th scope="col">ACTION</th><th scope="col">SOURCE</th><th scope="col">DESTINATION</th><th scope="col">PROTOCOL / PORT</th><th scope="col">EVIDENCE</th></tr></thead><tbody id="trace-body"></tbody></table></div><div id="trace-empty" class="subtle-empty" hidden>No rules were considered for this evaluation.</div><section class="predicate-trace" id="predicate-trace" aria-live="polite"><strong>Predicate explanation</strong><p>Select a traced rule to see saved evaluator explanations.</p></section></section>
+            <aside class="evidence-section" id="evidence-panel" data-testid="evidence-panel" aria-labelledby="evidence-title"><div class="section-heading"><div><h3 id="evidence-title">Source evidence</h3><p>Sanitized configuration · physical lines</p></div><span class="evidence-shield" aria-label="Sanitized source">⌑</span></div><div id="evidence-cards" class="evidence-cards"><div class="evidence-placeholder">Select a rule in the trace to inspect its source.</div></div></aside>
+          </div>
+          <div id="result-explanation" class="explanation-grid"><div class="explanation-block"><span class="explanation-label">WHY THIS RESULT</span><ul id="reason-list"></ul></div><div class="explanation-block"><span class="explanation-label">UNRESOLVED OR UNSUPPORTED</span><ul id="unsupported-list"></ul></div><div class="explanation-block"><span class="explanation-label">EVALUATION BOUNDARY</span><ul id="assumption-list"></ul></div></div>
+        </div>
 
-      <section class="panel network-panel" id="network-path" aria-labelledby="network-title">
+      </section><section class="panel inventory-panel" id="policy-inventory" aria-labelledby="inventory-title">
+        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">05</span><div><h2 id="inventory-title">Policy inventory</h2><p>Search the selected snapshot’s ordered ACL rules. Filters never change evaluation.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
+        <div class="inventory-scope"><span class="scope-label">INVENTORY SCOPE</span><strong id="inventory-scope">No snapshot or chain selected</strong></div>
+        <div class="inventory-filters">
+          <div class="field inventory-search-field"><label for="inventory-search">SEARCH RULES</label><input id="inventory-search" type="search" placeholder="Rule ID, source, destination, protocol…" autocomplete="off"></div>
+          <div class="field"><label for="inventory-action">ACTION</label><select id="inventory-action"><option value="all">All actions</option><option value="permit">Permit</option><option value="deny">Deny</option></select></div>
+          <div class="field"><label for="inventory-status">RULE STATE</label><select id="inventory-status"><option value="all">Enabled and disabled</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></div>
+          <div class="field"><label for="inventory-resolution">RESOLUTION</label><select id="inventory-resolution"><option value="all">All rules</option><option value="unresolved">Unresolved only</option></select></div>
+        </div>
+        <div class="inventory-count-row"><span id="inventory-count" role="status" aria-live="polite">0 of 0 rules</span><span>Ordered chain · includes unvisited and disabled rules</span></div>
+        <div class="table-scroll inventory-table-scroll"><table class="inventory-table"><thead><tr><th scope="col">POSITION</th><th scope="col">RULE / SOURCE</th><th scope="col">ACTION</th><th scope="col">STATE</th><th scope="col">SOURCE</th><th scope="col">DESTINATION</th><th scope="col">PROTOCOL / PORTS</th></tr></thead><tbody id="inventory-body"></tbody></table></div>
+        <div class="pagination-controls" aria-label="Policy inventory pages"><button class="button button-secondary button-small" id="inventory-prev" type="button" disabled>← Previous</button><span id="inventory-page">Page 1 of 1</span><button class="button button-secondary button-small" id="inventory-next" type="button" disabled>Next →</button></div>
+        <div class="inventory-empty" id="inventory-empty">Import a snapshot and select an ACL chain to browse its rules.</div>
+        <div class="inventory-inspector" id="rule-inspector"><div class="inspector-placeholder">Select a rule to inspect its normalized predicates and original ACE line.</div></div>
+      </section><section class="panel objects-panel" id="objects" aria-labelledby="objects-title">
+        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">06</span><div><h2 id="objects-title">Object inventory</h2><p>Inspect named dependencies and source evidence in this snapshot.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
+        <div class="object-scope"><span class="scope-label">OBJECT SCOPE</span><strong id="object-scope">No snapshot selected</strong></div>
+        <div class="object-layout"><div class="object-browser"><label class="field object-search-field" for="object-search"><span>SEARCH OBJECTS</span><input id="object-search" type="search" placeholder="Name, kind, or object ID…" autocomplete="off"></label><div class="object-count-row"><span id="object-count" role="status" aria-live="polite">0 filtered · 0 total · page 1 of 1</span></div><div class="object-list" id="object-list" role="listbox" aria-label="Snapshot objects"><div class="inventory-empty">Import a snapshot to browse named objects.</div></div><div class="pagination-controls object-pagination" aria-label="Object inventory pages"><button class="button button-secondary button-small" id="object-prev" type="button" disabled>← Previous</button><span id="object-page">Page 1 of 1</span><button class="button button-secondary button-small" id="object-next" type="button" disabled>Next →</button></div></div><div class="object-inspector" id="object-inspector" aria-live="polite"><div class="inspector-placeholder">Select an object to inspect its members and dependencies.</div></div></div>
+      </section><section class="panel history-panel" aria-labelledby="history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">◷</span><div><h2 id="history-title">Recent investigations</h2><p>Saved locally for review and replay.</p></div></div><button class="text-button" id="refresh-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="history-list" data-testid="history-list" class="history-list"><div class="history-empty">No saved investigations yet.</div></div></section><section class="panel history-panel path-history-panel" aria-labelledby="path-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⇢</span><div><h2 id="path-history-title">Recent path investigations</h2><p>Saved routing and NAT traces for review and replay.</p></div></div><button class="text-button" id="refresh-path-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="path-history-list" class="history-list"><div class="history-empty">No saved path investigations yet.</div></div></section></section>
+
+      <section class="app-page page-topology" data-app-page="topology" aria-label="Network topology" hidden><div class="page-heading topology-page-heading"><div><div class="eyebrow">NETWORK OPERATIONS <span class="eyebrow-line"></span></div><h1>Network topology</h1><p class="heading-copy">Trace configured paths across firewalls and inspect declared links.</p></div></div><section class="panel network-panel" id="network-path" aria-labelledby="network-title">
         <div class="panel-heading"><div class="panel-title-wrap"><div><h2 id="network-title">Multi-firewall investigation</h2><p>Model a path across imported ASA, Palo Alto and FortiGate snapshots and operator supplied links.</p></div></div><span class="panel-kicker">NETWORK PATH</span></div>
         <div class="network-actions"><button class="button button-secondary button-small" id="network-load-sample" data-testid="network-load-sample" type="button">Load multi-firewall sample</button><button class="button button-secondary button-small" id="network-load-vendor-sample" type="button">Load multi-vendor sample</button><button class="button button-secondary button-small" id="network-load-exploration-sample" type="button">Load branch sample</button><span id="network-status" role="status" aria-live="polite">Select a snapshot for each device, then supply the links and endpoints.</span></div>
         <p class="network-boundary">Links are operator supplied, checked against configuration, and not discovered automatically.</p>
+        <div class="exploration-visual" id="exploration-visual"><div class="exploration-topology-wrap"><h3>Declared topology draft</h3><p class="exploration-legend">Devices and links below come from operator input. Network path analysis has not run yet; analysis overlays appear after you trace the network path.</p><svg id="exploration-topology" class="exploration-topology" role="group" aria-label="Declared network topology draft" viewBox="0 0 720 250" preserveAspectRatio="xMidYMid meet"></svg><div id="exploration-topology-list" class="exploration-topology-list" aria-label="Topology nodes and links"></div></div></div>
         <div class="network-layout">
           <section class="network-subpanel"><div class="network-subheading"><h3>Devices</h3><button class="text-button" id="network-add-node" type="button">Add device</button></div><div id="network-nodes" class="network-rows"></div></section>
           <section class="network-subpanel"><div class="network-subheading"><h3>Links</h3><button class="text-button" id="network-add-link" type="button">Add link</button></div><div id="network-links" class="network-rows"></div></section>
@@ -159,52 +186,12 @@
           <div class="path-result-heading"><div><span class="scope-label">BRANCH EXPLORATION</span><strong id="exploration-disposition" class="path-disposition"></strong><p id="exploration-summary"></p></div><button class="button button-secondary button-small" id="exploration-export" type="button" disabled>Export JSON</button></div>
           <p id="exploration-coverage" class="exploration-coverage"></p><div class="exploration-selectors"><label class="field" for="exploration-branch"><span>FORWARD BRANCH</span><select id="exploration-branch"></select></label><label class="field" for="exploration-return"><span>RETURN CANDIDATE</span><select id="exploration-return"></select></label></div>
           <p id="exploration-return-status" class="exploration-return-status"></p>
-          <div id="exploration-flow-summary" class="path-flow-summary"></div><div class="exploration-visual"><div class="exploration-topology-wrap"><h3>Declared topology and selected paths</h3><p class="exploration-legend">Operator supplied topology and configured paths, not live observations. Gray: declared link · green arrow: forward · blue dashed arrow: return candidate · amber: unknown or unresolved · red: blocked.</p><svg id="exploration-topology" class="exploration-topology" role="group" aria-label="Declared network topology with selected branch overlay" viewBox="0 0 720 250" preserveAspectRatio="xMidYMid meet"></svg><div id="exploration-topology-list" class="exploration-topology-list" aria-label="Topology nodes and links"></div></div></div>
+          <div id="exploration-flow-summary" class="path-flow-summary"></div>
           <div id="exploration-forward-hops" class="path-stages"></div><div id="exploration-return-hops" class="path-stages"></div><div class="path-explanations"><section><h3>Reasons</h3><ul id="exploration-reasons"></ul></section><section><h3>Assumptions and coverage</h3><ul id="exploration-assumptions"></ul></section></div>
         </div>
-      </section>
+      </section><section class="panel history-panel" aria-labelledby="network-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⇢</span><div><h2 id="network-history-title">Recent multi-firewall investigations</h2><p>Saved network paths for review and replay.</p></div></div><button class="text-button" id="refresh-network-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="network-history-list" class="history-list"><div class="history-empty">No saved multi-firewall investigations yet.</div></div></section><section class="panel history-panel" aria-labelledby="exploration-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⑂</span><div><h2 id="exploration-history-title">Recent branch explorations</h2><p>Saved topology explorations for exact request replay.</p></div></div><button class="text-button" id="refresh-exploration-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="exploration-history-list" class="history-list"><div class="history-empty">No saved branch explorations yet.</div></div></section></section>
 
-      <section class="result-panel panel" aria-labelledby="result-title">
-        <div class="panel-heading result-heading"><div class="panel-title-wrap"><span class="step-number">04</span><div><h2 id="result-title">Policy decision &amp; evidence</h2><p>Every outcome is tied to the selected snapshot and source.</p></div></div><span id="result-time" class="result-time"></span></div>
-        <div id="result-empty" class="result-empty"><span class="empty-glyph" aria-hidden="true"><span></span><span></span><span></span></span><strong>Ready to investigate</strong><p>Import a configuration, select its attached chain, then evaluate a flow.</p></div>
-        <div id="result-content" hidden>
-          <div class="decision-banner" id="decision-banner"><div class="decision-symbol" id="decision-symbol" aria-hidden="true"></div><div class="decision-copy"><span id="decision-kicker" class="decision-kicker">POLICY DECISION</span><strong id="decision" data-testid="decision">—</strong><span id="decision-detail"></span></div><div class="policy-only"><span class="policy-only-icon" aria-hidden="true">i</span><span>Policy only<br><strong>Routing, NAT &amp; return path not evaluated</strong></span></div></div>
-          <div class="evaluated-flow" id="result-flow" aria-label="Evaluated flow"></div>
-          <div class="result-columns">
-            <section class="trace-section" id="rules" aria-labelledby="trace-title"><div class="section-heading"><div><h3 id="trace-title">Ordered rule trace</h3><p id="trace-subtitle">Rules considered in evaluation order</p></div><span class="count-badge" id="trace-count">0 rules</span></div><div class="table-scroll"><table class="trace-table"><thead><tr><th scope="col">STATUS</th><th scope="col">RULE</th><th scope="col">ACTION</th><th scope="col">SOURCE</th><th scope="col">DESTINATION</th><th scope="col">PROTOCOL / PORT</th><th scope="col">EVIDENCE</th></tr></thead><tbody id="trace-body"></tbody></table></div><div id="trace-empty" class="subtle-empty" hidden>No rules were considered for this evaluation.</div><section class="predicate-trace" id="predicate-trace" aria-live="polite"><strong>Predicate explanation</strong><p>Select a traced rule to see saved evaluator explanations.</p></section></section>
-            <aside class="evidence-section" id="evidence-panel" data-testid="evidence-panel" aria-labelledby="evidence-title"><div class="section-heading"><div><h3 id="evidence-title">Source evidence</h3><p>Sanitized configuration · physical lines</p></div><span class="evidence-shield" aria-label="Sanitized source">⌑</span></div><div id="evidence-cards" class="evidence-cards"><div class="evidence-placeholder">Select a rule in the trace to inspect its source.</div></div></aside>
-          </div>
-          <div id="result-explanation" class="explanation-grid"><div class="explanation-block"><span class="explanation-label">WHY THIS RESULT</span><ul id="reason-list"></ul></div><div class="explanation-block"><span class="explanation-label">UNRESOLVED OR UNSUPPORTED</span><ul id="unsupported-list"></ul></div><div class="explanation-block"><span class="explanation-label">EVALUATION BOUNDARY</span><ul id="assumption-list"></ul></div></div>
-        </div>
-        <div id="source-lines" data-testid="source-lines" class="source-view" aria-label="Source evidence viewer" hidden><div class="source-toolbar"><span id="source-caption">SOURCE LINES</span><span id="source-pagination"></span><button id="close-source" type="button" class="small-icon-button" aria-label="Close source evidence">×</button></div><pre id="source-text" tabindex="0" aria-label="Sanitized source lines"></pre></div>
-      </section>
-
-      <section class="panel inventory-panel" id="policy-inventory" aria-labelledby="inventory-title">
-        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">05</span><div><h2 id="inventory-title">Policy inventory</h2><p>Search the selected snapshot’s ordered ACL rules. Filters never change evaluation.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
-        <div class="inventory-scope"><span class="scope-label">INVENTORY SCOPE</span><strong id="inventory-scope">No snapshot or chain selected</strong></div>
-        <div class="inventory-filters">
-          <div class="field inventory-search-field"><label for="inventory-search">SEARCH RULES</label><input id="inventory-search" type="search" placeholder="Rule ID, source, destination, protocol…" autocomplete="off"></div>
-          <div class="field"><label for="inventory-action">ACTION</label><select id="inventory-action"><option value="all">All actions</option><option value="permit">Permit</option><option value="deny">Deny</option></select></div>
-          <div class="field"><label for="inventory-status">RULE STATE</label><select id="inventory-status"><option value="all">Enabled and disabled</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></div>
-          <div class="field"><label for="inventory-resolution">RESOLUTION</label><select id="inventory-resolution"><option value="all">All rules</option><option value="unresolved">Unresolved only</option></select></div>
-        </div>
-        <div class="inventory-count-row"><span id="inventory-count" role="status" aria-live="polite">0 of 0 rules</span><span>Ordered chain · includes unvisited and disabled rules</span></div>
-        <div class="table-scroll inventory-table-scroll"><table class="inventory-table"><thead><tr><th scope="col">POSITION</th><th scope="col">RULE / SOURCE</th><th scope="col">ACTION</th><th scope="col">STATE</th><th scope="col">SOURCE</th><th scope="col">DESTINATION</th><th scope="col">PROTOCOL / PORTS</th></tr></thead><tbody id="inventory-body"></tbody></table></div>
-        <div class="pagination-controls" aria-label="Policy inventory pages"><button class="button button-secondary button-small" id="inventory-prev" type="button" disabled>← Previous</button><span id="inventory-page">Page 1 of 1</span><button class="button button-secondary button-small" id="inventory-next" type="button" disabled>Next →</button></div>
-        <div class="inventory-empty" id="inventory-empty">Import a snapshot and select an ACL chain to browse its rules.</div>
-        <div class="inventory-inspector" id="rule-inspector"><div class="inspector-placeholder">Select a rule to inspect its normalized predicates and original ACE line.</div></div>
-      </section>
-
-      <section class="panel objects-panel" id="objects" aria-labelledby="objects-title">
-        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">06</span><div><h2 id="objects-title">Object inventory</h2><p>Inspect named dependencies and source evidence in this snapshot.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
-        <div class="object-scope"><span class="scope-label">OBJECT SCOPE</span><strong id="object-scope">No snapshot selected</strong></div>
-        <div class="object-layout"><div class="object-browser"><label class="field object-search-field" for="object-search"><span>SEARCH OBJECTS</span><input id="object-search" type="search" placeholder="Name, kind, or object ID…" autocomplete="off"></label><div class="object-count-row"><span id="object-count" role="status" aria-live="polite">0 filtered · 0 total · page 1 of 1</span></div><div class="object-list" id="object-list" role="listbox" aria-label="Snapshot objects"><div class="inventory-empty">Import a snapshot to browse named objects.</div></div><div class="pagination-controls object-pagination" aria-label="Object inventory pages"><button class="button button-secondary button-small" id="object-prev" type="button" disabled>← Previous</button><span id="object-page">Page 1 of 1</span><button class="button button-secondary button-small" id="object-next" type="button" disabled>Next →</button></div></div><div class="object-inspector" id="object-inspector" aria-live="polite"><div class="inspector-placeholder">Select an object to inspect its members and dependencies.</div></div></div>
-      </section>
-
-      <section class="panel history-panel" aria-labelledby="history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">◷</span><div><h2 id="history-title">Recent investigations</h2><p>Saved locally for review and replay.</p></div></div><button class="text-button" id="refresh-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="history-list" data-testid="history-list" class="history-list"><div class="history-empty">No saved investigations yet.</div></div></section>
-      <section class="panel history-panel path-history-panel" aria-labelledby="path-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⇢</span><div><h2 id="path-history-title">Recent path investigations</h2><p>Saved routing and NAT traces for review and replay.</p></div></div><button class="text-button" id="refresh-path-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="path-history-list" class="history-list"><div class="history-empty">No saved path investigations yet.</div></div></section>
-      <section class="panel history-panel" aria-labelledby="network-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⇢</span><div><h2 id="network-history-title">Recent multi-firewall investigations</h2><p>Saved network paths for review and replay.</p></div></div><button class="text-button" id="refresh-network-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="network-history-list" class="history-list"><div class="history-empty">No saved multi-firewall investigations yet.</div></div></section>
-      <section class="panel history-panel" aria-labelledby="exploration-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⑂</span><div><h2 id="exploration-history-title">Recent branch explorations</h2><p>Saved topology explorations for exact request replay.</p></div></div><button class="text-button" id="refresh-exploration-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="exploration-history-list" class="history-list"><div class="history-empty">No saved branch explorations yet.</div></div></section>
+      <div id="source-lines" data-testid="source-lines" class="source-view" aria-label="Source evidence viewer" hidden><div class="source-toolbar"><span id="source-caption">SOURCE LINES</span><span id="source-pagination"></span><button id="close-source" type="button" class="small-icon-button" aria-label="Close source evidence">×</button></div><pre id="source-text" tabindex="0" aria-label="Sanitized source lines"></pre></div>
 
       <footer class="footer"><span><span class="footer-mark">G</span> GraphLayer <span class="footer-sep">·</span> Local investigation workspace</span><span>ASA · PAN-OS · FortiOS</span></footer>
     </main>

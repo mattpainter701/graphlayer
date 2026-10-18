@@ -37,14 +37,17 @@ function flowFor(rule) {
 }
 
 async function importSample(page) {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.getByRole('button', { name: /load labeled asa sample/i }).click();
   await expect(page.locator('#config-input')).toHaveValue(/\S/);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect(page.locator('#chain-select')).toBeEnabled();
+  await expect(page).toHaveURL(/#investigation$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
   const summaries = await jsonFromPage(page, '/api/snapshots');
   expect(summaries.status).toBe(200);
-  const snapshotId = summaries.body.snapshots[0].id;
+  const snapshotId = await page.locator('#snapshot-select').inputValue();
+  expect(summaries.body.snapshots.some((item) => item.id === snapshotId)).toBe(true);
   const detail = await jsonFromPage(page, `/api/snapshots/${encodeURIComponent(snapshotId)}`);
   expect(detail.status).toBe(200);
   return detail.body.snapshot;
@@ -115,6 +118,8 @@ test('imports ASA syntax, traces permit/deny/indeterminate, and restores investi
 
 test('discards an evaluation response if its snapshot scope changes in flight', async ({ page }) => {
   const first = await importSample(page);
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
   await page.getByRole('button', { name: /load labeled asa sample/i }).click();
   const config = await page.locator('#config-input').inputValue();
   await page.locator('#config-input').fill(config.replace('hostname edge-fw', 'hostname edge-fw-second'));
@@ -191,6 +196,8 @@ test('failed import preserves the prior snapshot and source text is rendered ine
   const snapshot = await importSample(page);
   const before = await jsonFromPage(page, '/api/snapshots');
 
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
   await page.locator('#file-input').setInputFiles({
     name: 'malformed.asa.txt',
     mimeType: 'text/plain',
@@ -199,15 +206,20 @@ test('failed import preserves the prior snapshot and source text is rendered ine
   await expect(page.locator('#config-input')).toHaveValue(/this is not a valid ASA configuration/);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect(page.locator('#toast')).toContainText(/could not be imported.*Earlier snapshots are unchanged/i);
+  await page.getByRole('link', { name: 'Investigations' }).click();
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('#scope-device')).toContainText(snapshot.hostname);
+  await expect(page.locator('#chain-select')).toBeEnabled();
   const after = await jsonFromPage(page, '/api/snapshots');
   expect(after.body.snapshots.map((row) => row.id)).toEqual(before.body.snapshots.map((row) => row.id));
   expect(await page.locator('img[src="x"]').count()).toBe(0);
   expect(await page.evaluate(() => window.__xssExecuted === true)).toBe(false);
-  expect(snapshot.id).toBe(before.body.snapshots[0].id);
+  await expect(page.locator('#snapshot-select')).toHaveValue(snapshot.id);
+  expect(before.body.snapshots.some((item) => item.id === snapshot.id)).toBe(true);
 });
 
 test('sanitized snapshots omit credential canaries and hostile source stays text', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.getByRole('button', { name: /load labeled asa sample/i }).click();
   await expect(page.locator('#config-input')).toHaveValue(/\S/);
   const source = await page.locator('#config-input').inputValue();
@@ -247,7 +259,7 @@ test('sanitized snapshots omit credential canaries and hostile source stays text
 });
 
 test('API rejects a foreign Origin even with an initialized browser session', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   const session = await jsonFromPage(page, '/api/session');
   expect(session.status).toBe(200);
   const response = await page.request.post('/api/imports', {

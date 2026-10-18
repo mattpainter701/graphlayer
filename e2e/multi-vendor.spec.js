@@ -19,7 +19,7 @@ function changeConfig(sample, node, from, to) {
 }
 
 async function loadSample(page, mutate) {
-  await page.goto('/');
+  await page.goto('/#network-path');
   if (mutate) {
     await page.route('**/api/sample/network-multivendor', async (route) => {
       const response = await route.fetch();
@@ -136,7 +136,7 @@ test('traces three native vendors through translated forward and return tuples w
 });
 
 test('loads each vendor sample through its native format selector', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.locator('#load-panos-sample').click();
   await expect(page.locator('#config-vendor')).toHaveValue('paloalto-panos');
   await expect(page.locator('#config-input')).toHaveValue(/set /);
@@ -146,7 +146,7 @@ test('loads each vendor sample through its native format selector', async ({ pag
 });
 
 test('applies PAN security policy to the original DNAT address and post-NAT zone', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#imports');
   await page.locator('#load-panos-sample').click();
   const configInput = page.locator('#config-input');
   await expect(configInput).toHaveValue(/set rulebase nat rules client-static source-translation static-ip translated-address 198\.51\.100\.42/);

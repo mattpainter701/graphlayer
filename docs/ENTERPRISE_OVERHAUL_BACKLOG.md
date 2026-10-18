@@ -2,6 +2,11 @@
 
 Read with [the product/architecture plan](ENTERPRISE_OVERHAUL_PLAN.md). IDs are work packages, not externally created issues. Effort is deliberately not estimated per row before discovery. Each package ships through an isolated task branch/worktree and a reviewed PR; independent tasks may run in parallel only after file ownership and contracts are agreed.
 
+The [Rust architecture policy](RUST_ARCHITECTURE.md) governs all remaining domain
+work, including every vendor parser and Python connector. The first production
+port covers ASA forwarding inventory; the remaining legacy implementations stay
+frozen under the migration guard until their behavior moves to Rust.
+
 ## M0 — Trust, contracts and reproducibility
 
 | ID | Package / owner | Depends on | Acceptance |
@@ -58,6 +63,12 @@ The next [policy workspace slice](POLICY_WORKSPACE.md) adds service/object depen
 | P10 | Usage evidence / integrations/domain | I02,P06 | Hit-counter interval/reset/missing telemetry explicit; zero observed hits never automatically authorizes deletion |
 
 ## M3 — Topology, identity and end-to-end paths
+
+The [topology workspace](TOPOLOGY_WORKSPACE.md) advances the operator UI with
+dedicated application pages, a draft canvas before analysis, device search,
+pan/zoom/focus, saved trace and branch/return overlays, and a snapshot-qualified
+configuration/source inspector. It preserves workspace-v7 and the existing
+analysis contracts; live topology discovery and runtime traffic remain open.
 
 The [path exploration slice](PATH_EXPLORATION.md) advances G06/G07/G09/G10/G11 with bounded configured route branches, independent asymmetric return candidates, sticky session uncertainty and an accessible topology view tied to snapshot-qualified evidence. Runtime ECMP selection, dynamic routing, recursive routing, HA/session synchronization, tunnels and broader vendor syntax remain open.
 

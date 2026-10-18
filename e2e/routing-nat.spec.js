@@ -10,7 +10,7 @@ async function saveLayout(page, name, fullPage = true) {
 }
 
 async function importPathSample(page, mutate) {
-  await page.goto('/');
+  await page.goto('/#imports');
   const sample = await page.evaluate(async () => {
     const response = await fetch('/api/sample/path', { credentials: 'same-origin' });
     return response.json();
@@ -19,6 +19,8 @@ async function importPathSample(page, mutate) {
   await page.locator('#config-input').fill(source);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect(page.locator('#path-controls')).toBeVisible({ timeout: 10_000 });
+  await expect(page).toHaveURL(/#investigation$/);
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
   const selectedId = await page.locator('#snapshot-select').inputValue();
   return page.evaluate(async (id) => (await fetch(`/api/snapshots/${encodeURIComponent(id)}`)).json(), selectedId)
     .then(response => response.snapshot);
@@ -112,6 +114,8 @@ test('unsupported dynamic routing and manual NAT remain indeterminate', async ({
 test('path UI ignores a delayed response after the flow tuple changes', async ({ page }) => {
   const original = await importPathSample(page);
   const sample = await page.evaluate(async () => (await fetch('/api/sample/path')).json());
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
   await page.locator('#config-input').fill(`${sample.config}\n! alternate path snapshot\n`);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect.poll(() => page.locator('#snapshot-select').inputValue()).not.toBe(original.id);
