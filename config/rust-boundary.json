@@ -166,7 +166,7 @@
     "platform/correlation/types.go": "6aedc79d5463cdfb884e9815e76e15e5e819e56a66537be6223f0d71dfbc91d1",
     "platform/export.py": "81f1ad4360b9e4455d0da5424c123ad6096011c7229d1c79ad43d94d6335dc15",
     "platform/firewall/asa.go": "fa3eff17998a902752b3b051a28ed4c1d5b8d94b35bd5b3c373fa5b4cb224082",
-    "platform/firewall/asa_path_parser.go": "1687db959450f4e4ee0d749a9a9f9280c4bc5b8554ca9ac87fb73305023dad6c",
+    "platform/firewall/asa_path_parser.go": "fd848b95a2f6db50c3db7c683cf46f8fe0de00de3e518fdaa6c30d237f0a7707",
     "platform/firewall/asa_services.go": "e70698742b64243a5eb9626789b13a262ed74e47798e7c9a240f7ab942f4a356",
     "platform/firewall/dispatch.go": "1f2dc993a3eac6a543267988aa9c0a6d3a8d8b689ce6b855e8cb9e06fecdd931",
     "platform/firewall/fortigate.go": "1f22cfc421db703443012984c2718b673a8bc7ef9d859afdf04f58ccd9823541",

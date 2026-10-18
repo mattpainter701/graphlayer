@@ -270,23 +270,25 @@ func isRunnableEngineFile(info os.FileInfo) bool {
 }
 
 type asaEngineOutputBuffer struct {
-	bytes.Buffer
+	buffer   bytes.Buffer
 	limit    int
 	overflow bool
 }
 
+func (b *asaEngineOutputBuffer) Bytes() []byte { return b.buffer.Bytes() }
+
 func (b *asaEngineOutputBuffer) Write(p []byte) (int, error) {
-	remaining := b.limit - b.Len()
+	remaining := b.limit - b.buffer.Len()
 	if remaining <= 0 {
 		b.overflow = true
 		return 0, errors.New("output limit")
 	}
 	if len(p) > remaining {
-		_, _ = b.Buffer.Write(p[:remaining])
+		_, _ = b.buffer.Write(p[:remaining])
 		b.overflow = true
 		return remaining, errors.New("output limit")
 	}
-	return b.Buffer.Write(p)
+	return b.buffer.Write(p)
 }
 
 func decodeStrictJSON(data []byte, target any) error {

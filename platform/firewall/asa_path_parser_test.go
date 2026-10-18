@@ -377,6 +377,14 @@ func TestASAPathEngineRejectsInvalidAndUnboundedWorkerResponses(t *testing.T) {
 	}
 }
 
+func TestASAEngineOutputLimitCannotBeBypassedByIOCopy(t *testing.T) {
+	buffer := &asaEngineOutputBuffer{limit: 32}
+	_, err := io.Copy(buffer, io.LimitReader(strings.NewReader(strings.Repeat("x", 64)), 64))
+	if err == nil || !buffer.overflow || len(buffer.Bytes()) != 32 {
+		t.Fatalf("stdout copy bypassed the size limit: error=%v overflow=%v bytes=%d", err, buffer.overflow, len(buffer.Bytes()))
+	}
+}
+
 func TestASAPathOutputMergeDeduplicatesEvidenceAndAppliesLineUpdates(t *testing.T) {
 	parsed, err := asa.ParseRunningConfig([]byte("hostname edge\nroute outside 0 0 192.0.2.1\n"))
 	if err != nil {

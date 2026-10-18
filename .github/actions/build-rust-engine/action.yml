@@ -5,7 +5,7 @@ runs:
   steps:
     - name: Build Rust engine
       shell: bash
-      run: cargo build --release -p graphlayer-engine
+      run: cargo build --locked --release -p graphlayer-engine
     - name: Locate Rust engine
       shell: bash
       run: |
