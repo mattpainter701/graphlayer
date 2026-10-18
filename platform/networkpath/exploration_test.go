@@ -206,8 +206,11 @@ func mixedOutcomeInput() Input {
 	a := &in.Nodes[0]
 	low := 0
 	a.Config.Path.Interfaces = append(a.Config.Path.Interfaces, firewall.PathInterface{Name: "alt-out", Address: "10.0.0.3/24", SecurityLevel: &low, Resolved: true})
-	a.Config.Path.Routes = append(a.Config.Path.Routes, firewall.PathRoute{ID: "next-alt", Kind: "static", Prefix: "0.0.0.0/0", Interface: "alt-out", NextHop: "10.0.0.4", Distance: 1})
+	a.Config.Path.Routes = append(a.Config.Path.Routes,
+		firewall.PathRoute{ID: "alt-connected", Kind: "connected", Prefix: "10.0.0.0/24", Interface: "alt-out"},
+		firewall.PathRoute{ID: "next-alt", Kind: "static", Prefix: "0.0.0.0/0", Interface: "alt-out", NextHop: "10.0.0.4", Distance: 1})
 	c := fixtureNode("asa-c", "10.0.0.4/24", "10.0.1.4/24", "", false)
+	c.Config.Path.Routes[0].Prefix = "10.0.0.0/24"
 	routes := c.Config.Path.Routes[:0]
 	for _, r := range c.Config.Path.Routes {
 		if r.ID != "destination-connected" {

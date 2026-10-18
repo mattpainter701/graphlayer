@@ -16,7 +16,7 @@ async function main() {
   const archive = path.join(temporary, 'released.tar');
   try { execFileSync('git', ['cat-file', '-e', `${release}^{commit}`], { cwd: root, stdio: 'pipe' }); }
   catch { execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', release], { cwd: root, stdio: 'inherit' }); }
-  execFileSync('git', ['archive', '--format=tar', '-o', archive, release, 'platform'], { cwd: root });
+  execFileSync('git', ['archive', '--format=tar', '-o', archive, release, 'platform'], { cwd: root, env: { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } });
   execFileSync('tar', ['-xf', archive, '-C', temporary]);
   const test = `package investigation
 import ("os"; "path/filepath"; "testing")

@@ -39,7 +39,7 @@ func TestExploreBranchesOnlyEqualBestRoutes(t *testing.T) {
 }
 
 func TestExploreKeepsEqualBestRouteWithUnprovenNextHop(t *testing.T) {
-	in := baseInput()
+	in := explorationBaseInput()
 	in.Config.Path.Routes = append(in.Config.Path.Routes, firewall.PathRoute{ID: "default-unproven-peer", Kind: "static", Prefix: "0.0.0.0/0", Interface: "outside", NextHop: "192.0.2.1", Distance: 1, EvidenceRefs: []string{"route-unproven"}})
 	candidates, truncated, err := Explore(in)
 	if err != nil {
@@ -51,9 +51,9 @@ func TestExploreKeepsEqualBestRouteWithUnprovenNextHop(t *testing.T) {
 	var sawPermit, sawUnresolved bool
 	for _, c := range candidates {
 		switch c.ID {
-		case "candidate:default":
+		case "candidate:default/default":
 			sawPermit = c.Result.Disposition == "modeled_forward" && c.Resolved
-		case "candidate:default-unproven-peer":
+		case "candidate:default/default-unproven-peer":
 			sawUnresolved = c.Result.Disposition == "indeterminate" && !c.Resolved && c.Result.Stages[3].Status == "unresolved"
 		}
 	}
@@ -107,8 +107,8 @@ func TestExploreReturnRouteBudgetStopsAtEight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !forwardTruncated || len(forwardCandidates) != maxRouteCandidates {
-		t.Fatal("forward setup did not exercise candidate cap")
+	if forwardTruncated || len(forwardCandidates) != 1 || forwardCandidates[0].Result.Disposition != "modeled_forward" {
+		t.Fatal("return-budget setup must establish one permitted forward path")
 	}
 	forward := forwardCandidates[0].Result
 	ret := Input{Scope: in.Scope, Config: in.Config, IngressInterface: forward.EgressInterface, Flow: reverseFlow(forward.EgressFlow, in.Scope)}

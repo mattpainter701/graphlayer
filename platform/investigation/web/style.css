@@ -289,10 +289,10 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .exploration-legend { margin: 5px 0 10px; color: #718196; font-size: 10px; line-height: 1.5; }
 .exploration-topology { display: block; width: 100%; max-width: 100%; height: auto; min-height: 140px; overflow: visible; }
 .topology-edge { stroke: #aebbc6; stroke-width: 2; }
-.topology-forward { stroke: #43865c; stroke-width: 4; }
-.topology-return { stroke: #567da5; stroke-width: 3; stroke-dasharray: 7 4; }
-.topology-state-blocked { stroke: #b54e55 !important; }
-.topology-state-unknown,.topology-state-indeterminate,.topology-state-unresolved,.topology-state-not-evaluated { stroke: #c08b32 !important; stroke-dasharray: 4 3; }
+.topology-edge.topology-forward { stroke: #43865c; stroke-width: 4; }
+.topology-edge.topology-return { stroke: #567da5; stroke-width: 3; stroke-dasharray: 7 4; }
+.topology-edge.topology-state-blocked { stroke: #b54e55 !important; }
+.topology-edge.topology-state-unknown,.topology-edge.topology-state-indeterminate,.topology-edge.topology-state-unresolved,.topology-edge.topology-state-not-evaluated { stroke: #c08b32 !important; stroke-dasharray: 4 3; }
 .topology-node { cursor: pointer; outline: none; }
 .topology-node circle { fill: #fff; stroke: #8fa0af; stroke-width: 2; }
 .topology-forward circle { stroke: #43865c; stroke-width: 3; }
@@ -302,7 +302,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .exploration-return-blocked { border-left-color: #b54e55; background: #fff1f1; color: #8d3f45; }
 .exploration-return-indeterminate,.exploration-return-unknown,.exploration-session-unproven,.exploration-session-asymmetric-unknown,.exploration-return-asymmetric { border-left-color: #c08b32; background: #fff8e8; color: #78643e; }
 .topology-node:focus circle,.topology-node:hover circle { fill: #eef5fa; stroke: #315f82; }
-.topology-node text { fill: #40566c; font: 12px ui-sans-serif,system-ui,sans-serif; text-anchor: middle; pointer-events: none; }
+.topology-node text { fill: #40566c; font: 12px ui-sans-serif,system-ui,sans-serif; text-anchor: middle; pointer-events: none; stroke: none; stroke-width: 0; }
 .topology-node .topology-node-status { fill: #718196; font-size: 9px; }
 .exploration-topology-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-width: 0; }
 .topology-list-node { max-width: 100%; padding: 5px 8px; border: 1px solid #dce4ea; border-radius: 4px; background: #fff; color: #40566c; font: inherit; font-size: 10px; overflow-wrap: anywhere; cursor: pointer; }
