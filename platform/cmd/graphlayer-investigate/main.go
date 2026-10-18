@@ -68,7 +68,7 @@ func run() error {
 		}
 	}()
 	fmt.Printf("Listening on http://%s\n", listener.Addr().String())
-	fmt.Println("Local single-user workspace. ACL decisions and bounded ASA configuration paths; no live reachability or return-path proof.")
+	fmt.Println("Local single-user workspace. Bounded ASA forward/return configuration models with explicit topology and session assumptions; no live reachability proof.")
 	err = server.Serve(listener)
 	close(completed)
 	if err != nil && err != http.ErrServerClosed {

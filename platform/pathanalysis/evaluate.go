@@ -3,6 +3,7 @@ package pathanalysis
 import (
 	"fmt"
 	"net/netip"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -11,7 +12,98 @@ import (
 )
 
 // Evaluate explains one configuration-derived, single-device forward path.
-func Evaluate(in Input) (Result, error) {
+func Evaluate(in Input) (Result, error) { return evaluate(in, nil) }
+
+// EvaluateReturn evaluates the reverse leg of a previously modeled path. It
+// bypasses only the new inbound ACL decision, relying on the supplied forward
+// permit as established TCP/UDP state, and requires the exact reverse tuple and
+// exact inverse NAT result before returning modeled_forward.
+func EvaluateReturn(in Input, forward Result) (Result, error) {
+	if forward.Disposition != "modeled_forward" || forward.Policy == nil || forward.Policy.Disposition != "permit" {
+		return Result{}, fmt.Errorf("forward result must establish a modeled permitted path")
+	}
+	if in.Scope != forward.Scope || !strings.EqualFold(in.IngressInterface, forward.EgressInterface) {
+		return Result{}, fmt.Errorf("return scope and ingress must match the forward egress")
+	}
+	protocol := strings.ToLower(strings.TrimSpace(in.Flow.Protocol))
+	if protocol != "tcp" && protocol != "udp" && protocol != "6" && protocol != "17" {
+		return Result{}, fmt.Errorf("established return modeling supports TCP and UDP only")
+	}
+	want := reverseFlow(forward.EgressFlow, in.Scope)
+	if in.Flow != want {
+		return Result{}, fmt.Errorf("return tuple must exactly reverse the forward egress tuple")
+	}
+	verified, err := Evaluate(Input{Scope: forward.Scope, Config: in.Config, IngressInterface: forward.IngressInterface, Flow: forward.OriginalFlow})
+	if err != nil || !reflect.DeepEqual(verified, forward) {
+		return Result{}, fmt.Errorf("forward result does not match the supplied configuration evidence")
+	}
+	res, err := evaluate(in, &forward)
+	if err != nil || res.Disposition != "modeled_forward" {
+		return res, err
+	}
+	if !strings.EqualFold(res.EgressInterface, forward.IngressInterface) {
+		res.Disposition = "indeterminate"
+		res.EgressFlow = policy.Flow{}
+		res.Reasons = append(res.Reasons, "return route does not use the forward ingress interface")
+		for i := range res.Stages {
+			if res.Stages[i].Name == "egress" {
+				res.Stages[i].Status = "unresolved"
+				res.Stages[i].Detail = "return route is asymmetric with the forward ingress interface"
+			}
+		}
+		return res, nil
+	}
+	if res.EgressFlow != reverseFlow(forward.OriginalFlow, in.Scope) || !sameIDs(res.NATRuleIDs, forward.NATRuleIDs) {
+		res.Disposition = "indeterminate"
+		res.EgressFlow = policy.Flow{}
+		res.Reasons = append(res.Reasons, "return translation does not exactly reverse the modeled forward tuple")
+		for i := range res.Stages {
+			if res.Stages[i].Name == "egress" {
+				res.Stages[i].Status = "unresolved"
+				res.Stages[i].Detail = "return translation is not an exact inverse"
+			}
+		}
+		return res, nil
+	}
+	filtered := res.Assumptions[:0]
+	for _, a := range res.Assumptions {
+		if !strings.Contains(a, "does not establish live device state, return traffic") {
+			filtered = append(filtered, a)
+		}
+	}
+	res.Assumptions = append(filtered, "reverse ACL handling relies on the supplied modeled forward TCP/UDP permit as established session state")
+	return res, nil
+}
+
+func reverseFlow(f policy.Flow, scope policy.Scope) policy.Flow {
+	f.Scope = scope
+	f.Source, f.Destination = f.Destination, f.Source
+	f.SourcePort, f.DestinationPort = f.DestinationPort, f.SourcePort
+	return f
+}
+func sameIDs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, v := range a {
+		counts[v]++
+	}
+	for _, v := range b {
+		counts[v]--
+		if counts[v] < 0 {
+			return false
+		}
+	}
+	for _, v := range counts {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func evaluate(in Input, established *Result) (Result, error) {
 	if err := policy.ValidateScope(in.Scope); err != nil {
 		return Result{}, fmt.Errorf("scope: %w", err)
 	}
@@ -166,60 +258,72 @@ func Evaluate(in Input) (Result, error) {
 		stage("destination_nat").EvidenceRefs = appendUnique(p.EvidenceRefs)
 	}
 	res.PolicyFlow = flow
-	for _, warning := range in.Config.Warnings {
-		if warning.Code == "unsupported_binding" || warning.Code == "ambiguous_binding" {
-			stage("ingress_policy").Status = "unresolved"
-			stage("ingress_policy").Detail = "configuration contains an unsupported or ambiguous access-group binding"
-			return finish("indeterminate", "unsupported global or ambiguous access-group attachment may affect policy")
+	if established != nil {
+		// A reverse packet in the same modeled TCP/UDP session is admitted from
+		// connection state. Carry the forward ACL evidence without evaluating a
+		// second inbound connection against that ACL.
+		stage("ingress_policy").Status = "matched"
+		stage("ingress_policy").Detail = "reverse packet uses established state from the modeled forward permit"
+		stage("ingress_policy").EvidenceRefs = appendUnique(nil, established.Policy.EvidenceRefs...)
+		addEvidence(established.Policy.EvidenceRefs...)
+		stage("ingress_policy").Before = copyFlow(flow)
+		stage("ingress_policy").After = copyFlow(flow)
+	} else {
+		for _, warning := range in.Config.Warnings {
+			if warning.Code == "unsupported_binding" || warning.Code == "ambiguous_binding" {
+				stage("ingress_policy").Status = "unresolved"
+				stage("ingress_policy").Detail = "configuration contains an unsupported or ambiguous access-group binding"
+				return finish("indeterminate", "unsupported global or ambiguous access-group attachment may affect policy")
+			}
 		}
-	}
-	for _, c := range in.Config.Chains {
-		dir := strings.ToLower(strings.TrimSpace(c.Direction))
-		if c.Interface == "" || (dir != "in" && dir != "out") {
-			stage("ingress_policy").Status = "unresolved"
-			stage("ingress_policy").Detail = "a global or unsupported ACL attachment is present"
-			stage("ingress_policy").EvidenceRefs = appendUnique(stage("ingress_policy").EvidenceRefs, c.EvidenceRefs...)
-			addEvidence(c.EvidenceRefs...)
-			return finish("indeterminate", "global or unsupported ACL attachment is outside this model")
+		for _, c := range in.Config.Chains {
+			dir := strings.ToLower(strings.TrimSpace(c.Direction))
+			if c.Interface == "" || (dir != "in" && dir != "out") {
+				stage("ingress_policy").Status = "unresolved"
+				stage("ingress_policy").Detail = "a global or unsupported ACL attachment is present"
+				stage("ingress_policy").EvidenceRefs = appendUnique(stage("ingress_policy").EvidenceRefs, c.EvidenceRefs...)
+				addEvidence(c.EvidenceRefs...)
+				return finish("indeterminate", "global or unsupported ACL attachment is outside this model")
+			}
 		}
+		chain, n := findIngressChain(in.Config.Chains, in.IngressInterface)
+		if n != 1 {
+			stage("ingress_policy").Status = "unresolved"
+			stage("ingress_policy").Detail = "an explicit unambiguous inbound ACL is required"
+			return finish("indeterminate", "ingress policy could not be selected")
+		}
+		res.ChainID = chain.ID
+		if !chain.Complete {
+			stage("ingress_policy").Status = "unresolved"
+			stage("ingress_policy").Detail = "ingress ACL evidence is incomplete"
+			return finish("indeterminate", "incomplete ingress ACL may change the policy decision")
+		}
+		bundle := policy.Bundle{Scope: policy.Scope{SnapshotID: in.Scope.SnapshotID, DeviceID: in.Scope.DeviceID, Context: in.Scope.Context + "/" + chain.ID}, Complete: true, DefaultAction: "deny", Rules: chain.Rules}
+		flow.Scope = bundle.Scope
+		res.PolicyFlow = flow
+		decision, err := policy.Evaluate(bundle, flow)
+		if err != nil {
+			return Result{}, fmt.Errorf("ingress policy: %w", err)
+		}
+		decision.EvidenceRefs = appendUnique(decision.EvidenceRefs, chain.EvidenceRefs...)
+		res.Policy = &decision
+		stage("ingress_policy").Before = copyFlow(flow)
+		stage("ingress_policy").After = copyFlow(flow)
+		stage("ingress_policy").EvidenceRefs = appendUnique([]string{}, decision.EvidenceRefs...)
+		addEvidence(decision.EvidenceRefs...)
+		if decision.Disposition == "deny" {
+			stage("ingress_policy").Status = "blocked"
+			stage("ingress_policy").Detail = "ingress ACL denies the real-address tuple"
+			return finish("blocked", "ingress ACL denies the forward flow")
+		}
+		if decision.Disposition != "permit" {
+			stage("ingress_policy").Status = "unresolved"
+			stage("ingress_policy").Detail = "ingress ACL evaluation is indeterminate"
+			return finish("indeterminate", "ingress ACL semantics do not establish a permit")
+		}
+		stage("ingress_policy").Status = "matched"
+		stage("ingress_policy").Detail = "ingress ACL permits the real-address tuple"
 	}
-	chain, n := findIngressChain(in.Config.Chains, in.IngressInterface)
-	if n != 1 {
-		stage("ingress_policy").Status = "unresolved"
-		stage("ingress_policy").Detail = "an explicit unambiguous inbound ACL is required"
-		return finish("indeterminate", "ingress policy could not be selected")
-	}
-	res.ChainID = chain.ID
-	if !chain.Complete {
-		stage("ingress_policy").Status = "unresolved"
-		stage("ingress_policy").Detail = "ingress ACL evidence is incomplete"
-		return finish("indeterminate", "incomplete ingress ACL may change the policy decision")
-	}
-	bundle := policy.Bundle{Scope: policy.Scope{SnapshotID: in.Scope.SnapshotID, DeviceID: in.Scope.DeviceID, Context: in.Scope.Context + "/" + chain.ID}, Complete: true, DefaultAction: "deny", Rules: chain.Rules}
-	flow.Scope = bundle.Scope
-	res.PolicyFlow = flow
-	decision, err := policy.Evaluate(bundle, flow)
-	if err != nil {
-		return Result{}, fmt.Errorf("ingress policy: %w", err)
-	}
-	decision.EvidenceRefs = appendUnique(decision.EvidenceRefs, chain.EvidenceRefs...)
-	res.Policy = &decision
-	stage("ingress_policy").Before = copyFlow(flow)
-	stage("ingress_policy").After = copyFlow(flow)
-	stage("ingress_policy").EvidenceRefs = appendUnique([]string{}, decision.EvidenceRefs...)
-	addEvidence(decision.EvidenceRefs...)
-	if decision.Disposition == "deny" {
-		stage("ingress_policy").Status = "blocked"
-		stage("ingress_policy").Detail = "ingress ACL denies the real-address tuple"
-		return finish("blocked", "ingress ACL denies the forward flow")
-	}
-	if decision.Disposition != "permit" {
-		stage("ingress_policy").Status = "unresolved"
-		stage("ingress_policy").Detail = "ingress ACL evaluation is indeterminate"
-		return finish("indeterminate", "ingress ACL semantics do not establish a permit")
-	}
-	stage("ingress_policy").Status = "matched"
-	stage("ingress_policy").Detail = "ingress ACL permits the real-address tuple"
 	if !p.RoutingComplete {
 		stage("route").Status = "unresolved"
 		stage("route").Detail = "routing evidence is incomplete"

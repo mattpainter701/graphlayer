@@ -1,5 +1,13 @@
 # Single-device path analysis
 
+`Evaluate` retains its original forward-only contract. The newer
+`EvaluateReturn(Input, forward Result)` helper validates that exact forward
+result against the same supplied configuration, then models only its reverse
+TCP/UDP session tuple. It carries forward permit evidence as an explicit session
+assumption, verifies inverse NAT and the original interface pair, and is used by
+the [multi-firewall engine](../networkpath/README.md). It does not query live
+connection state.
+
 `pathanalysis.Evaluate(Input)` returns an evidence-linked explanation for a bounded IPv4 forward path through one ASA configuration snapshot. It does not query a device and does not establish live state, return-path behavior, or multi-hop reachability. A `modeled_forward` result means only that every supported stage in this supplied model permits the forward tuple.
 
 The engine requires an explicit, resolved, enabled ingress interface, complete NAT and routing evidence, and one complete inbound ACL chain on that interface. It applies supported static object NAT destination untranslation before ACL evaluation, evaluates the ACL against the real tuple, then chooses either the direct connected real interface selected by destination NAT or a connected/static route using longest prefix and lower administrative distance. Static next hops must be covered by a connected route on that route's egress interface. Source static object NAT is applied after route selection and must agree with the selected egress interface. The engine rejects IPv6, service translation/PAT, unsupported or malformed NAT entries, composed source and destination translation, ambiguous ingress policy, equal-best route ambiguity, unresolved interfaces, same-interface hairpin traffic, incomplete route/NAT evidence, ambiguous configuration context, and unsupported egress ACL evaluation.

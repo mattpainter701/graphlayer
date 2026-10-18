@@ -69,7 +69,7 @@ func (s *Store) EvaluatePath(snapshotID, ingress string, flow policy.Flow) (*Pat
 		}
 		return &old, nil
 	}
-	if len(s.investigations)+len(s.paths) >= maxInvestigations {
+	if s.investigationCount() >= maxInvestigations {
 		return nil, ErrQuota
 	}
 	if err = s.write("path-investigation", inv.ID, data); err != nil {

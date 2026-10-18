@@ -1,5 +1,7 @@
 # Routing and NAT investigations
 
+This guide records the single-firewall milestone and its original workspace-v3 format. The subsequent [multi-firewall milestone](MULTI_FIREWALL_INVESTIGATIONS.md) adds configured forward/return composition and workspace-v4 while preserving this workflow and its saved results.
+
 The local app can now investigate a bounded, configuration-derived IPv4 forward path through one ASA. This is a separate workflow from evaluating a selected ACL. It explains the interfaces, translated tuple, ingress policy, route and source translation that the supplied configuration can establish.
 
 The input is assumed to be complete for those modeled facts. The app cannot independently prove that a pasted fragment omits no NAT, route or policy statements. The supported NAT grammar is the ASA 8.3+ object-NAT form; legacy NAT and standby/HA interface address forms remain explicit uncertainty.
