@@ -23,10 +23,14 @@ const maxSnapshots = 32
 const maxInvestigations = 256
 const maxRecordBytes = 8 << 20
 
+const workspaceVersion = "graphlayer-workspace-v2"
+const legacyWorkspaceVersion = "graphlayer-workspace-v1"
+
 var ErrNotFound = errors.New("resource not found")
 var ErrQuota = errors.New("workspace quota reached")
 var ErrInvalidConfig = errors.New("invalid or unsupported ASA configuration")
 var ErrInvalidFlow = errors.New("invalid policy flow")
+var ErrRecordTooLarge = errors.New("expanded artifact exceeds the storage budget")
 
 type Snapshot struct {
 	ID              string    `json:"id"`
@@ -147,6 +151,7 @@ func NewStore(dir string) (*Store, error) {
 		return nil, errors.New("this workspace is already open in another process")
 	}
 	s.lock = lock
+	legacyInvestigations := map[string]bool{}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -167,7 +172,7 @@ func NewStore(dir string) (*Store, error) {
 			return nil, errors.New("invalid workspace record size")
 		}
 		var record diskRecord
-		if json.Unmarshal(data, &record) != nil || record.Version != "graphlayer-workspace-v1" || record.SHA256 != digest(record.Data) {
+		if json.Unmarshal(data, &record) != nil || (record.Version != workspaceVersion && record.Version != legacyWorkspaceVersion) || record.SHA256 != digest(record.Data) {
 			return nil, errors.New("workspace record is corrupt or incompatible")
 		}
 		switch record.Kind {
@@ -176,12 +181,16 @@ func NewStore(dir string) (*Store, error) {
 			if json.Unmarshal(record.Data, &snap) != nil || validateSnapshot(&snap) != nil || entry.Name() != "snapshot-"+snap.ID+".json" {
 				return nil, errors.New("invalid stored snapshot")
 			}
+			if record.Version == legacyWorkspaceVersion && snap.ParserVersion != "asa-config-v1" || record.Version == workspaceVersion && snap.ParserVersion != firewall.ParserVersion {
+				return nil, errors.New("snapshot format and parser version are incompatible")
+			}
 			s.snapshots[snap.ID] = append([]byte(nil), record.Data...)
 		case "investigation":
 			var inv Investigation
 			if json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "investigation-"+inv.ID+".json" {
 				return nil, errors.New("invalid stored investigation")
 			}
+			legacyInvestigations[inv.ID] = record.Version == legacyWorkspaceVersion
 			s.investigations[inv.ID] = append([]byte(nil), record.Data...)
 		default:
 			return nil, errors.New("unknown workspace record type")
@@ -195,7 +204,7 @@ func NewStore(dir string) (*Store, error) {
 		if json.Unmarshal(data, &inv) != nil {
 			return nil, errors.New("invalid stored investigation")
 		}
-		if err := s.validateInvestigation(&inv); err != nil {
+		if err := s.validateInvestigation(&inv, legacyInvestigations[inv.ID]); err != nil {
 			return nil, errors.New("stored investigation does not match its snapshot")
 		}
 	}
@@ -257,7 +266,7 @@ func validateSnapshot(s *Snapshot) error {
 			return errors.New("invalid normalized policy chain")
 		}
 	}
-	return nil
+	return validateInventory(s)
 }
 
 func bundle(s *Snapshot, chain firewall.Chain) policy.Bundle {
@@ -265,10 +274,13 @@ func bundle(s *Snapshot, chain firewall.Chain) policy.Bundle {
 }
 
 func (s *Store) write(kind, id string, data []byte) error {
-	record := diskRecord{Version: "graphlayer-workspace-v1", Kind: kind, SHA256: digest(data), Data: data}
+	record := diskRecord{Version: workspaceVersion, Kind: kind, SHA256: digest(data), Data: data}
 	encoded, err := json.Marshal(record)
-	if err != nil || len(encoded) > maxRecordBytes {
-		return errors.New("record exceeds storage limit")
+	if err != nil {
+		return errors.New("cannot encode workspace record")
+	}
+	if len(encoded) > maxRecordBytes {
+		return ErrRecordTooLarge
 	}
 	tmp, err := os.CreateTemp(s.dir, ".pending-")
 	if err != nil {
@@ -386,7 +398,14 @@ func (s *Store) Summaries() []SnapshotSummary {
 	return out
 }
 
-func (s *Store) validateInvestigation(inv *Investigation) error {
+func (s *Store) validateInvestigation(inv *Investigation, legacy bool) error {
+	if legacy {
+		if inv.Result.EngineContractVersion != "graphlayer-policy-v2" || len(inv.Result.RuleTraces) != 0 {
+			return errors.New("legacy record has an incompatible result contract")
+		}
+	} else if inv.Result.EngineContractVersion != policy.ContractVersion {
+		return errors.New("result contract does not match workspace format")
+	}
 	data, ok := s.snapshots[inv.SnapshotID]
 	if !ok {
 		return ErrNotFound
@@ -410,6 +429,12 @@ func (s *Store) validateInvestigation(inv *Investigation) error {
 		// evidence anchor is the binding, not a fabricated explicit deny line.
 		if result.UsedDefault {
 			result.EvidenceRefs = append([]string(nil), chain.EvidenceRefs...)
+		}
+		// The v3 engine preserves v2 verdict semantics. Compare an explicit
+		// legacy projection without rewriting old bytes or inventing traces.
+		if legacy {
+			result.EngineContractVersion = "graphlayer-policy-v2"
+			result.RuleTraces = nil
 		}
 		want, _ := json.Marshal(result)
 		got, _ := json.Marshal(inv.Result)

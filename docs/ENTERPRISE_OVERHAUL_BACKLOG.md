@@ -23,6 +23,8 @@ Read with [the product/architecture plan](ENTERPRISE_OVERHAUL_PLAN.md). IDs are 
 
 The first local delivery slice is implemented in the [ASA investigation application](FIREWALL_INVESTIGATION.md). It covers the parser-to-evidence-to-browser path and its automated tests. The guide records each delivered boundary and the remaining enterprise acceptance work; durable jobs, enterprise identity, migrations and generated API clients below are still open.
 
+The next [policy workspace slice](POLICY_WORKSPACE.md) adds service/object dependencies, a paged local inventory and saved predicate explanations. Released v1 records remain readable with verified legacy replay. This does not close the wider vendor corpus, generalized migrations/restore, generated clients or enterprise service acceptance items.
+
 | ID | Package / owner | Depends on | Acceptance |
 |---|---|---|---|
 | I01 | First-vendor parser adapter / domain/backend | F07,F10,F11 | Real sanitized config generates a scoped policy bundle; unresolved constructs reported, not discarded |

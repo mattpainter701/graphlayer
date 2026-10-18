@@ -8,7 +8,9 @@ The enterprise overhaul is defined in the [product and architecture plan](docs/E
 [execution backlog](docs/ENTERPRISE_OVERHAUL_BACKLOG.md), and [baseline audit](docs/ENTERPRISE_OVERHAUL_AUDIT.md).
 The application now imports Cisco ASA running configurations into immutable, sanitized
 evidence snapshots and evaluates concrete flows through a selected attached ACL. Its local
-browser UI shows ordered rule traces, physical source lines, warnings and saved investigations.
+browser UI shows ordered predicate traces, physical source lines, warnings and saved investigations.
+The [policy workspace](docs/POLICY_WORKSPACE.md) adds service objects/groups, searchable
+rule inventories and typed object dependency inspection, while preserving older saved evidence.
 See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported syntax, limits,
 launch commands and tests. This is a single-user policy investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.

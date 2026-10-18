@@ -29,6 +29,7 @@ type ConfigLine struct {
 type AddressObject struct {
 	Name             string
 	Members          []string
+	MemberLines      []int
 	Lines            []int
 	UnsupportedLines []int
 	Group            bool
@@ -47,6 +48,8 @@ type ConfigACE struct {
 	Enabled                     bool
 	Unsupported                 []string
 	SourceLines                 []int
+	ServiceGroup                string
+	ServiceObject               string
 }
 type ACLBinding struct {
 	ACLName, Interface, Direction string
@@ -60,6 +63,8 @@ type ASAConfig struct {
 	ACLs           map[string][]ConfigACE
 	Bindings       []ACLBinding
 	Objects        map[string]AddressObject
+	ServiceObjects map[string]ServiceObject
+	ServiceGroups  map[string]ServiceGroup
 	Warnings       []ConfigWarning
 	ArtifactSHA256 string
 }
@@ -81,7 +86,7 @@ func ParseRunningConfig(input []byte) (*ASAConfig, error) {
 	if len(lines) > MaxConfigLines {
 		return nil, fmt.Errorf("ASA config exceeds %d lines", MaxConfigLines)
 	}
-	c := &ASAConfig{Context: "default", ACLs: map[string][]ConfigACE{}, Objects: map[string]AddressObject{}, ArtifactSHA256: sha256Hex(input)}
+	c := &ASAConfig{Context: "default", ACLs: map[string][]ConfigACE{}, Objects: map[string]AddressObject{}, ServiceObjects: map[string]ServiceObject{}, ServiceGroups: map[string]ServiceGroup{}, ArtifactSHA256: sha256Hex(input)}
 	contextCount, multiContext := 0, false
 	for i, line := range lines {
 		if len(line) > MaxConfigLineBytes {
@@ -141,17 +146,51 @@ func ParseRunningConfig(input []byte) (*ASAConfig, error) {
 			}
 		case len(f) >= 3 && f[0] == "object" && f[1] == "network":
 			o := c.Objects[f[2]]
+			if o.Name != "" && o.Group {
+				return nil, fmt.Errorf("ASA object name %q is declared as both a network object and group", f[2])
+			}
 			o.Name = f[2]
 			o.Lines = append(o.Lines, l.Number)
 			c.Objects[o.Name] = o
 		case len(f) >= 3 && f[0] == "object-group" && f[1] == "network":
 			o := c.Objects[f[2]]
+			if o.Name != "" && !o.Group {
+				return nil, fmt.Errorf("ASA object name %q is declared as both a network object and group", f[2])
+			}
 			o.Name = f[2]
 			o.Group = true
 			o.Lines = append(o.Lines, l.Number)
 			c.Objects[o.Name] = o
 		case len(f) >= 2 && (f[0] == "network-object" || f[0] == "group-object" || f[0] == "host" || f[0] == "subnet"):
 			// Object body association is tracked using indentation scope below.
+		}
+	}
+	parseServiceDefinitions(c)
+	declaredKinds := map[string]string{}
+	checkName := func(name, kind string) error {
+		if prior, ok := declaredKinds[name]; ok && prior != kind {
+			return fmt.Errorf("ASA object name %q is reused by %s and %s", name, prior, kind)
+		}
+		declaredKinds[name] = kind
+		return nil
+	}
+	for n, o := range c.Objects {
+		kind := "network_object"
+		if o.Group {
+			kind = "network_group"
+		}
+		if err := checkName(n, kind); err != nil {
+			return nil, err
+		}
+	}
+	for n := range c.ServiceObjects {
+		if err := checkName(n, "service_object"); err != nil {
+			return nil, err
+		}
+	}
+	for n := range c.ServiceGroups {
+		if err := checkName(n, "service_group"); err != nil {
+			return nil, err
 		}
 	}
 	// Resolve indented object bodies, including nested network groups.
@@ -181,29 +220,65 @@ func ParseRunningConfig(input []byte) (*ASAConfig, error) {
 		var member string
 		switch {
 		case len(f) >= 2 && f[0] == "host":
-			member = f[1]
+			if addr, ok := normalizedHostAddress(f[1]); ok {
+				member = addr
+			}
 		case len(f) >= 3 && f[0] == "subnet":
 			member = maskToPrefix(f[1], f[2])
 		case len(f) >= 3 && f[0] == "network-object" && f[1] == "host":
-			member = f[2]
+			if addr, ok := normalizedHostAddress(f[2]); ok {
+				member = addr
+			}
 		case len(f) >= 3 && f[0] == "network-object" && f[1] == "object":
-			member = "@" + f[2]
+			member = "@network_object:" + f[2]
 		case len(f) >= 3 && f[0] == "network-object" && f[1] == "object-group":
-			member = "@" + f[2]
+			member = "@network_group:" + f[2]
 		case len(f) >= 3 && f[0] == "network-object":
 			member = maskToPrefix(f[1], f[2])
 		case len(f) >= 2 && f[0] == "group-object":
-			member = "@" + f[1]
+			member = "@network_group:" + f[1]
 		}
 		if member != "" {
 			o.Members = append(o.Members, member)
+			o.MemberLines = append(o.MemberLines, l.Number)
 			o.Lines = append(o.Lines, l.Number)
 			c.Objects[current] = o
-		} else if !isHarmlessObjectMetadata(f) {
+		} else if !(isHarmlessObjectMetadata(f) || (!o.Group && strings.EqualFold(f[0], "nat"))) {
 			o.UnsupportedLines = append(o.UnsupportedLines, l.Number)
 			o.Lines = append(o.Lines, l.Number)
 			c.Objects[current] = o
 		}
+	}
+	// Reparse ACEs now that all typed object namespaces are known, so an
+	// object-group in an address position cannot be consumed as a port group.
+	c.ACLs = map[string][]ConfigACE{}
+	filteredWarnings := c.Warnings[:0]
+	for _, w := range c.Warnings {
+		if w.Code != "unsupported_ace" {
+			filteredWarnings = append(filteredWarnings, w)
+		}
+	}
+	c.Warnings = filteredWarnings
+	for _, l := range c.Lines {
+		f := strings.Fields(strings.TrimSpace(l.Text))
+		if len(f) < 2 || f[0] != "access-list" || len(f) > 2 && f[2] == "remark" {
+			continue
+		}
+		acl := f[1]
+		ace, ok := parseConfigACE(acl, l, c)
+		if !ok {
+			ace = unsupportedACE(acl, l)
+			c.Warnings = append(c.Warnings, ConfigWarning{Code: "unsupported_ace", Message: "ACE retained as unresolved", Line: l.Number, ACLName: acl})
+		}
+		if !ace.ExplicitOrder {
+			ace.Order = 1
+			for _, prior := range c.ACLs[acl] {
+				if prior.Order >= ace.Order {
+					ace.Order = prior.Order + 1
+				}
+			}
+		}
+		c.ACLs[acl] = append(c.ACLs[acl], ace)
 	}
 	aclNames := make([]string, 0, len(c.ACLs))
 	for name := range c.ACLs {
@@ -244,7 +319,15 @@ func ParseRunningConfig(input []byte) (*ASAConfig, error) {
 	return c, nil
 }
 
-func parseConfigACE(acl string, l ConfigLine) (ConfigACE, bool) {
+func normalizedHostAddress(raw string) (string, bool) {
+	addr, err := netip.ParseAddr(raw)
+	if err != nil || addr.Zone() != "" || addr.Is4In6() {
+		return "", false
+	}
+	return addr.String(), true
+}
+
+func parseConfigACE(acl string, l ConfigLine, contexts ...*ASAConfig) (ConfigACE, bool) {
 	f := strings.Fields(strings.TrimSpace(l.Text))
 	if len(f) < 6 || f[0] != "access-list" {
 		return ConfigACE{}, false
@@ -268,7 +351,13 @@ func parseConfigACE(acl string, l ConfigLine) (ConfigACE, bool) {
 	if a.Action != "permit" && a.Action != "deny" {
 		return ConfigACE{}, false
 	}
-	if a.Protocol != "tcp" && a.Protocol != "udp" && a.Protocol != "icmp" && a.Protocol != "ip" {
+	if (a.Protocol == "object-group" || a.Protocol == "object") && base+3 < len(f) {
+		if a.Protocol == "object-group" {
+			a.ServiceGroup = f[base+3]
+		} else {
+			a.ServiceObject = f[base+3]
+		}
+	} else if a.Protocol != "tcp" && a.Protocol != "udp" && a.Protocol != "icmp" && a.Protocol != "ip" {
 		return unsupportedACE(acl, l), false
 	}
 	for _, token := range f {
@@ -283,15 +372,24 @@ func parseConfigACE(acl string, l ConfigLine) (ConfigACE, bool) {
 		}
 	}
 	i := base + 3
+	if a.ServiceGroup != "" || a.ServiceObject != "" {
+		i++
+	}
 	var ok bool
 	a.Source, i, ok = parseAddressExpr(f, i)
 	if !ok {
 		return unsupportedACE(acl, l), false
 	}
 	if i < len(f) {
-		a.SourcePort, i, ok = parsePortExpr(f, i)
-		if !ok {
+		asDestination, ambiguous := destinationNetworkGroupPosition(f, i, contexts)
+		if ambiguous {
 			return unsupportedACE(acl, l), false
+		}
+		if !asDestination {
+			a.SourcePort, i, ok = parsePortExprFor(f, i, a.Protocol)
+			if !ok {
+				return unsupportedACE(acl, l), false
+			}
 		}
 	}
 	a.Destination, i, ok = parseAddressExpr(f, i)
@@ -299,7 +397,7 @@ func parseConfigACE(acl string, l ConfigLine) (ConfigACE, bool) {
 		return unsupportedACE(acl, l), false
 	}
 	if i < len(f) {
-		a.DestinationPort, i, ok = parsePortExpr(f, i)
+		a.DestinationPort, i, ok = parsePortExprFor(f, i, a.Protocol)
 		if !ok {
 			return unsupportedACE(acl, l), false
 		}
@@ -320,6 +418,34 @@ func parseConfigACE(acl string, l ConfigLine) (ConfigACE, bool) {
 		}
 	}
 	return a, true
+}
+
+func destinationNetworkGroupPosition(f []string, i int, contexts []*ASAConfig) (destination, ambiguous bool) {
+	if i+1 >= len(f) || f[i] != "object-group" {
+		return false, false
+	}
+	if len(contexts) == 0 || contexts[0] == nil {
+		return false, false
+	}
+	_, network := contexts[0].Objects[f[i+1]]
+	_, service := contexts[0].ServiceGroups[f[i+1]]
+	if network && service {
+		return false, true
+	}
+	if network {
+		return true, false
+	}
+	if service {
+		return false, false
+	}
+	_, next, ok := parseAddressExpr(f, i)
+	if ok && (next == len(f) || next < len(f) && (isACEOption(f[next]) || isPortOperator(f[next]))) {
+		return true, false
+	}
+	return false, false
+}
+func isACEOption(s string) bool {
+	return s == "inactive" || s == "log" || s == "log-input" || s == "time-range" || s == "established" || s == "fragments" || s == "object-group-search"
 }
 func unsupportedACE(acl string, l ConfigLine) ConfigACE {
 	return ConfigACE{ACLName: acl, Line: l.Number, Raw: l.Text, Action: "deny", Protocol: "ip", Source: "any", Destination: "any", Unsupported: []string{"vendor_default"}, SourceLines: []int{l.Number}}
@@ -352,7 +478,11 @@ func parseAddressExpr(f []string, i int) (string, int, bool) {
 		return "", i, false
 	case "object", "object-group":
 		if i+1 < len(f) {
-			return "@" + f[i+1], i + 2, true
+			kind := "network_object"
+			if f[i] == "object-group" {
+				kind = "network_group"
+			}
+			return "@" + kind + ":" + f[i+1], i + 2, true
 		}
 		return "", i, false
 	default:
@@ -363,6 +493,11 @@ func parseAddressExpr(f []string, i int) (string, int, bool) {
 			if p := maskToPrefix(f[i], f[i+1]); p != "" {
 				return p, i + 2, true
 			}
+			first, firstErr := netip.ParseAddr(f[i])
+			second, secondErr := netip.ParseAddr(f[i+1])
+			if firstErr == nil && first.Is4() && secondErr == nil && second.Is4() {
+				return "", i, false
+			}
 		}
 		if _, e := netip.ParseAddr(f[i]); e == nil {
 			return f[i], i + 1, true
@@ -371,39 +506,58 @@ func parseAddressExpr(f []string, i int) (string, int, bool) {
 	}
 }
 func parsePortExpr(f []string, i int) (string, int, bool) {
+	return parsePortExprFor(f, i, "")
+}
+func parsePortExprFor(f []string, i int, protocol string) (string, int, bool) {
 	if i >= len(f) {
 		return "", i, true
 	}
 	switch f[i] {
 	case "eq":
 		if i+1 < len(f) {
-			p, ok := servicePort(f[i+1])
+			p, ok := servicePortFor(protocol, f[i+1])
 			return p, i + 2, ok
 		}
 		return "", i, false
 	case "range":
 		if i+2 < len(f) {
-			a, oa := servicePort(f[i+1])
-			b, ob := servicePort(f[i+2])
+			a, oa := servicePortFor(protocol, f[i+1])
+			b, ob := servicePortFor(protocol, f[i+2])
 			if oa && ob {
 				return a + "-" + b, i + 3, true
 			}
+		}
+		return "", i, false
+	case "lt", "gt", "neq":
+		if i+1 < len(f) {
+			ports, _, ok := parsePortAlternativesFor(f[i:], protocol)
+			if ok {
+				return strings.Join(ports, "|"), i + 2, true
+			}
+		}
+		return "", i, false
+	case "object-group":
+		if i+1 < len(f) {
+			return "@" + f[i+1], i + 2, true
 		}
 		return "", i, false
 	default:
 		return "", i, true
 	}
 }
+func isPortOperator(s string) bool {
+	return s == "eq" || s == "range" || s == "lt" || s == "gt" || s == "neq"
+}
 func servicePort(s string) (string, bool) {
 	if n, e := strconv.Atoi(s); e == nil && n > 0 && n <= 65535 {
 		return strconv.Itoa(n), true
 	}
 	ports := map[string]string{
-		"http": "80", "www": "80", "https": "443", "ssh": "22", "domain": "53", "dns": "53",
+		"http": "80", "www": "80", "https": "443", "ssh": "22", "domain": "53", "dns": "195",
 		"smtp": "25", "ftp": "21", "ftp-data": "20", "telnet": "23", "snmp": "161", "snmptrap": "162",
-		"ntp": "123", "tftp": "69", "mysql": "3306", "rdp": "3389", "ldap": "389", "ldaps": "636",
-		"imap": "143", "imaps": "993", "pop3": "110", "pop3s": "995", "bgp": "179", "syslog": "514",
-		"tacacs": "49", "radius": "1812", "radius-acct": "1813", "sip": "5060", "kerberos": "88",
+		"ntp": "123", "tftp": "69", "ldap": "389", "ldaps": "636",
+		"imap4": "143", "pop3": "110", "bgp": "179", "syslog": "514", "sqlnet": "1521",
+		"tacacs": "49", "radius": "1645", "radius-acct": "1646", "sip": "5060", "kerberos": "750",
 	}
 	p, ok := ports[strings.ToLower(s)]
 	return p, ok
@@ -447,6 +601,7 @@ func (c *ASAConfig) ExpandAddress(expr string) ([]string, []int, error) {
 	if !strings.HasPrefix(expr, "@") {
 		return []string{expr}, nil, nil
 	}
+	rootName, rootKind := networkReference(strings.TrimPrefix(expr, "@"))
 	out := []string{}
 	lines := []int{}
 	var visit func(string, map[string]bool, int) error
@@ -461,6 +616,9 @@ func (c *ASAConfig) ExpandAddress(expr string) ([]string, []int, error) {
 		if !ok {
 			return fmt.Errorf("unresolved network object")
 		}
+		if rootKind != "" && d == 0 && ((rootKind == "network_group") != o.Group) {
+			return fmt.Errorf("network object kind mismatch")
+		}
 		lines = append(lines, o.Lines...)
 		if len(o.UnsupportedLines) > 0 {
 			return fmt.Errorf("network object contains unsupported members")
@@ -471,8 +629,12 @@ func (c *ASAConfig) ExpandAddress(expr string) ([]string, []int, error) {
 		stack[n] = true
 		for _, m := range o.Members {
 			if strings.HasPrefix(m, "@") {
-				if e := visit(strings.TrimPrefix(m, "@"), stack, d+1); e != nil {
+				ref, expected := networkReference(strings.TrimPrefix(m, "@"))
+				if e := visit(ref, stack, d+1); e != nil {
 					return e
+				}
+				if target := c.Objects[ref]; expected != "" && ((expected == "network_group") != target.Group) {
+					return fmt.Errorf("network object kind mismatch")
 				}
 			} else {
 				out = append(out, m)
@@ -484,10 +646,17 @@ func (c *ASAConfig) ExpandAddress(expr string) ([]string, []int, error) {
 		delete(stack, n)
 		return nil
 	}
-	if e := visit(strings.TrimPrefix(expr, "@"), map[string]bool{}, 0); e != nil {
+	if e := visit(rootName, map[string]bool{}, 0); e != nil {
 		return nil, lines, e
 	}
 	return out, uniqueInts(lines), nil
+}
+
+func networkReference(ref string) (string, string) {
+	if kind, name, ok := strings.Cut(ref, ":"); ok && (kind == "network_object" || kind == "network_group") {
+		return name, kind
+	}
+	return ref, ""
 }
 func uniqueInts(in []int) []int {
 	seen := map[int]bool{}

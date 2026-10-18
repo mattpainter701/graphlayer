@@ -12,13 +12,19 @@ import (
 	asa "github.com/mattpainter701/graphlayer/platform/vendors/cisco/asa"
 )
 
-const ParserVersion = "asa-config-v1"
+const ParserVersion = "asa-config-v2"
 
 //go:embed testdata/enterprise.asa.txt
 var sampleASA []byte
 
+//go:embed testdata/services.asa.txt
+var sampleServicesASA []byte
+
 // SampleASA returns a copy of the sanitized, syntactically real ASA sample.
 func SampleASA() []byte { return append([]byte(nil), sampleASA...) }
+
+// SampleServicesASA returns a representative ASA configuration with service objects.
+func SampleServicesASA() []byte { return append([]byte(nil), sampleServicesASA...) }
 
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b(password|passwd|secret|community|pre-shared-key|key-string|private-key|ldap-login-password|radius-common-pw|enable-password|username|crypto\s+ca\s+authenticate)\b`),
@@ -31,7 +37,7 @@ func ParseASAConfig(input []byte) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Config{Vendor: "cisco-asa", ParserVersion: ParserVersion, Hostname: parsed.Hostname, Context: parsed.Context, ArtifactSHA256: parsed.ArtifactSHA256, SourceLines: []SourceLine{}, Chains: []Chain{}, Evidence: []Evidence{}, Warnings: []Warning{}, Capabilities: []string{"inbound attached extended ACL evaluation", "outbound ACLs retained as partial chains", "IPv4/IPv6 literals and CIDR", "TCP/UDP/ICMP/IP wildcard", "network objects and nested network groups", "first-match order", "inactive ACEs"}}
+	c := &Config{Vendor: "cisco-asa", ParserVersion: ParserVersion, Hostname: parsed.Hostname, Context: parsed.Context, ArtifactSHA256: parsed.ArtifactSHA256, SourceLines: []SourceLine{}, Chains: []Chain{}, Evidence: []Evidence{}, Warnings: []Warning{}, Capabilities: []string{"inbound attached extended ACL evaluation", "outbound ACLs retained as partial chains", "IPv4/IPv6 literals and CIDR", "TCP/UDP/ICMP/IP wildcard", "network and service objects and nested groups", "first-match order", "inactive ACEs"}}
 	for _, l := range parsed.Lines {
 		c.SourceLines = append(c.SourceLines, SourceLine{Number: l.Number, Text: "[OMITTED NON-POLICY CONFIGURATION]"})
 	}
@@ -106,8 +112,10 @@ func ParseASAConfig(input []byte) (*Config, error) {
 			}
 			sources, srcLines, srcErr := parsed.ExpandAddress(ace.Source)
 			dests, dstLines, dstErr := parsed.ExpandAddress(ace.Destination)
+			serviceTerms, serviceLines, serviceErr := serviceRuleTerms(parsed, ace)
 			refsLines := append([]int{ace.Line}, srcLines...)
 			refsLines = append(refsLines, dstLines...)
+			refsLines = append(refsLines, serviceLines...)
 			refsLines = append(refsLines, b.Line)
 			refsLines = unique(refsLines)
 			markSourceLines(c, refsLines, parsed.Lines)
@@ -125,33 +133,55 @@ func ParseASAConfig(input []byte) (*Config, error) {
 				ace.Unsupported = append(ace.Unsupported, "object_expansion")
 				chain.Warnings = append(chain.Warnings, Warning{"unresolved_object", "Destination network object could not be safely resolved", ace.Line})
 			}
-			if len(sources)*len(dests) > asa.MaxACEExpansion {
+			if serviceErr != nil {
+				serviceTerms = []serviceTerm{{protocol: "unresolved-service-protocol"}}
+				ace.Unsupported = append(ace.Unsupported, "object_expansion")
+				chain.Warnings = append(chain.Warnings, Warning{"unresolved_service", "Service object could not be safely resolved", ace.Line})
+			}
+			if len(sources)*len(dests)*len(serviceTerms) > asa.MaxACEExpansion {
 				sources = []string{ace.Source}
 				dests = []string{ace.Destination}
+				serviceTerms = []serviceTerm{{protocol: "unresolved-service-protocol"}}
 				ace.Unsupported = append(ace.Unsupported, "object_expansion")
 			}
 			for _, s := range sources {
 				for _, d := range dests {
-					position := len(chain.Rules)
-					protocol := ace.Protocol
-					unsupported := append([]string(nil), ace.Unsupported...)
-					for _, w := range parsed.Warnings {
-						if w.Code == "ambiguous_acl_order" && w.ACLName == b.ACLName {
+					for _, svc := range serviceTerms {
+						position := len(chain.Rules)
+						protocol := svc.protocol
+						unsupported := append([]string(nil), ace.Unsupported...)
+						for _, w := range parsed.Warnings {
+							if w.Code == "ambiguous_acl_order" && w.ACLName == b.ACLName {
+								unsupported = append(unsupported, "vendor_default")
+							}
+						}
+						if ambiguousBinding {
 							unsupported = append(unsupported, "vendor_default")
 						}
-					}
-					if ambiguousBinding {
-						unsupported = append(unsupported, "vendor_default")
-					}
-					if protocol == "ip" {
-						protocol = "any"
-					}
-					if ace.Disabled { /* represented and excluded from matching */
-					}
-					rid := fmt.Sprintf("%s:%d:%d", id, ace.Line, position+1)
-					chain.Rules = append(chain.Rules, policy.Rule{ID: rid, Position: position, Enabled: !ace.Disabled, Action: normalizeAction(ace.Action), Source: s, Destination: d, Protocol: protocol, SourcePort: ace.SourcePort, DestinationPort: ace.DestinationPort, EvidenceRefs: []string{eref}, Unsupported: uniqueStrings(unsupported)})
-					if len(chain.Rules) > asa.MaxConfigRules {
-						return nil, fmt.Errorf("ASA configuration has too many expanded ACL rules")
+						if protocol == "ip" {
+							protocol = "any"
+						}
+						if ace.Disabled { /* represented and excluded from matching */
+						}
+						rid := fmt.Sprintf("%s:%d:%d", id, ace.Line, position+1)
+						sourcePort, destinationPort := svc.source, svc.destination
+						if protocol == "unresolved-service-protocol" {
+							sourcePort, destinationPort = "", ""
+						}
+						rule := policy.Rule{ID: rid, Position: position, Enabled: !ace.Disabled, Action: normalizeAction(ace.Action), Source: s, Destination: d, Protocol: protocol, SourcePort: sourcePort, DestinationPort: destinationPort, EvidenceRefs: []string{eref}, Unsupported: uniqueStrings(unsupported)}
+						chain.Rules = append(chain.Rules, rule)
+						origin := RuleOrigin{RuleID: rid, ACLName: b.ACLName, Line: ace.Line}
+						if strings.HasPrefix(ace.Source, "@") {
+							origin.SourceObjectIDs = []string{addressObjectID(parsed, ace.Source)}
+						}
+						if strings.HasPrefix(ace.Destination, "@") {
+							origin.DestinationObjectIDs = []string{addressObjectID(parsed, ace.Destination)}
+						}
+						origin.ServiceObjectIDs = serviceObjectIDs(ace)
+						c.RuleOrigins = append(c.RuleOrigins, origin)
+						if len(chain.Rules) > asa.MaxConfigRules {
+							return nil, fmt.Errorf("ASA configuration has too many expanded ACL rules")
+						}
 					}
 				}
 			}
@@ -178,6 +208,7 @@ func ParseASAConfig(input []byte) (*Config, error) {
 			c.Warnings = append(c.Warnings, Warning{"unattached_acl", "ACL is not attached with a supported access-group binding", line})
 		}
 	}
+	addASAInventory(c, parsed)
 	return c, nil
 }
 

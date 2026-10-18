@@ -1,6 +1,10 @@
 package policy
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func scope() Scope { return Scope{SnapshotID: "snap-1", DeviceID: "fw-1", Context: "default"} }
 func flow() Flow {
@@ -160,6 +164,94 @@ func TestValidationAndDeterminism(t *testing.T) {
 		}
 		if a.Disposition != c.Disposition || a.DecisiveRule != c.DecisiveRule || b.Rules[0].ID != before {
 			t.Fatal("evaluation was nondeterministic or mutated input")
+		}
+	})
+}
+
+func TestPredicateTraces(t *testing.T) {
+	t.Run("decisive permit traces in evaluation order", func(t *testing.T) {
+		b := base(rule("later", 20, "deny", "any", "any", "tcp", "1-10", "22"), rule("allow", 10, "permit", "10.1.2.0/24", "any", "tcp", "49152-49152", "443"))
+		got, err := Evaluate(b, flow())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.EngineContractVersion != "graphlayer-policy-v3" || len(got.RuleTraces) != 1 {
+			t.Fatalf("unexpected contract or traces: %+v", got)
+		}
+		trace := got.RuleTraces[0]
+		if trace.RuleID != "allow" || trace.Position != 10 || trace.Outcome != "matched" || len(trace.Predicates) != 5 {
+			t.Fatalf("unexpected decisive trace: %+v", trace)
+		}
+		if trace.Predicates[0].Dimension != "source" || trace.Predicates[0].State != "match" || trace.Predicates[4].Dimension != "destination_port" || trace.Predicates[4].State != "match" {
+			t.Fatalf("unexpected predicate ordering or states: %+v", trace.Predicates)
+		}
+	})
+
+	t.Run("known mismatch eliminates unresolved predicate", func(t *testing.T) {
+		b := base(rule("eliminated", 1, "deny", "named-source-sensitive-secret", "192.0.2.0/24", "tcp", "", "443"), rule("allow", 2, "permit", "any", "any", "tcp", "", "443"))
+		got, err := Evaluate(b, flow())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Disposition != "permit" || len(got.RuleTraces) != 2 || got.RuleTraces[0].Outcome != "not_matched" {
+			t.Fatalf("unexpected mismatch trace: %+v", got)
+		}
+		if got.RuleTraces[0].Predicates[0].State != "unresolved" || got.RuleTraces[0].Predicates[1].State != "not_match" {
+			t.Fatalf("expected unresolved predicate and decisive known mismatch: %+v", got.RuleTraces[0].Predicates)
+		}
+		encoded, err := json.Marshal(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "named-source-sensitive-secret") {
+			t.Fatalf("trace leaked unresolved value: %s", encoded)
+		}
+	})
+
+	t.Run("unresolved earlier blocks later match", func(t *testing.T) {
+		got, err := Evaluate(base(rule("maybe", 1, "deny", "unresolved-private-object", "any", "tcp", "", "443"), rule("later", 2, "permit", "any", "any", "tcp", "", "443")), flow())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Disposition != "indeterminate" || len(got.RuleTraces) != 2 || got.RuleTraces[0].Outcome != "unresolved" || got.RuleTraces[1].Outcome != "matched" {
+			t.Fatalf("unexpected unresolved chain traces: %+v", got)
+		}
+		if got.RuleTraces[0].RuleID != "maybe" || got.RuleTraces[1].RuleID != "later" {
+			t.Fatalf("traces are not in evaluation order: %+v", got.RuleTraces)
+		}
+	})
+
+	t.Run("decisive deny is traced", func(t *testing.T) {
+		got, err := Evaluate(base(rule("deny", 1, "deny", "any", "any", "tcp", "", "443"), rule("later", 2, "permit", "any", "any", "tcp", "", "443")), flow())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Disposition != "deny" || got.DecisiveRule != "deny" || len(got.RuleTraces) != 1 || got.RuleTraces[0].Outcome != "matched" {
+			t.Fatalf("unexpected decisive deny trace: %+v", got)
+		}
+	})
+
+	t.Run("default deny and disabled exclusion", func(t *testing.T) {
+		disabled := rule("disabled", 1, "permit", "any", "any", "tcp", "", "443")
+		disabled.Enabled = false
+		got, err := Evaluate(base(disabled, rule("no-match", 2, "permit", "192.0.2.0/24", "any", "tcp", "", "443")), flow())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Disposition != "deny" || !got.UsedDefault || len(got.RuleTraces) != 1 || got.RuleTraces[0].RuleID != "no-match" || got.RuleTraces[0].Outcome != "not_matched" {
+			t.Fatalf("unexpected default traces: %+v", got)
+		}
+	})
+
+	t.Run("incomplete chain remains indeterminate with candidate trace", func(t *testing.T) {
+		b := base(rule("candidate", 1, "permit", "any", "any", "tcp", "", "443"))
+		b.Complete = false
+		got, err := Evaluate(b, flow())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Disposition != "indeterminate" || got.CandidateRule != "candidate" || len(got.RuleTraces) != 1 || got.RuleTraces[0].Outcome != "matched" {
+			t.Fatalf("unexpected incomplete trace: %+v", got)
 		}
 	})
 }

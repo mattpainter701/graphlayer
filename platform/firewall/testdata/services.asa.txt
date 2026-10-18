@@ -1,0 +1,25 @@
+hostname edge-services
+object service WEB-HTTPS
+ service tcp destination eq https
+object service CLIENT-RANGE
+ service tcp source range 49152 65535 destination eq 8443
+object-group service WEB-PORTS tcp-udp
+ port-object eq domain
+object-group service NESTED-WEB tcp-udp
+ group-object WEB-PORTS
+object-group service WEB-APPS
+ service-object tcp destination eq https
+ service-object object WEB-HTTPS
+object-group service APP-MIXED
+ service-object object CLIENT-RANGE
+ service-object tcp destination eq 2222
+access-list SERVICE-IN extended permit object-group WEB-APPS 192.0.2.0 255.255.255.0 object-group SERVERS
+access-list SERVICE-IN extended permit object-group NESTED-WEB any any
+access-list SERVICE-IN extended permit object-group APP-MIXED any any
+access-list SERVICE-IN extended deny tcp any any eq 22
+access-list SERVICE-IN extended permit tcp any any eq 443
+object-group network SERVERS
+ network-object host 10.20.4.15
+ network-object host 10.20.4.16
+access-group SERVICE-IN in interface outside
+username admin password 0 "ASA_SERVICE_CANARY"

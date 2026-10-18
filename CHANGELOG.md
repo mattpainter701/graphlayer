@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Extend the ASA investigation app with service objects/groups, searchable rule and object inventories, original-ACE/dependency inspection, and saved predicate-level explanations. Preserve older workspace records and investigations through verified legacy replay without inventing new evidence.
+- Correct ASA-specific named-port normalization and keep unresolved service members, ambiguous namespaces and expansion limits conservative. Add versioned inventory validation and explicit oversized-artifact errors.
 - Add a local Cisco ASA firewall investigation application: import running configurations, select an attached ACL, evaluate concrete flows, inspect ordered rule traces and sanitized source evidence, and reopen or export saved investigations.
 - Repair ASA running-config parsing, canonical routing model integration, ACL order and unsupported-object handling. Add real parser-to-browser tests and Linux/Windows app checks; preserve indeterminate results when policy cannot be safely resolved.
 - Extend the versioned policy contract to `graphlayer-policy-v2` with rule-only IP protocol wildcards and family-specific `any4`/`any6` addresses. Concrete query protocols remain required.

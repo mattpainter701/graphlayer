@@ -43,17 +43,36 @@ type Flow struct {
 }
 
 type Result struct {
-	EngineContractVersion string   `json:"engine_contract_version"`
-	Scope                 Scope    `json:"scope"`
-	Flow                  Flow     `json:"flow"`
-	Disposition           string   `json:"disposition"`
-	DecisiveRule          string   `json:"decisive_rule,omitempty"`
-	CandidateRule         string   `json:"candidate_rule,omitempty"`
-	UsedDefault           bool     `json:"used_default"`
-	Considered            []string `json:"considered_rules"`
-	EvidenceRefs          []string `json:"evidence_refs,omitempty"`
-	Reasons               []string `json:"reasons"`
-	Supported             []string `json:"supported_semantics"`
-	UnsupportedDimensions []string `json:"unsupported_dimensions"`
-	Assumptions           []string `json:"assumptions"`
+	EngineContractVersion string      `json:"engine_contract_version"`
+	Scope                 Scope       `json:"scope"`
+	Flow                  Flow        `json:"flow"`
+	Disposition           string      `json:"disposition"`
+	DecisiveRule          string      `json:"decisive_rule,omitempty"`
+	CandidateRule         string      `json:"candidate_rule,omitempty"`
+	UsedDefault           bool        `json:"used_default"`
+	Considered            []string    `json:"considered_rules"`
+	EvidenceRefs          []string    `json:"evidence_refs,omitempty"`
+	Reasons               []string    `json:"reasons"`
+	Supported             []string    `json:"supported_semantics"`
+	UnsupportedDimensions []string    `json:"unsupported_dimensions"`
+	Assumptions           []string    `json:"assumptions"`
+	RuleTraces            []RuleTrace `json:"rule_traces,omitempty"`
+}
+
+// RuleTrace records the bounded predicate-level explanation for one enabled
+// rule considered by the evaluator.
+type RuleTrace struct {
+	RuleID       string           `json:"rule_id"`
+	Position     int              `json:"position"`
+	Outcome      string           `json:"outcome"`
+	Predicates   []PredicateTrace `json:"predicates"`
+	EvidenceRefs []string         `json:"evidence_refs,omitempty"`
+}
+
+// PredicateTrace describes one supported predicate or explicitly unsupported
+// dimension without exposing the predicate's source expression.
+type PredicateTrace struct {
+	Dimension string `json:"dimension"`
+	State     string `json:"state"`
+	Reason    string `json:"reason"`
 }
