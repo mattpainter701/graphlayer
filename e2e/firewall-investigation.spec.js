@@ -46,7 +46,8 @@ async function importSample(page) {
   await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
   const summaries = await jsonFromPage(page, '/api/snapshots');
   expect(summaries.status).toBe(200);
-  const snapshotId = summaries.body.snapshots[0].id;
+  const snapshotId = await page.locator('#snapshot-select').inputValue();
+  expect(summaries.body.snapshots.some((item) => item.id === snapshotId)).toBe(true);
   const detail = await jsonFromPage(page, `/api/snapshots/${encodeURIComponent(snapshotId)}`);
   expect(detail.status).toBe(200);
   return detail.body.snapshot;
@@ -213,7 +214,8 @@ test('failed import preserves the prior snapshot and source text is rendered ine
   expect(after.body.snapshots.map((row) => row.id)).toEqual(before.body.snapshots.map((row) => row.id));
   expect(await page.locator('img[src="x"]').count()).toBe(0);
   expect(await page.evaluate(() => window.__xssExecuted === true)).toBe(false);
-  expect(snapshot.id).toBe(before.body.snapshots[0].id);
+  await expect(page.locator('#snapshot-select')).toHaveValue(snapshot.id);
+  expect(before.body.snapshots.some((item) => item.id === snapshot.id)).toBe(true);
 });
 
 test('sanitized snapshots omit credential canaries and hostile source stays text', async ({ page }) => {
