@@ -343,6 +343,21 @@ func TestFortiGateUnsupportedPolicyCommandMakesPathIncomplete(t *testing.T) {
 	t.Fatal("unsupported command warning has no source line")
 }
 
+func TestFortiGateVirtualInterfaceCannotBecomePhysicalForwardingEvidence(t *testing.T) {
+	for _, kind := range []string{"tunnel", "loopback", "vlan", "aggregate"} {
+		t.Run(kind, func(t *testing.T) {
+			input := strings.Replace(string(SampleFortiGate()), "set ip 10.2.0.1 255.255.255.0", "set ip 10.2.0.1 255.255.255.0\n        set type "+kind, 1)
+			c, err := ParseFortiGateConfig([]byte(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Path.RoutingComplete || !fortiHasWarning(c.Path.Warnings, "unsupported_interface_type") {
+				t.Fatal("virtual interface retained complete physical forwarding evidence")
+			}
+		})
+	}
+}
+
 func TestFortiGateMalformedAndNestedBlocksFailClosed(t *testing.T) {
 	for _, input := range []string{"config firewall policy\n edit 1\n set action accept\nend\n", "config firewall policy\n edit 1\n set action accept\n next\n next\nend\n", "config firewall policy\n edit 1\n set name \"x\n next\nend\n"} {
 		if _, err := ParseFortiGateConfig([]byte(input)); err == nil {

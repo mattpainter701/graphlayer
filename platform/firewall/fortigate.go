@@ -283,6 +283,10 @@ func ParseFortiGateConfig(input []byte) (*Config, error) {
 	iby := map[string]PathInterface{}
 	for _, name := range fortiEntryNames(intfs) {
 		e := intfs[name]
+		if kind := fortiScalar(e, "type"); kind != "" && !strings.EqualFold(kind, "physical") {
+			pwarn("unsupported_interface_type", "Tunnel, loopback, VLAN and virtual interface forwarding is outside the physical-interface model", e, true)
+			continue
+		}
 		if len(name) > 48 {
 			pwarn("unsupported_interface", "Interface name exceeds the supported limit", e, true)
 			continue

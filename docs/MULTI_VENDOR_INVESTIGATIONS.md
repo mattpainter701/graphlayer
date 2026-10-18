@@ -22,7 +22,7 @@ For your own configurations, select a format or use native-format detection. Imp
 |---|---|---|
 | Cisco ASA | Running-config text | Existing attached ingress ACL, connected/static IPv4 route and one-to-one static object NAT contract |
 | Palo Alto PAN-OS | Native `set` configuration commands for one local `vsys1` / virtual router | L3 Ethernet interfaces and zones, IPv4 address/custom service objects, ordered security rules with application `any`, ordered static source or destination NAT |
-| FortiGate FortiOS | Single-VDOM native `config` / `edit` / `set` / `next` / `end` CLI text | Static IPv4 interfaces/routes, subnet addresses/custom services, ordered interface policies, static VIP destination NAT and policy-bound single-address one-to-one source pools |
+| FortiGate FortiOS | Single-VDOM native `config` / `edit` / `set` / `next` / `end` CLI text | Static IPv4 physical interfaces/routes, subnet addresses/custom services, ordered interface policies, static VIP destination NAT and policy-bound single-address one-to-one source pools |
 
 PAN-OS XML and Panorama inherited/pre/post rulebases are outside this input adapter. Export native set-format commands rather than relabeling XML as supported. FortiOS multi-VDOM, central NAT, SD-WAN, dynamic routing and policy routing are outside this subset. Composed source and destination NAT on the same vendor hop and same-interface hairpin forwarding remain indeterminate. Unsupported or incomplete relevant commands do not become wildcard permits.
 
