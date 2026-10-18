@@ -23,7 +23,8 @@ const maxSnapshots = 32
 const maxInvestigations = 256
 const maxRecordBytes = 8 << 20
 
-const workspaceVersion = "graphlayer-workspace-v2"
+const workspaceVersion = "graphlayer-workspace-v3"
+const priorWorkspaceVersion = "graphlayer-workspace-v2"
 const legacyWorkspaceVersion = "graphlayer-workspace-v1"
 
 var ErrNotFound = errors.New("resource not found")
@@ -31,6 +32,7 @@ var ErrQuota = errors.New("workspace quota reached")
 var ErrInvalidConfig = errors.New("invalid or unsupported ASA configuration")
 var ErrInvalidFlow = errors.New("invalid policy flow")
 var ErrRecordTooLarge = errors.New("expanded artifact exceeds the storage budget")
+var ErrPathUnavailable = errors.New("snapshot has no supported path metadata")
 
 type Snapshot struct {
 	ID              string    `json:"id"`
@@ -70,6 +72,7 @@ type Store struct {
 	closed         bool
 	snapshots      map[string][]byte
 	investigations map[string][]byte
+	paths          map[string][]byte
 }
 
 type diskRecord struct {
@@ -113,7 +116,7 @@ func NewStore(dir string) (*Store, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, errors.New("workspace must be a real directory")
 	}
-	s := &Store{dir: absolute, snapshots: map[string][]byte{}, investigations: map[string][]byte{}}
+	s := &Store{dir: absolute, snapshots: map[string][]byte{}, investigations: map[string][]byte{}, paths: map[string][]byte{}}
 	entries, err := os.ReadDir(absolute)
 	if err != nil {
 		return nil, errors.New("cannot read workspace")
@@ -122,7 +125,7 @@ func NewStore(dir string) (*Store, error) {
 	for _, entry := range entries {
 		name := entry.Name()
 		known := name == ".workspace.lock" || strings.HasPrefix(name, ".pending-")
-		for _, kind := range []string{"snapshot-", "investigation-"} {
+		for _, kind := range []string{"snapshot-", "investigation-", "path-investigation-"} {
 			if strings.HasPrefix(name, kind) && strings.HasSuffix(name, ".json") && validID(strings.TrimSuffix(strings.TrimPrefix(name, kind), ".json")) {
 				known = true
 			}
@@ -172,7 +175,7 @@ func NewStore(dir string) (*Store, error) {
 			return nil, errors.New("invalid workspace record size")
 		}
 		var record diskRecord
-		if json.Unmarshal(data, &record) != nil || (record.Version != workspaceVersion && record.Version != legacyWorkspaceVersion) || record.SHA256 != digest(record.Data) {
+		if json.Unmarshal(data, &record) != nil || (record.Version != workspaceVersion && record.Version != priorWorkspaceVersion && record.Version != legacyWorkspaceVersion) || record.SHA256 != digest(record.Data) {
 			return nil, errors.New("workspace record is corrupt or incompatible")
 		}
 		switch record.Kind {
@@ -181,7 +184,7 @@ func NewStore(dir string) (*Store, error) {
 			if json.Unmarshal(record.Data, &snap) != nil || validateSnapshot(&snap) != nil || entry.Name() != "snapshot-"+snap.ID+".json" {
 				return nil, errors.New("invalid stored snapshot")
 			}
-			if record.Version == legacyWorkspaceVersion && snap.ParserVersion != "asa-config-v1" || record.Version == workspaceVersion && snap.ParserVersion != firewall.ParserVersion {
+			if record.Version == legacyWorkspaceVersion && snap.ParserVersion != "asa-config-v1" || record.Version == priorWorkspaceVersion && snap.ParserVersion != "asa-config-v2" || record.Version == workspaceVersion && snap.ParserVersion != firewall.ParserVersion {
 				return nil, errors.New("snapshot format and parser version are incompatible")
 			}
 			s.snapshots[snap.ID] = append([]byte(nil), record.Data...)
@@ -192,11 +195,17 @@ func NewStore(dir string) (*Store, error) {
 			}
 			legacyInvestigations[inv.ID] = record.Version == legacyWorkspaceVersion
 			s.investigations[inv.ID] = append([]byte(nil), record.Data...)
+		case "path-investigation":
+			var inv PathInvestigation
+			if record.Version != workspaceVersion || json.Unmarshal(record.Data, &inv) != nil || !validID(inv.ID) || entry.Name() != "path-investigation-"+inv.ID+".json" {
+				return nil, errors.New("invalid stored path investigation")
+			}
+			s.paths[inv.ID] = append([]byte(nil), record.Data...)
 		default:
 			return nil, errors.New("unknown workspace record type")
 		}
 	}
-	if len(s.snapshots) > maxSnapshots || len(s.investigations) > maxInvestigations {
+	if len(s.snapshots) > maxSnapshots || len(s.investigations)+len(s.paths) > maxInvestigations {
 		return nil, ErrQuota
 	}
 	for _, data := range s.investigations {
@@ -206,6 +215,12 @@ func NewStore(dir string) (*Store, error) {
 		}
 		if err := s.validateInvestigation(&inv, legacyInvestigations[inv.ID]); err != nil {
 			return nil, errors.New("stored investigation does not match its snapshot")
+		}
+	}
+	for _, data := range s.paths {
+		var inv PathInvestigation
+		if json.Unmarshal(data, &inv) != nil || s.validatePathInvestigation(&inv) != nil {
+			return nil, errors.New("stored path investigation does not replay against its snapshot")
 		}
 	}
 	keepLock = true
@@ -266,7 +281,10 @@ func validateSnapshot(s *Snapshot) error {
 			return errors.New("invalid normalized policy chain")
 		}
 	}
-	return validateInventory(s)
+	if err := validateInventory(s); err != nil {
+		return err
+	}
+	return validatePathConfig(s)
 }
 
 func bundle(s *Snapshot, chain firewall.Chain) policy.Bundle {
@@ -414,6 +432,9 @@ func (s *Store) validateInvestigation(inv *Investigation, legacy bool) error {
 	if json.Unmarshal(data, &snap) != nil {
 		return errors.New("invalid snapshot")
 	}
+	if legacy && snap.ParserVersion != "asa-config-v1" {
+		return errors.New("legacy investigation cannot refer to a newer parser snapshot")
+	}
 	for _, chain := range snap.Chains {
 		if chain.ID != inv.ChainID {
 			continue
@@ -495,7 +516,7 @@ func (s *Store) Evaluate(snapshotID, chainID string, flow policy.Flow) (*Investi
 		}
 		return &old, nil
 	}
-	if len(s.investigations) >= maxInvestigations {
+	if len(s.investigations)+len(s.paths) >= maxInvestigations {
 		return nil, ErrQuota
 	}
 	if err = s.write("investigation", inv.ID, data); err != nil {

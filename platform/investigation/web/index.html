@@ -75,8 +75,31 @@
         </section>
       </div>
 
+      <section class="panel path-panel" aria-labelledby="path-title">
+        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">03</span><div><h2 id="path-title">Routing &amp; NAT path</h2><p>Trace one concrete flow through the selected snapshot’s bounded ASA forwarding model.</p></div></div><span class="panel-kicker">PATH QUERY</span></div>
+        <div id="path-unavailable" class="path-notice" role="status">Import a snapshot with routing and NAT configuration to investigate a path.</div>
+        <div id="path-controls" hidden>
+          <div class="path-scope-row"><div class="field"><label for="path-ingress">INGRESS INTERFACE <span class="required">*</span></label><select id="path-ingress" data-testid="path-ingress"></select></div><div id="path-interface-meta" class="path-interface-meta">Select the interface where this flow enters the ASA.</div></div>
+          <div class="tuple-grid path-tuple-grid">
+            <div class="field"><label for="path-source">SOURCE ADDRESS <span class="required">*</span></label><input id="path-source" data-testid="path-source" type="text" inputmode="decimal" value="192.0.2.42" autocomplete="off"></div>
+            <div class="field"><label for="path-destination">DESTINATION ADDRESS <span class="required">*</span></label><input id="path-destination" data-testid="path-destination" type="text" inputmode="decimal" value="10.20.4.15" autocomplete="off"></div>
+            <div class="field"><label for="path-protocol">PROTOCOL <span class="required">*</span></label><select id="path-protocol" data-testid="path-protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option><option value="icmpv6">ICMPv6</option></select></div>
+            <div class="field"><label for="path-source-port">SOURCE PORT</label><input id="path-source-port" data-testid="path-source-port" type="number" min="1" max="65535" value="52000" inputmode="numeric"></div>
+            <div class="field"><label for="path-destination-port">DESTINATION PORT</label><input id="path-destination-port" data-testid="path-destination-port" type="number" min="1" max="65535" value="443" inputmode="numeric"></div>
+          </div>
+          <div class="flow-footer"><p class="form-hint">Configuration-derived path; runtime state and end-to-end reachability are not evaluated.</p><button class="button button-primary" id="path-evaluate-button" data-testid="path-evaluate-button" type="button" disabled><span class="button-spinner" aria-hidden="true"></span><span>Trace path</span><span aria-hidden="true">→</span></button></div>
+        </div>
+        <div id="path-result" class="path-result" role="region" aria-live="polite" aria-label="Path investigation result" hidden>
+          <div class="path-result-heading"><div><span class="scope-label">PATH DECISION</span><strong id="path-disposition"></strong><p id="path-result-scope"></p></div><button class="button button-secondary button-small" id="path-export-button" type="button">Export path</button></div>
+          <div id="path-flow-summary" class="path-flow-summary"></div>
+          <div id="path-route-summary" class="path-route-summary"></div>
+          <div id="path-stages" class="path-stages" aria-label="Path stages"></div>
+          <div class="path-explanations"><section><h3>Reasons</h3><ul id="path-reasons"></ul></section><section><h3>Assumptions &amp; uncertainty</h3><ul id="path-assumptions"></ul></section></div>
+        </div>
+      </section>
+
       <section class="result-panel panel" aria-labelledby="result-title">
-        <div class="panel-heading result-heading"><div class="panel-title-wrap"><span class="step-number">03</span><div><h2 id="result-title">Decision &amp; evidence</h2><p>Every outcome is tied to the selected snapshot and source.</p></div></div><span id="result-time" class="result-time"></span></div>
+        <div class="panel-heading result-heading"><div class="panel-title-wrap"><span class="step-number">04</span><div><h2 id="result-title">Policy decision &amp; evidence</h2><p>Every outcome is tied to the selected snapshot and source.</p></div></div><span id="result-time" class="result-time"></span></div>
         <div id="result-empty" class="result-empty"><span class="empty-glyph" aria-hidden="true"><span></span><span></span><span></span></span><strong>Ready to investigate</strong><p>Import a configuration, select its attached chain, then evaluate a flow.</p></div>
         <div id="result-content" hidden>
           <div class="decision-banner" id="decision-banner"><div class="decision-symbol" id="decision-symbol" aria-hidden="true"></div><div class="decision-copy"><span id="decision-kicker" class="decision-kicker">POLICY DECISION</span><strong id="decision" data-testid="decision">—</strong><span id="decision-detail"></span></div><div class="policy-only"><span class="policy-only-icon" aria-hidden="true">i</span><span>Policy only<br><strong>Routing, NAT &amp; return path not evaluated</strong></span></div></div>
@@ -91,7 +114,7 @@
       </section>
 
       <section class="panel inventory-panel" id="policy-inventory" aria-labelledby="inventory-title">
-        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">04</span><div><h2 id="inventory-title">Policy inventory</h2><p>Search the selected snapshot’s ordered ACL rules. Filters never change evaluation.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
+        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">05</span><div><h2 id="inventory-title">Policy inventory</h2><p>Search the selected snapshot’s ordered ACL rules. Filters never change evaluation.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
         <div class="inventory-scope"><span class="scope-label">INVENTORY SCOPE</span><strong id="inventory-scope">No snapshot or chain selected</strong></div>
         <div class="inventory-filters">
           <div class="field inventory-search-field"><label for="inventory-search">SEARCH RULES</label><input id="inventory-search" type="search" placeholder="Rule ID, source, destination, protocol…" autocomplete="off"></div>
@@ -107,12 +130,13 @@
       </section>
 
       <section class="panel objects-panel" id="objects" aria-labelledby="objects-title">
-        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">05</span><div><h2 id="objects-title">Object inventory</h2><p>Inspect named dependencies and source evidence in this snapshot.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
+        <div class="panel-heading"><div class="panel-title-wrap"><span class="step-number">06</span><div><h2 id="objects-title">Object inventory</h2><p>Inspect named dependencies and source evidence in this snapshot.</p></div></div><span class="panel-kicker">SNAPSHOT DATA</span></div>
         <div class="object-scope"><span class="scope-label">OBJECT SCOPE</span><strong id="object-scope">No snapshot selected</strong></div>
         <div class="object-layout"><div class="object-browser"><label class="field object-search-field" for="object-search"><span>SEARCH OBJECTS</span><input id="object-search" type="search" placeholder="Name, kind, or object ID…" autocomplete="off"></label><div class="object-count-row"><span id="object-count" role="status" aria-live="polite">0 filtered · 0 total · page 1 of 1</span></div><div class="object-list" id="object-list" role="listbox" aria-label="Snapshot objects"><div class="inventory-empty">Import a snapshot to browse named objects.</div></div><div class="pagination-controls object-pagination" aria-label="Object inventory pages"><button class="button button-secondary button-small" id="object-prev" type="button" disabled>← Previous</button><span id="object-page">Page 1 of 1</span><button class="button button-secondary button-small" id="object-next" type="button" disabled>Next →</button></div></div><div class="object-inspector" id="object-inspector" aria-live="polite"><div class="inspector-placeholder">Select an object to inspect its members and dependencies.</div></div></div>
       </section>
 
       <section class="panel history-panel" aria-labelledby="history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">◷</span><div><h2 id="history-title">Recent investigations</h2><p>Saved locally for review and replay.</p></div></div><button class="text-button" id="refresh-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="history-list" data-testid="history-list" class="history-list"><div class="history-empty">No saved investigations yet.</div></div></section>
+      <section class="panel history-panel path-history-panel" aria-labelledby="path-history-title"><div class="panel-heading history-heading"><div class="panel-title-wrap"><span class="history-icon" aria-hidden="true">⇢</span><div><h2 id="path-history-title">Recent path investigations</h2><p>Saved routing and NAT traces for review and replay.</p></div></div><button class="text-button" id="refresh-path-history" type="button">Refresh <span aria-hidden="true">↻</span></button></div><div id="path-history-list" class="history-list"><div class="history-empty">No saved path investigations yet.</div></div></section>
 
       <footer class="footer"><span><span class="footer-mark">G</span> GraphLayer <span class="footer-sep">·</span> Local investigation workspace</span><span>Policy analysis · Cisco ASA</span></footer>
     </main>

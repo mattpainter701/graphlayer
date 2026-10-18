@@ -81,4 +81,5 @@ type Config struct {
 	Capabilities   []string     `json:"capabilities"`
 	Objects        []Object     `json:"objects,omitempty"`
 	RuleOrigins    []RuleOrigin `json:"rule_origins,omitempty"`
+	Path           *PathConfig  `json:"path,omitempty"`
 }

@@ -79,7 +79,7 @@ func TestServiceSampleExpandsNestedTCPUDPAndInventoryEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ParserVersion != "asa-config-v2" || len(c.Objects) < 5 {
+	if c.ParserVersion != ParserVersion || len(c.Objects) < 5 {
 		t.Fatalf("service inventory missing: version=%s objects=%#v", c.ParserVersion, c.Objects)
 	}
 	if len(c.Chains) != 1 || len(c.Chains[0].Rules) != 10 {

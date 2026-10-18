@@ -4,6 +4,8 @@ This increment turns actual ASA running-config syntax into a saved, inspectable 
 
 The subsequent [policy workspace increment](POLICY_WORKSPACE.md) adds service objects/groups, inventory search, dependency inspection and predicate explanations, with read compatibility for this initial release's stored records. That guide records current parser/result/storage versions and upgrade behavior.
 
+The [routing/NAT increment](ROUTING_NAT_INVESTIGATIONS.md) adds a separate explicit-ingress path workflow and records the latest parser/storage versions. Existing ACL-only investigations retain their original scope.
+
 ## Run it
 
 Use the Go version in `platform/go.mod`. From the repository root:

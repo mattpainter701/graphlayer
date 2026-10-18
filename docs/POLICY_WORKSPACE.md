@@ -30,7 +30,7 @@ This increment still evaluates a selected supported interface ACL. Service inspe
 
 ## Version compatibility
 
-New snapshots use parser `asa-config-v2`, new decisions use `graphlayer-policy-v3`, and new disk envelopes use `graphlayer-workspace-v2`. The [contract](POLICY_WORKSPACE_CONTRACT.md) records the additive inventory/trace fields.
+This policy-workspace increment introduced parser `asa-config-v2`, decisions `graphlayer-policy-v3`, and disk envelopes `graphlayer-workspace-v2`. The [contract](POLICY_WORKSPACE_CONTRACT.md) records its inventory/trace fields. The subsequent [routing/NAT increment](ROUTING_NAT_INVESTIGATIONS.md) records the current parser-v3/storage-v3 versions; ACL decisions retain policy-v3.
 
 The store reads released workspace-v1/parser-v1/policy-v2 records without rewriting them. It verifies their checksums, scope and identities and replays their original result projection using the preserved decision semantics. An upgrade does not claim the old parser produced today's metadata: old snapshots have no fabricated object inventory and old results have no fabricated predicate trace. A new evaluation of an old snapshot may save a v3 result alongside the original v2 result.
 

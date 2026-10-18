@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add routing and NAT-aware ASA path investigations with explicit ingress, static object translations, connected/static route selection, real-address ACL evaluation, stage evidence, saved history and JSON export. Unsupported or ambiguous path semantics remain indeterminate.
+- Preserve released workspace-v1/v2 evidence while introducing validated workspace-v3 path records, exact saved-path replay and shared history quotas. Add real path workflow tests and include the path engine in supported Go, race and Windows release gates.
 - Extend the ASA investigation app with service objects/groups, searchable rule and object inventories, original-ACE/dependency inspection, and saved predicate-level explanations. Preserve older workspace records and investigations through verified legacy replay without inventing new evidence.
 - Correct ASA-specific named-port normalization and keep unresolved service members, ambiguous namespaces and expansion limits conservative. Add versioned inventory validation and explicit oversized-artifact errors.
 - Add a local Cisco ASA firewall investigation application: import running configurations, select an attached ACL, evaluate concrete flows, inspect ordered rule traces and sanitized source evidence, and reopen or export saved investigations.

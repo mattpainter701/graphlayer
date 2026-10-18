@@ -11,8 +11,10 @@ evidence snapshots and evaluates concrete flows through a selected attached ACL.
 browser UI shows ordered predicate traces, physical source lines, warnings and saved investigations.
 The [policy workspace](docs/POLICY_WORKSPACE.md) adds service objects/groups, searchable
 rule inventories and typed object dependency inspection, while preserving older saved evidence.
+The [routing/NAT workflow](docs/ROUTING_NAT_INVESTIGATIONS.md) adds explicit-ingress,
+configuration-derived ASA paths with translated tuples, route selection and source-backed stages.
 See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported syntax, limits,
-launch commands and tests. This is a single-user policy investigation application;
+launch commands and tests. This is a single-user investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.
 
 ```powershell

@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const state = { csrf: '', snapshots: [], snapshot: null, investigation: null, busy: false, scopeRequest: 0, toastTimer: 0, selectedObjectID: '', selectedRuleID: '', inventoryPage: 0, objectPage: 0, evidenceTrigger: null };
+  const state = { csrf: '', snapshots: [], snapshot: null, investigation: null, pathInvestigation: null, busy: false, scopeRequest: 0, toastTimer: 0, selectedObjectID: '', selectedRuleID: '', inventoryPage: 0, objectPage: 0, evidenceTrigger: null };
   const inventoryPageSize = 100;
   const objectPageSize = 50;
   const apiRoot = '/api';
@@ -33,6 +33,9 @@
       const code = body && body.error && body.error.code;
       const messages = {
         invalid_flow: 'Use concrete IP addresses and valid protocol/port values for this investigation.',
+        invalid_path: 'Use a supported ingress interface and a concrete IPv4 flow with valid protocol/port values.',
+        path_unavailable: 'This snapshot does not include a usable routing and NAT model. Reimport the configuration after checking its supported path settings.',
+        path_too_large: 'The path investigation exceeds the local artifact budget. No partial result was saved.',
         invalid_import: 'Provide an ASA configuration and a display name of at most 128 characters.',
         import_failed: 'The configuration could not be imported as a supported ASA policy snapshot. Earlier snapshots are unchanged.',
         config_too_large: 'The configuration exceeds the 2 MiB local import limit.',
@@ -130,17 +133,65 @@
     $('flow-source-port').disabled = state.busy || !usesPorts;
     $('flow-destination-port').disabled = state.busy || !usesPorts;
     $('export-button').disabled = state.busy || !state.investigation;
+    const pathAvailable = Boolean(hasSnapshot && state.snapshot.path && state.snapshot.path.version === 'asa-path-v1');
+    const pathReady = Boolean(pathAvailable && $('path-ingress').value);
+    $('path-evaluate-button').disabled = state.busy || !pathReady;
+    $('path-export-button').disabled = state.busy || !state.pathInvestigation;
+    ['path-ingress', 'path-source', 'path-destination', 'path-protocol'].forEach((id) => { const node = $(id); if (node) node.disabled = state.busy || !pathAvailable; });
+    $('refresh-path-history').disabled = state.busy;
+    const pathUsesPorts = $('path-protocol').value === 'tcp' || $('path-protocol').value === 'udp';
+    ['path-source-port', 'path-destination-port'].forEach((id) => { $(id).disabled = state.busy || !pathAvailable || !pathUsesPorts; });
     document.querySelectorAll('.history-open').forEach((button) => { button.disabled = state.busy; });
+  }
+
+  function renderPathAvailability(snapshot) {
+    const config = snapshot && snapshot.path;
+    const valid = Boolean(config && config.version === 'asa-path-v1');
+    $('path-controls').hidden = !valid;
+    $('path-result').hidden = true;
+    $('path-unavailable').hidden = valid;
+    if (!valid) {
+      $('path-unavailable').textContent = snapshot
+        ? 'Path analysis is unavailable for this snapshot. Reimport the configuration to build the routing and NAT model.'
+        : 'Import a snapshot with routing and NAT configuration to investigate a path.';
+      $('path-ingress').replaceChildren(new Option('Unavailable', ''));
+      $('path-interface-meta').textContent = 'Ingress interface metadata is unavailable.';
+      return;
+    }
+    const interfaces = Array.isArray(config.interfaces) ? config.interfaces : [];
+    const choices = interfaces.filter((item) => item && item.name);
+    const select = $('path-ingress');
+    select.replaceChildren(new Option(choices.length ? 'Select ingress interface' : 'No configured interface', ''));
+    choices.slice(0, 100).forEach((item) => {
+      const status = `${item.resolved ? 'resolved' : 'unresolved'}${item.shutdown ? ' · shutdown' : ''}`;
+      const label = `${item.name}${item.physical ? ` · ${item.physical}` : ''}${item.address ? ` · ${item.address}` : ''} · ${status}`;
+      select.add(new Option(label, item.name));
+    });
+    const omittedCount = Math.max(0, choices.length - 100);
+    $('path-interface-meta').textContent = choices.length
+      ? `${choices.length} configured ingress interface${choices.length === 1 ? '' : 's'}${omittedCount ? ` · ${omittedCount} beyond the 100-interface display limit` : ''}. Unresolved or shut down choices return an indeterminate path.`
+      : 'No configured ingress interface is available in this snapshot.';
+    updatePathInterfaceMeta();
+  }
+
+  function updatePathInterfaceMeta() {
+    const config = state.snapshot && state.snapshot.path;
+    const item = config && (config.interfaces || []).find((candidate) => candidate.name === $('path-ingress').value);
+    if (!item) return;
+    const pieces = [item.name, item.physical, item.address, item.security_level === undefined ? '' : `security level ${item.security_level}`].filter(Boolean);
+    $('path-interface-meta').textContent = `${pieces.join(' · ')} · ${item.resolved ? 'resolved' : 'unresolved'}${item.shutdown ? ' · shutdown' : ''}${config.routing_complete ? '' : ' · route coverage incomplete'}${config.nat_complete ? '' : ' · NAT coverage incomplete'}`;
   }
 
   function setCurrentSnapshot(snapshot, preserveChain = '') {
     state.snapshot = snapshot;
     state.investigation = null;
+    state.pathInvestigation = null;
     state.selectedObjectID = '';
     state.selectedRuleID = '';
     state.inventoryPage = 0;
     state.objectPage = 0;
     updateScope();
+    renderPathAvailability(snapshot);
     renderImportReport(snapshot);
     const chainSelect = $('chain-select');
     chainSelect.replaceChildren();
@@ -346,7 +397,7 @@
     list.replaceChildren();
     const snapshot = state.snapshot;
     $('object-scope').textContent = snapshot ? `${snapshot.name || snapshot.hostname || snapshot.id} · ${snapshot.id}` : 'No snapshot selected';
-    if (!snapshot || (!Array.isArray(snapshot.objects) && snapshot.parser_version !== 'asa-config-v2')) {
+    if (!snapshot || (!Array.isArray(snapshot.objects) && !['asa-config-v2', 'asa-config-v3'].includes(snapshot.parser_version))) {
       list.append(el('div', 'inventory-empty', snapshot ? 'Named object inventory is unavailable in this older snapshot.' : 'Import a snapshot to browse named objects.'));
       $('object-count').textContent = '0 filtered · unavailable total · page 1 of 1';
       $('object-page').textContent = 'Page 1 of 1';
@@ -492,12 +543,217 @@
     renderObjects();
   }
 
+  function clearPathResult() {
+    state.pathInvestigation = null;
+    $('path-result').hidden = true;
+    refreshControls();
+  }
+
   function normalizeRef(ref) { return String(ref); }
 
   function evidenceForRefs(refs) {
     const evidence = (state.snapshot && state.snapshot.evidence) || [];
     const wanted = new Set((refs || []).map(normalizeRef));
     return evidence.filter((item) => wanted.has(normalizeRef(item.id)));
+  }
+
+  function tupleLabel(flow) {
+    if (!flow) return 'Tuple unavailable';
+    const protocol = String(flow.protocol || 'unknown').toUpperCase();
+    const ports = (protocol === 'TCP' || protocol === 'UDP') ? `:${flow.source_port || 0} → :${flow.destination_port || 0}` : '';
+    return `${flow.source || '?'}${ports.split(' → ')[0] || ''} → ${flow.destination || '?'}${ports.includes(' → ') ? ports.split(' → ')[1] : ''} · ${protocol}`.slice(0, 500);
+  }
+
+  function boundedPathText(value, limit = 1200) {
+    const text = String(value == null ? '' : value);
+    return text.length > limit ? `${text.slice(0, limit)}…` : text;
+  }
+
+  function pathDisposition(value) {
+    const candidate = String(value || 'indeterminate');
+    return ['modeled_forward', 'blocked', 'indeterminate'].includes(candidate) ? candidate : 'indeterminate';
+  }
+
+  function appendPathEvidence(container, refs) {
+    const uniqueRefs = [...new Set((refs || []).map(normalizeRef))];
+    const items = (() => {
+      const byID = new Map(((state.snapshot && state.snapshot.evidence) || []).map((item) => [normalizeRef(item.id), item]));
+      return uniqueRefs.map((ref) => byID.get(ref)).filter(Boolean);
+    })();
+    if (!items.length) {
+      if ((refs || []).length) container.append(el('span', 'path-no-evidence', 'Source evidence reference unavailable in this snapshot.'));
+      return;
+    }
+    const links = el('div', 'path-evidence-links');
+    container.append(links);
+    const pageSize = 16;
+    let page = 0;
+    const pager = el('div', 'pagination-controls path-evidence-pages');
+    const previous = el('button', 'text-button', 'Previous sources'); previous.type = 'button';
+    const next = el('button', 'text-button', 'Next sources'); next.type = 'button';
+    const count = el('span', '');
+    const draw = () => {
+      links.replaceChildren();
+      items.slice(page * pageSize, (page + 1) * pageSize).forEach((item) => links.append(evidenceLink(item)));
+      count.textContent = `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, items.length)} of ${items.length} sources`;
+      previous.disabled = page === 0; next.disabled = (page + 1) * pageSize >= items.length;
+    };
+    previous.addEventListener('click', () => { if (page > 0) { page--; draw(); } });
+    next.addEventListener('click', () => { if ((page + 1) * pageSize < items.length) { page++; draw(); } });
+    if (items.length > pageSize) { pager.append(previous, count, next); container.append(pager); }
+    draw();
+  }
+
+  function appendPathTuple(container, title, flow) {
+    if (!flow || (!flow.source && !flow.destination && !flow.protocol)) return;
+    const block = el('div', 'path-tuple');
+    block.append(el('span', 'scope-label', title), el('code', '', tupleLabel(flow)));
+    container.append(block);
+  }
+
+  function renderPathInvestigation(investigation) {
+    const result = investigation && investigation.result;
+    if (!result || !state.snapshot || investigation.snapshot_id !== state.snapshot.id || result.scope && result.scope.snapshot_id !== state.snapshot.id) {
+      showToast('The saved path result does not match the active snapshot. It was not displayed.', 'error');
+      return false;
+    }
+    state.pathInvestigation = investigation;
+    $('path-result').hidden = false;
+    const disposition = pathDisposition(result.disposition);
+    const displayDisposition = disposition.replaceAll('_', ' ').toUpperCase();
+    $('path-disposition').textContent = displayDisposition;
+    $('path-disposition').className = `path-disposition path-${disposition}`;
+    const pathConfig = state.snapshot.path || {};
+    $('path-result-scope').textContent = `${state.snapshot.hostname || 'ASA device'} · ${investigation.ingress_interface || result.ingress_interface || 'ingress unavailable'} ingress · ${result.chain_id ? `ACL ${result.chain_id} · ` : ''}${investigation.created_at ? new Date(investigation.created_at).toLocaleString() : 'Saved result'}`;
+    const flow = result.original_flow || {};
+    $('path-flow-summary').replaceChildren();
+    appendPathTuple($('path-flow-summary'), 'ORIGINAL FLOW', flow);
+    appendPathTuple($('path-flow-summary'), 'POLICY CHECK', result.policy_flow);
+    appendPathTuple($('path-flow-summary'), 'AFTER NAT', result.egress_flow);
+    const route = result.selected_route;
+    const routeBox = $('path-route-summary'); routeBox.replaceChildren();
+    const routeTitle = el('strong', '', result.egress_interface ? `Chosen egress: ${result.egress_interface}` : 'Egress interface not established');
+    routeBox.append(routeTitle);
+    routeBox.append(el('p', '', boundedPathText(route
+      ? `Selected route ${route.prefix || 'prefix unavailable'} via ${route.interface || result.egress_interface || 'interface unavailable'}${route.next_hop ? ` · next hop ${route.next_hop}` : ''}${route.kind ? ` · ${route.kind}` : ''}`
+      : 'No single route was selected from the modeled configuration.', 900)));
+    routeBox.append(el('p', 'path-model-coverage', `Configuration coverage · routing ${pathConfig.routing_complete ? 'complete' : 'incomplete'} · NAT ${pathConfig.nat_complete ? 'complete' : 'incomplete'}`));
+    const ingress = (pathConfig.interfaces || []).find((item) => item.name === (investigation.ingress_interface || result.ingress_interface));
+    appendPathEvidence(routeBox, [...((route && route.evidence_refs) || []), ...((ingress && ingress.evidence_refs) || []), ...(result.evidence_refs || []), ...(pathConfig.evidence_refs || [])]);
+
+    const stages = $('path-stages'); stages.replaceChildren();
+    const items = Array.isArray(result.stages) ? result.stages.slice(0, 20) : [];
+    items.forEach((stage, index) => {
+      const card = el('article', `path-stage path-stage-${['matched', 'not_applied', 'blocked', 'unresolved', 'not_evaluated'].includes(stage.status) ? stage.status : 'unresolved'}`);
+      const header = el('div', 'path-stage-heading');
+      header.append(el('span', 'path-stage-number', String(index + 1).padStart(2, '0')));
+      const label = el('div', 'path-stage-title');
+      label.append(el('strong', '', stage.name || 'Path stage'), el('span', '', String(stage.status || 'unresolved').replaceAll('_', ' ')));
+      header.append(label); card.append(header);
+      card.append(el('p', 'path-stage-detail', boundedPathText(stage.detail || 'No stage explanation was returned.')));
+      const tuples = el('div', 'path-stage-tuples');
+      appendPathTuple(tuples, 'BEFORE', stage.before);
+      appendPathTuple(tuples, 'AFTER', stage.after);
+      if (tuples.childElementCount) card.append(tuples);
+      const candidates = Array.isArray(stage.candidate_ids) ? stage.candidate_ids.slice(0, 12).map((value) => boundedPathText(value, 180)) : [];
+      if (candidates.length) card.append(el('p', 'path-candidates', `Candidates: ${candidates.join(', ')}`));
+      const stageRefs = stage.name === 'route' && route ? [...(route.evidence_refs || []), ...(stage.evidence_refs || [])] : stage.evidence_refs;
+      appendPathEvidence(card, stageRefs);
+      stages.append(card);
+    });
+    if (!items.length) stages.append(el('div', 'path-notice', 'The evaluator returned no path stages.'));
+    const renderPathList = (id, values, fallback) => {
+      const list = $(id); list.replaceChildren();
+      const items = Array.isArray(values) && values.length ? values.slice(0, 20) : [fallback];
+      items.forEach((value) => list.append(el('li', '', boundedPathText(value, 1200))));
+    };
+    const coverageWarnings = (Array.isArray(pathConfig.warnings) ? pathConfig.warnings : []).slice(0, 20)
+      .map((warning) => `${warning.code || 'Path coverage'}${warning.line ? ` · physical line ${warning.line}` : ''}: ${warning.message || 'Unsupported path configuration'}`);
+    renderPathList('path-reasons', [...(result.reasons || []), ...coverageWarnings], 'No reason details were returned.');
+    renderPathList('path-assumptions', result.assumptions, 'No additional assumptions were returned.');
+    return true;
+  }
+
+  function pathPayload() {
+    const protocol = $('path-protocol').value;
+    const hasPorts = protocol === 'tcp' || protocol === 'udp';
+    const parsePort = (id) => { const value = Number($(id).value); return Number.isInteger(value) ? value : 0; };
+    return {
+      ingress_interface: $('path-ingress').value,
+      flow: {
+        source: $('path-source').value.trim(),
+        destination: $('path-destination').value.trim(),
+        protocol,
+        source_port: hasPorts ? parsePort('path-source-port') : 0,
+        destination_port: hasPorts ? parsePort('path-destination-port') : 0
+      }
+    };
+  }
+
+  async function evaluatePath() {
+    const snapshot = state.snapshot;
+    if (!snapshot || !snapshot.path || !$('path-ingress').value) return;
+    const requestId = state.scopeRequest;
+    const payload = pathPayload();
+    const button = $('path-evaluate-button'); setBusy(button, true, 'Tracing…');
+    try {
+      const body = await request(`/snapshots/${encodeURIComponent(snapshot.id)}/path-evaluate`, { method: 'POST', body: JSON.stringify(payload) });
+      if (JSON.stringify(pathPayload()) !== JSON.stringify(payload)) throw new Error('Path inputs changed while the request was running. The response was not displayed.');
+      const investigation = body.investigation;
+      if (requestId !== state.scopeRequest || state.snapshot !== snapshot || !investigation || investigation.snapshot_id !== snapshot.id || !investigation.result || investigation.result.ingress_interface !== payload.ingress_interface) throw new Error('The path response did not match the selected snapshot and ingress. Refresh before continuing.');
+      const flow = investigation.result && investigation.result.original_flow;
+      if (!flow || flow.source !== payload.flow.source || flow.destination !== payload.flow.destination || flow.protocol !== payload.flow.protocol || Number(flow.source_port || 0) !== payload.flow.source_port || Number(flow.destination_port || 0) !== payload.flow.destination_port) throw new Error('The path response did not match the submitted tuple. The result was not displayed.');
+      renderPathInvestigation(investigation);
+      await loadPathHistory();
+    } catch (error) { showToast(error.message, 'error'); }
+    finally { setBusy(button, false); refreshControls(); }
+  }
+
+  function renderPathHistory(items) {
+    const list = $('path-history-list'); list.replaceChildren();
+    const rows = Array.isArray(items) ? items.slice(0, 8) : [];
+    if (!rows.length) { list.append(el('div', 'history-empty', 'No saved path investigations yet.')); return; }
+    rows.forEach((item) => {
+      const row = el('div', 'history-row');
+      const disposition = pathDisposition(item.disposition);
+      row.append(el('span', `history-decision path-history-decision path-${disposition}`, String(item.disposition || '?').slice(0, 1).toUpperCase()));
+      const details = el('div', 'history-details');
+      details.append(el('strong', '', `${item.ingress_interface || 'Ingress unavailable'} · ${item.source || '?'} → ${item.destination || '?'}`));
+      details.append(el('span', '', `${item.created_at ? new Date(item.created_at).toLocaleString() : 'Saved'} · ${String(item.disposition || 'indeterminate').replaceAll('_', ' ')} · snapshot ${item.snapshot_id || 'unknown'}`));
+      const action = el('button', 'history-open', 'Open path →'); action.type = 'button';
+      action.addEventListener('click', () => reopenPathInvestigation(item.id));
+      row.append(details, action); list.append(row);
+    });
+  }
+
+  async function loadPathHistory() {
+    const body = await request('/path-investigations');
+    renderPathHistory(Array.isArray(body.investigations) ? body.investigations : []);
+  }
+
+  async function reopenPathInvestigation(id) {
+    if (state.busy) return;
+    state.busy = true; refreshControls();
+    try {
+      const body = await request(`/path-investigations/${encodeURIComponent(id)}`);
+      const investigation = body.investigation;
+      if (!investigation) throw new Error('Saved path investigation was not returned.');
+      await loadSnapshot(investigation.snapshot_id);
+      if (!state.snapshot || state.snapshot.id !== investigation.snapshot_id || !state.snapshot.path) throw new Error('Saved path snapshot is unavailable; the result was not opened in a different scope.');
+      if (!renderPathInvestigation(investigation)) throw new Error('Saved path result did not match its snapshot.');
+      const result = investigation.result || {};
+      const flow = result.original_flow || {};
+      $('path-ingress').value = investigation.ingress_interface || result.ingress_interface || '';
+      $('path-source').value = flow.source || '';
+      $('path-destination').value = flow.destination || '';
+      $('path-protocol').value = flow.protocol || 'tcp';
+      const hasPorts = flow.protocol === 'tcp' || flow.protocol === 'udp';
+      $('path-source-port').value = hasPorts ? String(flow.source_port || '') : '';
+      $('path-destination-port').value = hasPorts ? String(flow.destination_port || '') : '';
+      updatePathInterfaceMeta();
+      $('path-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (error) { showToast(error.message, 'error'); }
+    finally { state.busy = false; refreshControls(); }
   }
 
   function showEvidence(item, trigger = document.activeElement) {
@@ -693,7 +949,7 @@
   }
 
   async function loadSnapshot(id, preserveChain = '') {
-    if (!id) { state.snapshot = null; state.selectedObjectID = ''; updateScope(); clearResult(); refreshControls(); return; }
+    if (!id) { state.snapshot = null; state.pathInvestigation = null; state.selectedObjectID = ''; updateScope(); renderPathAvailability(null); clearResult(); refreshControls(); return; }
     const requestId = ++state.scopeRequest;
     const wasBusy = state.busy;
     state.busy = true;
@@ -721,7 +977,7 @@
     const select = $('snapshot-select'); select.replaceChildren();
     if (!snapshots.length) {
       select.add(new Option('No snapshots', ''));
-      state.snapshot = null; updateScope(); clearResult(); refreshControls();
+      state.snapshot = null; state.pathInvestigation = null; updateScope(); renderPathAvailability(null); clearResult(); refreshControls();
       return;
     }
     select.add(new Option('Select a snapshot', ''));
@@ -732,7 +988,7 @@
       await loadSnapshot(current.id);
     } else {
       select.value = '';
-      state.snapshot = null; updateScope(); clearResult(); refreshControls();
+      state.snapshot = null; state.pathInvestigation = null; updateScope(); renderPathAvailability(null); clearResult(); refreshControls();
     }
   }
 
@@ -741,6 +997,7 @@
     const items = Array.isArray(body.investigations) ? body.investigations : [];
     items.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     renderHistory(items);
+    await loadPathHistory();
   }
 
   async function refreshWorkspace() {
@@ -865,6 +1122,16 @@
     document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
   }
 
+  function exportPathResult() {
+    if (!state.pathInvestigation) return;
+    const blob = new Blob([JSON.stringify(state.pathInvestigation, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeId = String(state.pathInvestigation.id || 'path-result').replace(/[^a-zA-Z0-9._-]/g, '_');
+    link.href = url; link.download = `path-investigation-${safeId}.json`;
+    document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+  }
+
   function wireEvents() {
     $('config-input').addEventListener('input', () => { $('config-meta').textContent = `${$('config-input').value.length.toLocaleString()} characters`; $('config-meta').dataset.name = ''; refreshControls(); });
     $('file-input').addEventListener('change', async (event) => {
@@ -886,6 +1153,15 @@
     $('load-service-sample').addEventListener('click', loadServiceSample);
     $('import-button').addEventListener('click', importConfig);
     $('evaluate-button').addEventListener('click', evaluateFlow);
+    $('path-evaluate-button').addEventListener('click', evaluatePath);
+    $('path-export-button').addEventListener('click', exportPathResult);
+    $('path-ingress').addEventListener('change', () => { updatePathInterfaceMeta(); clearPathResult(); });
+    $('path-protocol').addEventListener('change', () => {
+      const enabled = $('path-protocol').value === 'tcp' || $('path-protocol').value === 'udp';
+      ['path-source-port', 'path-destination-port'].forEach((id) => { $(id).disabled = !enabled; if (!enabled) $(id).value = ''; else if (!$(id).value) $(id).value = id === 'path-source-port' ? '52000' : '443'; });
+      clearPathResult();
+    });
+    ['path-source', 'path-destination', 'path-source-port', 'path-destination-port'].forEach((id) => $(id).addEventListener('input', clearPathResult));
     $('chain-select').addEventListener('change', () => { state.inventoryPage = 0; state.selectedRuleID = ''; updateChainMeta(); clearResult(); renderInventory(); refreshControls(); });
     ['inventory-search', 'inventory-action', 'inventory-status', 'inventory-resolution'].forEach((id) => $(id).addEventListener(id === 'inventory-search' ? 'input' : 'change', () => { state.inventoryPage = 0; renderInventory(); }));
     $('inventory-prev').addEventListener('click', () => { state.inventoryPage = Math.max(0, state.inventoryPage - 1); renderInventory(); });
@@ -896,6 +1172,7 @@
     $('snapshot-select').addEventListener('change', (event) => loadSnapshot(event.target.value));
     $('refresh-button').addEventListener('click', refreshWorkspace);
     $('refresh-history').addEventListener('click', () => loadHistory().catch((error) => showToast(error.message, 'error')));
+    $('refresh-path-history').addEventListener('click', () => loadPathHistory().catch((error) => showToast(error.message, 'error')));
     $('export-button').addEventListener('click', exportResult);
     $('close-source').addEventListener('click', () => {
       $('source-lines').hidden = true;

@@ -182,6 +182,35 @@ func (a *App) trustedRequest(r *http.Request) bool {
 
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) == 3 && parts[1] == "sample" && parts[2] == "path" {
+		if r.Method != http.MethodGet {
+			methodError(w)
+			return
+		}
+		writeJSON(w, 200, map[string]string{"name": "routing-nat.asa.txt", "config": string(firewall.SamplePathASA())})
+		return
+	}
+	if len(parts) == 2 && parts[1] == "path-investigations" {
+		if r.Method != http.MethodGet {
+			methodError(w)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"investigations": a.store.PathSummaries()})
+		return
+	}
+	if len(parts) == 3 && parts[1] == "path-investigations" && validID(parts[2]) {
+		if r.Method != http.MethodGet {
+			methodError(w)
+			return
+		}
+		inv, err := a.store.PathInvestigation(parts[2])
+		if err != nil {
+			apiError(w, 404, "investigation_not_found", "The selected path investigation is unavailable.")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"investigation": inv})
+		return
+	}
 	if len(parts) == 3 && parts[1] == "sample" && parts[2] == "services" {
 		if r.Method != http.MethodGet {
 			methodError(w)
@@ -223,6 +252,14 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(parts) >= 3 && parts[1] == "snapshots" && validID(parts[2]) {
+		if len(parts) == 4 && parts[3] == "path-evaluate" {
+			if r.Method != http.MethodPost {
+				methodError(w)
+				return
+			}
+			a.evaluatePath(w, r, parts[2])
+			return
+		}
 		if len(parts) == 4 && parts[3] == "evaluate" {
 			if r.Method != http.MethodPost {
 				methodError(w)

@@ -1,0 +1,43 @@
+hostname path-lab
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 0
+ ip address 192.0.2.1 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/1
+ nameif dmz
+ security-level 50
+ ip address 10.20.4.1 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/2
+ nameif inside
+ security-level 100
+ ip address 10.0.0.1 255.255.255.0
+ no shutdown
+!
+same-security-traffic permit inter-interface
+route outside 0 0 192.0.2.254
+route outside 203.0.113.0 255.255.255.0 192.0.2.253 5
+!
+object network WEB
+ host 10.20.4.15
+ description sanitized published service
+!
+object network WEB
+ nat (dmz,outside) static 198.51.100.15
+!
+object network IDENTITY-CLIENT
+ host 10.0.0.20
+!
+object network IDENTITY-CLIENT
+ nat (inside,outside) static 10.0.0.20
+!
+access-list OUTSIDE-IN extended permit tcp any host 10.20.4.15 eq 443
+access-list OUTSIDE-IN extended deny tcp any host 10.20.4.15 eq 22
+access-group OUTSIDE-IN in interface outside
+access-list DMZ-IN extended permit ip 10.20.4.0 255.255.255.0 any
+access-group DMZ-IN in interface dmz
+access-list INSIDE-IN extended permit ip 10.0.0.0 255.255.255.0 any
+access-group INSIDE-IN in interface inside

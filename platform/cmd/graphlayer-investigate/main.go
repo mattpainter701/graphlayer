@@ -68,7 +68,7 @@ func run() error {
 		}
 	}()
 	fmt.Printf("Listening on http://%s\n", listener.Addr().String())
-	fmt.Println("Local single-user workspace. ACL policy only; routing, NAT and return paths are not evaluated.")
+	fmt.Println("Local single-user workspace. ACL decisions and bounded ASA configuration paths; no live reachability or return-path proof.")
 	err = server.Serve(listener)
 	close(completed)
 	if err != nil && err != http.ErrServerClosed {
