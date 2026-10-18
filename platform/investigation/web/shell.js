@@ -93,7 +93,8 @@
       const targetAnchor = anchor || route.anchor || null;
       const nextHash = hashFor(targetPage, targetAnchor);
       showRoute({ page: targetPage, anchor: targetAnchor });
-      if (location.hash !== nextHash) location.hash = nextHash;
+      // Route names share some legacy element IDs. Avoid native anchor jumps.
+      if (location.hash !== nextHash) history.pushState(null, '', nextHash);
     }
 
     document.addEventListener('graphlayer:navigate', event => {

@@ -76,6 +76,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await expect(page.locator('#workspace-title')).toHaveText('Enterprise network operations');
   await page.getByRole('link', { name: 'Sources & imports' }).click();
   await expect(page).toHaveURL(/#imports$/);
+  await expect(page.locator('[data-app-page="imports"] h1')).toBeInViewport();
 
   const beforeSite = await workspace(page);
   if (!beforeSite.workspace.sites.some((site) => site.name === 'Chicago DC')) {
