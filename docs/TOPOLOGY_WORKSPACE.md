@@ -56,6 +56,9 @@ Browser tests cover imports, dataset activation, route navigation, draft graphs,
 branch/return selection, search/inspection, canvas controls, snapshot-qualified
 evidence, export and exact replay on desktop and mobile. HTTP tests check every
 new script and stylesheet's availability, content type and security headers.
+Container and native Windows packaging checks launch the actual app with its
+sibling Rust worker, load all six embedded assets and import the ASA path sample
+through HTTP with the worker environment override removed.
 
 Project licensing is still undecided. This UI work does not assign a license or
 publish the repository or packages.
