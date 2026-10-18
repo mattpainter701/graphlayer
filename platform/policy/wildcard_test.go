@@ -7,7 +7,7 @@ func TestASAProtocolAndFamilyWildcards(t *testing.T) {
 		b := base(rule("all-ip", 1, "permit", "any4", "any4", proto, "", ""))
 		f := flow()
 		got, err := Evaluate(b, f)
-		if err != nil || got.Disposition != "permit" || got.EngineContractVersion != "graphlayer-policy-v2" {
+		if err != nil || got.Disposition != "permit" || got.EngineContractVersion != ContractVersion {
 			t.Fatalf("wildcard TCP: %+v %v", got, err)
 		}
 		f.Protocol = "icmp"

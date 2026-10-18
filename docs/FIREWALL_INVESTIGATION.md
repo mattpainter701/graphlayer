@@ -2,6 +2,8 @@
 
 This increment turns actual ASA running-config syntax into a saved, inspectable ACL policy decision. The Go executable embeds its browser UI and runs offline on loopback. It replaces the old prototype's disconnected upload and canned analysis workflow for this use case. It does not establish that a packet traverses a firewall or a network.
 
+The subsequent [policy workspace increment](POLICY_WORKSPACE.md) adds service objects/groups, inventory search, dependency inspection and predicate explanations, with read compatibility for this initial release's stored records. That guide records current parser/result/storage versions and upgrade behavior.
+
 ## Run it
 
 Use the Go version in `platform/go.mod`. From the repository root:
@@ -54,7 +56,7 @@ Routes, NAT, stateful connection tracking, return traffic, VPNs, security-level 
 
 The parser holds raw upload bytes transiently to compute their hash and extract policy. Persisted and API-returned source keeps evidence-relevant policy lines; other lines are omitted, and sensitive commands are redacted. Source line numbers still refer to the original upload, so an evidence span may include omitted lines between dependencies. Object/ACL names and addresses remain sensitive network information. Use the workspace's restricted access accordingly.
 
-The app sets Unix directory/file modes and Windows protected DACLs, takes an OS process lock, writes same-directory temporary files before rename, and validates version/checksum/identity/scope on load. Every loaded investigation is recomputed against its snapshot and compared with the saved result. Corrupt or incompatible workspaces fail explicitly. There is no automatic schema migration or certified power-loss recovery. Preserve the directory before moving it between app versions; application-level export currently covers results only. There is no UI deletion/retention management yet.
+The app sets Unix directory/file modes and Windows protected DACLs, takes an OS process lock, writes same-directory temporary files before rename, and validates version/checksum/identity/scope on load. Every loaded investigation is recomputed against its snapshot and compared with the saved result. Corrupt or incompatible workspaces fail explicitly. The current release can read the initial v1 format without rewriting it; see the policy workspace guide for explicit version compatibility. There is no general schema migration or certified power-loss recovery. Preserve the directory before moving it between app versions; application-level export currently covers results only. There is no UI deletion/retention management yet.
 
 This is one local user's process with a random per-process browser session, HttpOnly SameSite cookie and CSRF token. Host, remote address, Origin and fetch-site checks, strict JSON, CSP, text-only dynamic rendering and bounded HTTP timeouts protect the local browser boundary. The service uses local HTTP. It has no enterprise user accounts, roles, tenant isolation, TLS ingress or remote access mode. OS administrators and the owning user remain trusted; this is not a protection boundary against a compromised local account. No device collection, device writes, external scripts or cloud services are required.
 

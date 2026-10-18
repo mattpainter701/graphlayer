@@ -9,7 +9,7 @@ import (
 )
 
 const maxRules = 10000
-const ContractVersion = "graphlayer-policy-v2"
+const ContractVersion = "graphlayer-policy-v3"
 
 var supported = []string{"IPv4/IPv6 literal, CIDR and any/any4/any6 address matching", "numeric protocol matching (including TCP, UDP, ICMP, ICMPv6 aliases) and rule-only IP protocol wildcard", "numeric source/destination ports and inclusive ranges", "ordered first-match rules", "enabled state", "explicit complete-policy default action", "snapshot/device/context scope"}
 var unsupportedDimensionLabels = map[string]bool{"application": true, "user": true, "schedule": true, "nat": true, "route": true, "return_path": true, "stateful": true, "zone_inheritance": true, "negation": true, "object_expansion": true, "vendor_default": true, "device_state": true}
@@ -138,7 +138,14 @@ func Evaluate(b Bundle, f Flow) (Result, error) {
 			continue
 		}
 		res.Considered = append(res.Considered, r.ID)
-		m := matchRule(r, f)
+		m, predicates := traceRule(r, f)
+		outcome := "matched"
+		if m == noMatch {
+			outcome = "not_matched"
+		} else if m == unknown {
+			outcome = "unresolved"
+		}
+		res.RuleTraces = append(res.RuleTraces, RuleTrace{RuleID: r.ID, Position: r.Position, Outcome: outcome, Predicates: predicates, EvidenceRefs: append([]string(nil), r.EvidenceRefs...)})
 		if m == noMatch {
 			continue
 		}
@@ -185,65 +192,94 @@ const (
 	unknown
 )
 
-func matchRule(r Rule, f Flow) match {
-	unknownFound := len(r.Unsupported) > 0
-	addrChecks := []match{matchAddress(r.Source, f.Source), matchAddress(r.Destination, f.Destination)}
-	checks := append([]match(nil), addrChecks...)
+// traceRule applies the evaluator's conservative combination rules while
+// retaining the status of each predicate. A known mismatch takes precedence
+// over an unresolved predicate, just as it does in the verdict evaluator.
+func traceRule(r Rule, f Flow) (match, []PredicateTrace) {
+	traces := make([]PredicateTrace, 0, 5+len(r.Unsupported))
+	add := func(dimension string, state match, reason string) {
+		name := "match"
+		if state == noMatch {
+			name = "not_match"
+		} else if state == unknown {
+			name = "unresolved"
+		}
+		traces = append(traces, PredicateTrace{Dimension: dimension, State: name, Reason: reason})
+	}
+
+	for _, item := range []struct{ dimension, predicate, value string }{
+		{"source", r.Source, f.Source},
+		{"destination", r.Destination, f.Destination},
+	} {
+		state := matchAddress(item.predicate, item.value)
+		reason := "address predicate matches flow address"
+		if strings.TrimSpace(item.predicate) == "" {
+			reason = "no address predicate; dimension is unconstrained"
+		} else if state == noMatch {
+			reason = "address predicate excludes flow address"
+		} else if state == unknown {
+			reason = "address predicate cannot be resolved by the supported matcher"
+		}
+		add(item.dimension, state, reason)
+	}
+
 	p1, e1 := parseProtocol(r.Protocol)
 	p2, e2 := parseProtocol(f.Protocol)
+	protocolState := yesMatch
+	protocolReason := "protocol predicate matches flow protocol"
 	if anyProtocol(r.Protocol) {
-		checks = append(checks, yesMatch)
+		protocolReason = "IP protocol wildcard matches flow protocol"
 	} else if e1 != nil {
-		unknownFound = true
-	} else if e2 == nil {
-		if p1 == p2 {
-			checks = append(checks, yesMatch)
-		} else {
-			checks = append(checks, noMatch)
-		}
-		if p1 != 6 && p1 != 17 && (r.SourcePort != "" || r.DestinationPort != "") {
-			unknownFound = true
-		}
+		protocolState = unknown
+		protocolReason = "protocol predicate cannot be resolved by the supported matcher"
+	} else if e2 != nil {
+		protocolState = unknown
+		protocolReason = "flow protocol cannot be resolved by the supported matcher"
+	} else if p1 != p2 {
+		protocolState = noMatch
+		protocolReason = "protocol predicate excludes flow protocol"
 	}
+	add("protocol", protocolState, protocolReason)
+
 	flowHasPorts := e2 == nil && (p2 == 6 || p2 == 17)
-	if !flowHasPorts && (r.SourcePort != "" || r.DestinationPort != "") {
-		// Port fields have no defined matching semantics for this flow protocol.
-		// In particular, zero-valued non-port fields cannot eliminate a candidate
-		// whose protocol expression itself is unresolved.
-		unknownFound = true
-	}
-	if flowHasPorts {
-		for _, x := range []struct {
-			pred  string
-			value int
-		}{{r.SourcePort, f.SourcePort}, {r.DestinationPort, f.DestinationPort}} {
-			if x.pred == "" {
-				continue
-			}
-			a, e := parsePortPredicate(x.pred)
-			if e != nil {
-				unknownFound = true
+	for _, item := range []struct {
+		dimension string
+		predicate string
+		value     int
+	}{{"source_port", r.SourcePort, f.SourcePort}, {"destination_port", r.DestinationPort, f.DestinationPort}} {
+		state := yesMatch
+		reason := "no port predicate; dimension is unconstrained"
+		if item.predicate != "" {
+			if !flowHasPorts {
+				state = unknown
+				reason = "port predicate has no defined semantics for this flow protocol"
+			} else if ports, err := parsePortPredicate(item.predicate); err != nil {
+				state = unknown
+				reason = "port predicate cannot be resolved by the supported matcher"
+			} else if item.value < ports[0] || item.value > ports[1] {
+				state = noMatch
+				reason = "port predicate excludes flow port"
 			} else {
-				if x.value >= a[0] && x.value <= a[1] {
-					checks = append(checks, yesMatch)
-				} else {
-					checks = append(checks, noMatch)
-				}
+				reason = "port predicate matches flow port"
 			}
 		}
+		add(item.dimension, state, reason)
 	}
-	for _, ok := range checks {
-		if ok == noMatch {
-			return noMatch
+
+	for _, dimension := range r.Unsupported {
+		add(dimension, unknown, "rule uses an unsupported policy dimension")
+	}
+
+	result := yesMatch
+	for _, trace := range traces {
+		if trace.State == "not_match" {
+			return noMatch, traces
 		}
-		if ok == unknown {
-			unknownFound = true
+		if trace.State == "unresolved" {
+			result = unknown
 		}
 	}
-	if unknownFound {
-		return unknown
-	}
-	return yesMatch
+	return result, traces
 }
 
 func ruleUnsupportedDimensions(r Rule) []string {

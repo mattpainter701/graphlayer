@@ -182,6 +182,14 @@ func (a *App) trustedRequest(r *http.Request) bool {
 
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) == 3 && parts[1] == "sample" && parts[2] == "services" {
+		if r.Method != http.MethodGet {
+			methodError(w)
+			return
+		}
+		writeJSON(w, 200, map[string]string{"name": "services.asa.txt", "config": string(firewall.SampleServicesASA())})
+		return
+	}
 	if len(parts) == 2 {
 		switch parts[1] {
 		case "sample":
@@ -365,6 +373,10 @@ func (a *App) importConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snap, created, err := a.store.Import(req.Name, []byte(req.Config))
+	if errors.Is(err, ErrRecordTooLarge) {
+		apiError(w, 413, "snapshot_too_large", "The expanded snapshot exceeds the 8 MiB artifact budget. Earlier snapshots are unchanged.")
+		return
+	}
 	if errors.Is(err, ErrQuota) {
 		apiError(w, 429, "workspace_full", "The local workspace has reached its snapshot limit.")
 		return
@@ -402,6 +414,10 @@ func (a *App) evaluate(w http.ResponseWriter, r *http.Request, snapshotID string
 	}
 	flow := policy.Flow{Source: req.Source, Destination: req.Destination, Protocol: req.Protocol, SourcePort: req.SourcePort, DestinationPort: req.DestinationPort}
 	inv, err := a.store.Evaluate(snapshotID, req.ChainID, flow)
+	if errors.Is(err, ErrRecordTooLarge) {
+		apiError(w, 413, "investigation_too_large", "The investigation trace exceeds the 8 MiB artifact budget. No partial result was saved.")
+		return
+	}
 	if errors.Is(err, ErrNotFound) {
 		apiError(w, 404, "scope_not_found", "The selected snapshot or chain is unavailable.")
 		return
