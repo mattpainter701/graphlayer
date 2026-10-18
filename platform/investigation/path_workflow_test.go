@@ -105,27 +105,43 @@ func TestPathWorkflowImportEvaluateEvidenceAndReplay(t *testing.T) {
 }
 
 func TestPathWorkflowUnsupportedRoutingAndMissingRouteStayIndeterminate(t *testing.T) {
+	withoutStaticRoutes := func(raw []byte) []byte {
+		text := strings.ReplaceAll(string(raw), "\r\n", "\n")
+		lines := strings.Split(text, "\n")
+		kept := lines[:0]
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) > 0 && strings.EqualFold(fields[0], "route") {
+				continue
+			}
+			kept = append(kept, line)
+		}
+		return []byte(strings.Join(kept, "\n"))
+	}
+	noRouteCheck := func(t *testing.T, inv *PathInvestigation) {
+		if inv.Result.Disposition != "blocked" {
+			t.Fatalf("missing route produced %s", inv.Result.Disposition)
+		}
+		if inv.Result.Stages[3].Status != "blocked" || inv.Result.Stages[5].Status == "matched" {
+			t.Fatalf("missing route fabricated forwarding: %#v", inv.Result.Stages)
+		}
+	}
 	tests := []struct {
-		name        string
-		raw         []byte
-		ingress     string
-		source      string
-		destination string
-		check       func(*testing.T, *PathInvestigation)
+		name           string
+		raw            []byte
+		ingress        string
+		source         string
+		destination    string
+		noStaticRoutes bool
+		check          func(*testing.T, *PathInvestigation)
 	}{
 		{name: "dynamic routing", raw: append(firewall.SamplePathASA(), []byte("router ospf 1\n")...), ingress: "outside", source: "198.51.100.42", destination: "198.51.100.15", check: func(t *testing.T, inv *PathInvestigation) {
 			if inv.Result.Disposition != "indeterminate" {
 				t.Fatalf("dynamic routing produced %s", inv.Result.Disposition)
 			}
 		}},
-		{name: "no configured route", raw: []byte(strings.ReplaceAll(string(firewall.SamplePathASA()), "route outside 0 0 192.0.2.254\n", "")), ingress: "inside", source: "10.0.0.20", destination: "100.64.0.1", check: func(t *testing.T, inv *PathInvestigation) {
-			if inv.Result.Disposition != "blocked" {
-				t.Fatalf("missing route produced %s", inv.Result.Disposition)
-			}
-			if inv.Result.Stages[3].Status != "blocked" || inv.Result.Stages[5].Status == "matched" {
-				t.Fatalf("missing route fabricated forwarding: %#v", inv.Result.Stages)
-			}
-		}},
+		{name: "no configured route", raw: withoutStaticRoutes(firewall.SamplePathASA()), ingress: "inside", source: "10.0.0.20", destination: "100.64.0.1", noStaticRoutes: true, check: noRouteCheck},
+		{name: "no configured route with CRLF", raw: withoutStaticRoutes([]byte(strings.ReplaceAll(strings.ReplaceAll(string(firewall.SamplePathASA()), "\r\n", "\n"), "\n", "\r\n"))), ingress: "inside", source: "10.0.0.20", destination: "100.64.0.1", noStaticRoutes: true, check: noRouteCheck},
 		{name: "manual twice NAT", raw: append(firewall.SamplePathASA(), []byte("nat (inside,outside) source static IDENTITY-CLIENT IDENTITY-CLIENT destination static WEB WEB\n")...), ingress: "outside", source: "198.51.100.42", destination: "198.51.100.15", check: func(t *testing.T, inv *PathInvestigation) {
 			if inv.Result.Disposition != "indeterminate" {
 				t.Fatalf("unsupported manual NAT produced %s", inv.Result.Disposition)
@@ -138,6 +154,14 @@ func TestPathWorkflowUnsupportedRoutingAndMissingRouteStayIndeterminate(t *testi
 			snap, _, err := s.Import("unsupported path", tc.raw)
 			if err != nil {
 				t.Fatalf("Import(): %v", err)
+			}
+			if tc.noStaticRoutes {
+				for _, line := range strings.Split(string(tc.raw), "\n") {
+					fields := strings.Fields(line)
+					if len(fields) > 0 && strings.EqualFold(fields[0], "route") {
+						t.Fatalf("no-route fixture still contains a static route directive: %q", line)
+					}
+				}
 			}
 			inv, err := s.EvaluatePath(snap.ID, tc.ingress, policy.Flow{Source: tc.source, Destination: tc.destination, Protocol: "tcp", SourcePort: 52000, DestinationPort: 443})
 			if err != nil {
