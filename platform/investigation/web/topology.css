@@ -76,3 +76,12 @@
   .topology-inspector-empty { min-height:120px; }
 }
 @media (prefers-reduced-motion:reduce) { .topology-node,.topology-node circle,.topology-edge { transition:none; } }
+
+.topology-device-glyph { fill:none; stroke:#4b6a81; stroke-width:1.7; stroke-linejoin:round; pointer-events:none; }
+@media (max-width:650px) {
+  .topology-stage .topology-node text { font-size:20px; }
+  .topology-stage .topology-node .topology-node-status { font-size:14px; }
+  .topology-device { min-height:34px; }
+  .topology-tool-button { min-height:36px; }
+  .topology-source-button { min-height:32px; }
+}

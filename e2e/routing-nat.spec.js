@@ -114,6 +114,8 @@ test('unsupported dynamic routing and manual NAT remain indeterminate', async ({
 test('path UI ignores a delayed response after the flow tuple changes', async ({ page }) => {
   const original = await importPathSample(page);
   const sample = await page.evaluate(async () => (await fetch('/api/sample/path')).json());
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
   await page.locator('#config-input').fill(`${sample.config}\n! alternate path snapshot\n`);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect.poll(() => page.locator('#snapshot-select').inputValue()).not.toBe(original.id);

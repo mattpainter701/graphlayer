@@ -117,6 +117,8 @@ test('imports ASA syntax, traces permit/deny/indeterminate, and restores investi
 
 test('discards an evaluation response if its snapshot scope changes in flight', async ({ page }) => {
   const first = await importSample(page);
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
   await page.getByRole('button', { name: /load labeled asa sample/i }).click();
   const config = await page.locator('#config-input').inputValue();
   await page.locator('#config-input').fill(config.replace('hostname edge-fw', 'hostname edge-fw-second'));
@@ -193,6 +195,8 @@ test('failed import preserves the prior snapshot and source text is rendered ine
   const snapshot = await importSample(page);
   const before = await jsonFromPage(page, '/api/snapshots');
 
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
+  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
   await page.locator('#file-input').setInputFiles({
     name: 'malformed.asa.txt',
     mimeType: 'text/plain',
@@ -201,6 +205,10 @@ test('failed import preserves the prior snapshot and source text is rendered ine
   await expect(page.locator('#config-input')).toHaveValue(/this is not a valid ASA configuration/);
   await page.getByRole('button', { name: /import configuration/i }).click();
   await expect(page.locator('#toast')).toContainText(/could not be imported.*Earlier snapshots are unchanged/i);
+  await page.getByRole('link', { name: 'Investigations' }).click();
+  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('#scope-device')).toContainText(snapshot.hostname);
+  await expect(page.locator('#chain-select')).toBeEnabled();
   const after = await jsonFromPage(page, '/api/snapshots');
   expect(after.body.snapshots.map((row) => row.id)).toEqual(before.body.snapshots.map((row) => row.id));
   expect(await page.locator('img[src="x"]').count()).toBe(0);
