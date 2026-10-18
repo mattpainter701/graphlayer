@@ -128,7 +128,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   expect(draftSnapshot.path.routes.length).toBeGreaterThan(0);
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshot.hostname);
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshotId);
-  await expect(page.locator('#topology-inspector')).toContainText(`Interfaces ${draftSnapshot.path.interfaces.length} · routes ${draftSnapshot.path.routes.length} · NAT rules ${draftSnapshot.path.nat_rules.length}`);
+  await expect(page.locator('#topology-inspector')).toContainText(`Interfaces ${draftSnapshot.path.interfaces.length} · routes ${draftSnapshot.path.routes.length} · ASA NAT rules ${draftSnapshot.path.nat_rules.length}`);
   const draftEvidence = page.locator('#topology-inspector .topology-source-button').first();
   await expect(draftEvidence).toBeVisible();
   await draftEvidence.click();
@@ -263,6 +263,7 @@ test('publishes an unassigned set, switches baselines and persists active select
     priorSet = prior.snapshot_sets.find((set) => set.id === prior.workspace.active_set_id);
   }
   expect(priorSet).toBeTruthy();
+  await page.getByRole('link', { name: 'Sources & imports' }).click();
   const config = (await sample(page)).configs[3];
   await page.locator('#batch-file-input').setInputFiles({ name: 'renamed-core.conf', mimeType: 'text/plain', buffer: Buffer.from(config.config) });
   await validate(page, 1);
