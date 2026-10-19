@@ -58,20 +58,25 @@ use std::io::Read;
 fn fetch(input: &Value, path: &str, query: Option<String>, page_size: usize) -> Result<Vec<Value>, String> {
     let limit = page_size.clamp(1, MAX_PAGE_SIZE);
     let mut records = Vec::new();
+    let mut response_bytes = 0usize;
+    let mut complete = false;
     for page in 0..MAX_PAGES {
         let offset = page * limit;
         let mut params = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
         if let Some(q) = &query { if !q.is_empty() { params.push(("q", q.clone())); } }
         let result = request_json(input, &format!("api/{path}"), &params)?;
         let page_records = result.get("results").and_then(Value::as_array).ok_or_else(|| "NetBox API returned malformed records".to_string())?;
-        if page_records.len() > MAX_BODY_BYTES / 2 { return Err("response_too_large".into()); }
+        response_bytes = response_bytes.saturating_add(serde_json::to_vec(&result).map_err(|_| "response_serialize_failed".to_string())?.len());
+        if response_bytes > MAX_TOTAL_RESPONSE_BYTES || records.len().saturating_add(page_records.len()) > MAX_TOTAL_RECORDS { return Err("pagination_limit_exceeded".into()); }
         records.extend(page_records.iter().cloned());
         if result.get("next").is_some_and(|v| !v.is_null() && !text(v).is_empty()) || page_records.len() == limit {
-            if page_records.is_empty() { break; }
+            if page_records.is_empty() { return Err("pagination_stalled".into()); }
             continue;
         }
+        complete = true;
         break;
     }
+    if !complete { return Err("page_limit_exceeded".into()); }
     Ok(records)
 }
 

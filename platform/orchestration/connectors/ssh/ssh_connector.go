@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,6 +31,8 @@ type InteractiveShell struct {
 	mutex           sync.Mutex
 }
 
+const maxSSHPrivateKeyBytes int64 = 1 << 20
+
 func NewSSHConnector(config *base.ConnectionConfig, deviceType types.DeviceType) (*SSHConnector, error) {
 	if config == nil {
 		return nil, fmt.Errorf("connection configuration is nil")
@@ -53,10 +56,10 @@ func (sc *SSHConnector) Connect(ctx context.Context) error {
 	sc.SetConnectionState(base.ConnectionStateConnecting)
 	privateKey := ""
 	if sc.Config.KeyFile != "" {
-		data, err := os.ReadFile(sc.Config.KeyFile)
+		data, err := readPrivateKey(sc.Config.KeyFile)
 		if err != nil {
 			sc.SetConnectionState(base.ConnectionStateError)
-			return fmt.Errorf("failed to read SSH private key: %w", err)
+			return err
 		}
 		privateKey = string(data)
 	}
@@ -94,6 +97,22 @@ func (sc *SSHConnector) Connect(ctx context.Context) error {
 	sc.SetConnected(true)
 	sc.SetConnectionState(base.ConnectionStateConnected)
 	return nil
+}
+
+func readPrivateKey(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read SSH private key")
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxSSHPrivateKeyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read SSH private key")
+	}
+	if int64(len(data)) > maxSSHPrivateKeyBytes {
+		return nil, fmt.Errorf("SSH private key exceeds size limit")
+	}
+	return data, nil
 }
 
 func (sc *SSHConnector) InvokeShell(ctx context.Context) (*InteractiveShell, error) {

@@ -18,6 +18,8 @@ import (
 	"github.com/mattpainter701/graphlayer/platform/rustengine"
 )
 
+const maxAPIRequestBodyBytes int64 = 16 << 20
+
 type APIConnector struct {
 	*base.BaseConnector
 	deviceType      types.DeviceType
@@ -343,7 +345,7 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 	}
 	payload := ""
 	if body != nil {
-		b, e := io.ReadAll(body)
+		b, e := readRequestBody(body)
 		if e != nil {
 			return nil, e
 		}
@@ -377,6 +379,17 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 		}
 	}
 	return &http.Response{StatusCode: result.Status, Header: header, Body: io.NopCloser(bytes.NewReader(responseBody))}, nil
+}
+
+func readRequestBody(body io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(body, maxAPIRequestBodyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("request body read failed")
+	}
+	if int64(len(b)) > maxAPIRequestBodyBytes {
+		return nil, fmt.Errorf("request body exceeds size limit")
+	}
+	return b, nil
 }
 func (ac *APIConnector) generateDeviceID() string {
 	return fmt.Sprintf("api_%s_%d", ac.Config.Host, ac.Config.Port)

@@ -26,9 +26,10 @@ fn request(i:&Value,table:&str,params:&[(&str,String)])->Result<Value,String>{
 }
 fn fetch_table_rows(i:&Value,table:&str,query:Option<&str>,page_size:usize)->Result<Vec<Value>,String>{
     if table.is_empty()||table.len()>128||!table.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'){return Err("invalid_table_name".into());}
-    let limit=page_size.clamp(1,MAX_PAGE_SIZE);let mut rows=Vec::new();
+    let limit=page_size.clamp(1,MAX_PAGE_SIZE);let mut rows=Vec::new();let mut response_bytes=0usize;let mut complete=false;
     for page in 0..MAX_PAGES {let mut params=vec![("sysparm_limit",limit.to_string()),("sysparm_offset",(page*limit).to_string()),("sysparm_display_value","all".to_string()),("sysparm_exclude_reference_link","true".to_string())];if let Some(q)=query{if !q.is_empty(){params.push(("sysparm_query",q.to_string()));}}
-        let result=request(i,table,&params)?;let page_rows=result.get("result").and_then(Value::as_array).ok_or_else(||"ServiceNow API returned malformed records".to_string())?;rows.extend(page_rows.iter().cloned());if page_rows.len()<limit{break;}}
+        let result=request(i,table,&params)?;let page_rows=result.get("result").and_then(Value::as_array).ok_or_else(||"ServiceNow API returned malformed records".to_string())?;response_bytes=response_bytes.saturating_add(serde_json::to_vec(&result).map_err(|_|"response_serialize_failed".to_string())?.len());if response_bytes>MAX_TOTAL_RESPONSE_BYTES||rows.len().saturating_add(page_rows.len())>MAX_TOTAL_RECORDS{return Err("pagination_limit_exceeded".into())}rows.extend(page_rows.iter().cloned());if page_rows.len()<limit{complete=true;break;}}
+    if !complete{return Err("page_limit_exceeded".into())}
     Ok(rows)
 }
 pub fn fetch_table_page(i:&Value)->Result<Value,String>{let table=text(&i["table"]);let size=i["page_size"].as_u64().unwrap_or(1000).clamp(1,MAX_PAGE_SIZE as u64);let offset=i["offset"].as_u64().unwrap_or(0);let mut params=vec![("sysparm_limit",size.to_string()),("sysparm_offset",offset.to_string()),("sysparm_display_value","all".into()),("sysparm_exclude_reference_link","true".into())];let query=text(&i["query"]);if !query.is_empty(){params.push(("sysparm_query",query));}let fields=i["fields"].as_array().map(|a|a.iter().map(text).collect::<Vec<_>>().join(",")).unwrap_or_default();if !fields.is_empty(){params.push(("sysparm_fields",fields));}request(i,&table,&params)}

@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -19,6 +20,33 @@ import (
 	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/base"
 	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
 )
+
+func TestReadPrivateKeyEnforcesLimitWithoutLeakingPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "private-key")
+	valid := bytes.Repeat([]byte("k"), int(maxSSHPrivateKeyBytes))
+	if err := os.WriteFile(path, valid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readPrivateKey(path)
+	if err != nil || !bytes.Equal(got, valid) {
+		t.Fatalf("key at size limit was rejected: got %d bytes, err %v", len(got), err)
+	}
+
+	tooLarge := bytes.Repeat([]byte("sensitive-key-material"), int(maxSSHPrivateKeyBytes/8))
+	if err := os.WriteFile(path, tooLarge, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = readPrivateKey(path)
+	if err == nil || !strings.Contains(err.Error(), "size limit") || strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "sensitive-key-material") {
+		t.Fatalf("oversized key error was missing or exposed sensitive details: %v", err)
+	}
+
+	missingPath := filepath.Join(t.TempDir(), "missing-key")
+	_, err = readPrivateKey(missingPath)
+	if err == nil || strings.Contains(err.Error(), missingPath) {
+		t.Fatalf("key-file error exposed its path: %v", err)
+	}
+}
 
 func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 	t.Parallel()

@@ -3,8 +3,10 @@ use sha2::{Digest, Sha256};
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
 pub const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
-pub const MAX_PAGES: usize = 1000;
+pub const MAX_PAGES: usize = 100;
 pub const MAX_PAGE_SIZE: usize = 1000;
+pub const MAX_TOTAL_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
+pub const MAX_TOTAL_RECORDS: usize = 100_000;
 
 pub fn text(value: &Value) -> String {
     match value {

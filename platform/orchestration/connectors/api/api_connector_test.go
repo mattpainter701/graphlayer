@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -123,6 +124,31 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 		if body != "payload-data" {
 			t.Fatalf("attempt %d body mismatch: %q", i+1, body)
 		}
+	}
+}
+
+func TestReadRequestBodyEnforcesLimit(t *testing.T) {
+	withinLimit := bytes.Repeat([]byte("x"), int(maxAPIRequestBodyBytes))
+	got, err := readRequestBody(bytes.NewReader(withinLimit))
+	if err != nil || !bytes.Equal(got, withinLimit) {
+		t.Fatalf("body at size limit was rejected: got %d bytes, err %v", len(got), err)
+	}
+
+	tooLarge := bytes.Repeat([]byte("x"), int(maxAPIRequestBodyBytes+1))
+	_, err = readRequestBody(bytes.NewReader(tooLarge))
+	if err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("oversized body was not rejected: %v", err)
+	}
+}
+
+type failingBodyReader struct{}
+
+func (failingBodyReader) Read([]byte) (int, error) { return 0, fmt.Errorf("secret body detail") }
+
+func TestReadRequestBodyDoesNotExposeReaderError(t *testing.T) {
+	_, err := readRequestBody(failingBodyReader{})
+	if err == nil || strings.Contains(err.Error(), "secret body detail") {
+		t.Fatalf("reader error leaked input details: %v", err)
 	}
 }
 
