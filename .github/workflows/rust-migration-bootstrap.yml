@@ -49,6 +49,9 @@ jobs:
       - name: Compile ports for diagnostics
         continue-on-error: true
         run: cargo check --workspace --all-targets
+      - name: Compare every released contract
+        continue-on-error: true
+        run: cargo test --test released_investigation -- --nocapture
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -57,3 +60,4 @@ jobs:
             Cargo.lock
             crates/graphlayer-engine/src/
             crates/graphlayer-engine/tests/
+            crates/graphlayer-engine/released-parity-failures.json

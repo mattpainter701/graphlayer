@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 
+pub mod vendor_parsers;
+pub mod investigation_engine;
+pub mod connectors;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};

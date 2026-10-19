@@ -15,3 +15,6 @@ url = "2"
 regex = "1"
 russh = { version = "0.63", default-features = false, features = ["ring"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "io-util", "sync"] }
+
+[dev-dependencies]
+flate2 = "1"
