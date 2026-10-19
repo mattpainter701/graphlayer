@@ -372,9 +372,7 @@ fn response_value(response: Response, raw_response: bool) -> Result<Value, Strin
     let mut headers = serde_json::Map::new();
     for (k, v) in response.headers() {
         if let Ok(s) = v.to_str() {
-            let values = headers
-                .entry(k.to_string())
-                .or_insert_with(|| json!([]));
+            let values = headers.entry(k.to_string()).or_insert_with(|| json!([]));
             if let Some(values) = values.as_array_mut() {
                 values.push(json!(s));
             }
@@ -395,7 +393,9 @@ fn response_value(response: Response, raw_response: bool) -> Result<Value, Strin
         return Err("response_too_large".into());
     }
     if raw_response {
-        return Ok(json!({"status":status,"headers":headers,"body_base64":base64::engine::general_purpose::STANDARD.encode(bytes)}));
+        return Ok(
+            json!({"status":status,"headers":headers,"body_base64":base64::engine::general_purpose::STANDARD.encode(bytes)}),
+        );
     }
     let body = serde_json::from_slice::<Value>(&bytes)
         .unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes).to_string()));
