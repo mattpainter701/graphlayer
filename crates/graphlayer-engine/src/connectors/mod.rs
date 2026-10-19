@@ -9,6 +9,8 @@ mod servicenow;
 mod helpers;
 mod ssh;
 mod solarwinds;
+mod fileshare;
+mod api;
 
 #[cfg(test)]
 #[path = "../connectors_netbox.rs"]
@@ -27,7 +29,13 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
     if operation.starts_with("solarwinds.") {
         return solarwinds::dispatch(operation, &input);
     }
-    if operation.starts_with("connector.") || operation.starts_with("fileshare.") {
+    if operation.starts_with("fileshare.") {
+        return fileshare::dispatch(operation, &input);
+    }
+    if operation.starts_with("api.") {
+        return api::dispatch(operation, &input);
+    }
+    if operation.starts_with("connector.") {
         return helpers::dispatch(operation, &input);
     }
     match operation {
@@ -47,13 +55,15 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
 
 pub struct SessionDispatcher {
     inner: ssh::SessionDispatcher,
+    api: api::SessionDispatcher,
 }
 
 impl SessionDispatcher {
-    pub fn new() -> Self { Self { inner: ssh::SessionDispatcher::new() } }
+    pub fn new() -> Self { Self { inner: ssh::SessionDispatcher::new(), api: api::SessionDispatcher::new() } }
 
     pub fn dispatch(&mut self, operation: &str, input: Value) -> Result<Value, String> {
         if operation.starts_with("ssh.") { self.inner.dispatch(operation, input) }
+        else if operation.starts_with("api.") { self.api.dispatch(operation, input) }
         else { dispatch(operation, input) }
     }
 }

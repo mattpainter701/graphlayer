@@ -9,7 +9,7 @@ pub fn warning(code: &str, message: &str, line: usize) -> Value {
     if line == 0 { json!({"code":code,"message":message}) } else { json!({"code":code,"message":message,"line":line}) }
 }
 pub fn evidence_id(hash: &str, line: usize) -> String { format!("sha256:{}", sha256(format!("{}:{}",hash,line).as_bytes())) }
-pub fn source_lines(raw: &str, omission: &str) -> Vec<Value> { raw.replace("\r\n","\n").replace('\r',"\n").split('\n').enumerate().map(|(i,_)| json!({"number":i+1,"text":omission})).collect() }
+pub fn source_lines(raw: &str, omission: &str) -> Vec<Value> { raw.replace("\r\n","\n").split('\n').enumerate().map(|(i,_)| json!({"number":i+1,"text":omission})).collect() }
 pub fn add_evidence(evidence: &mut Vec<Value>, hash: &str, line: usize, kind: &str, summary: &str) -> String {
     let id=evidence_id(hash,line);
     if !evidence.iter().any(|x| x["id"]==id) { evidence.push(json!({"id":id,"start_line":line,"end_line":line,"kind":kind,"summary":summary})); }

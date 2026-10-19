@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use std::{collections::{HashMap, HashSet}, net::Ipv4Addr, str::FromStr};
-use super::path::{evaluate_path, evaluate_return_with_forward};
+use super::path::{evaluate_path_inner, evaluate_return_with_forward, best_routes};
+use sha2::{Digest, Sha256};
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str { v.get(k).and_then(Value::as_str).unwrap_or("") }
 fn arr(v: &Value, k: &str) -> Vec<Value> { v.get(k).and_then(Value::as_array).cloned().unwrap_or_default() }
@@ -69,8 +70,23 @@ fn uncertain(mut result: Value, reason: &str) -> Value {
     result
 }
 
+#[derive(serde::Serialize)]
+struct BranchIdentity<'a> { #[serde(rename="Node")] node: &'a str, #[serde(rename="Candidate")] candidate: &'a str, #[serde(rename="Route")] route: &'a str, #[serde(rename="NAT")] nat: Vec<&'a str> }
+fn branch_id(forward: &Value, candidates: &[String]) -> String {
+    let hops=arr(&forward,"hops");let rows:Vec<_>=hops.iter().enumerate().map(|(i,h)|BranchIdentity{node:s(h,"node_id"),candidate:candidates.get(i).map(String::as_str).unwrap_or(""),route:s(&h["path"]["selected_route"],"id"),nat:arr(&h["path"],"nat_rule_ids").iter().filter_map(Value::as_str).collect()}).collect();
+    let bytes=serde_json::to_vec(&rows).unwrap_or_default();let digest=Sha256::digest(bytes);format!("branch-{}",digest.iter().map(|b|format!("{b:02x}")).collect::<String>())
+}
+fn exploration_branch(result:&Value,candidates:&[String])->Value {
+    let id=branch_id(&result["forward"],candidates);let rd=s(&result["return"],"disposition");let returns=if rd=="not_evaluated"{vec![]}else{let status=if rd=="modeled_forward"{"established"}else{"unproven"};let disposition=if rd=="modeled_forward"&&s(result,"disposition")=="modeled_round_trip"{"modeled_forward"}else if rd=="blocked"{"blocked"}else{"indeterminate"};json!([{"id":format!("{id}-return"),"direction":result["return"],"asymmetric":disposition!="modeled_forward"&&rd=="modeled_forward","session_status":status,"disposition":disposition,"reasons":result["return"]["reasons"]}])};
+    json!({"id":id,"forward":result["forward"],"returns":returns,"disposition":result["disposition"],"reasons":result["reasons"]})
+}
+
 /// Compose bounded single-firewall evaluations over the explicitly supplied graph.
 pub fn evaluate_network(input: Value) -> Result<Value, String> {
+    evaluate_network_forced(input, &HashMap::new())
+}
+
+fn evaluate_network_forced(input: Value, forced: &HashMap<String, String>) -> Result<Value, String> {
     let nodes = arr(&input, "nodes");
     let links = arr(&input, "links");
     let vendor = nodes.iter().any(|n| !s(&n["config"], "vendor").is_empty() && s(&n["config"], "vendor") != "cisco-asa");
@@ -120,7 +136,8 @@ pub fn evaluate_network(input: Value) -> Result<Value, String> {
         let node=by_id.get(&id).unwrap();
         if hop==0 && !connected(node,s(&current,"interface"),s(&flow,"source")) { return Ok(uncertain(result,"source address is not proven on the selected ingress interface subnet")); }
         flow["scope"]=node["scope"].clone();
-        let path=match evaluate_path(path_input(node,s(&current,"interface"),&flow)) { Ok(x)=>x,Err(e)=>return Ok(uncertain(result,&format!("node path inputs could not be evaluated: {e}"))) };
+        let route_id = forced.get(&id).map(String::as_str);
+        let path=match evaluate_path_inner(path_input(node,s(&current,"interface"),&flow),None,route_id) { Ok(x)=>x,Err(e)=>return Ok(uncertain(result,&format!("node path inputs could not be evaluated: {e}"))) };
         let snap=s(&node["scope"],"snapshot_id");
         let ev=refs(snap,arr(&path,"evidence_refs").iter().filter_map(Value::as_str).map(str::to_owned).collect());
         result["forward"]["hops"].as_array_mut().unwrap().push(json!({"node_id":id,"snapshot_id":snap,"path":path,"evidence":ev}));
@@ -192,7 +209,21 @@ fn evaluate_return_path(input:&Value,nodes:&HashMap<String,Value>,links:&[Value]
 }
 
 pub fn explore_network(input:Value)->Result<Value,String>{
- let result=evaluate_network(input.clone())?;
- let branch=json!({"id":"branch:default","forward":result["forward"],"returns":[{"id":"return:default","direction":result["return"],"asymmetric":false,"session_status":if s(&result["return"],"disposition")=="modeled_forward"{"established_session"}else{"unknown"},"disposition":result["return"]["disposition"],"reasons":result["return"]["reasons"]}],"disposition":result["disposition"],"reasons":result["reasons"]});
- Ok(json!({"engine_contract_version":"graphlayer-network-exploration-v1","original_flow":input["flow"],"branches":[branch],"disposition":result["disposition"],"complete":true,"truncated":false,"reasons":result["reasons"],"assumptions":result["assumptions"]}))
+ let base=evaluate_network(input.clone())?;let mut base_ids=Vec::new();for hop in arr(&base["forward"],"hops"){let node=arr(&input,"nodes").into_iter().find(|n|s(n,"id")==s(&hop,"node_id"));if let Some(node)=node{let pi=path_input(&node,s(&hop["path"],"ingress_interface"),&hop["path"]["original_flow"]);let cs=super::path::explore_path(pi)?;let matched=arr(&cs,"candidates").into_iter().find(|c|c["result"]==hop["path"]);base_ids.push(matched.map(|c|s(&c,"id").to_owned()).unwrap_or_default());}else{base_ids.push(String::new())}}
+ let mut branches=vec![exploration_branch(&base,&base_ids)];let mut truncated=false;let mut evaluations=1usize;let mut trunc_reasons=Vec::<Value>::new();
+ for hop in arr(&base["forward"],"hops") {
+  let node_id=s(&hop,"node_id").to_owned();let node=arr(&input,"nodes").into_iter().find(|n|s(n,"id")==node_id);let Some(node)=node else{continue};
+  let path_input=path_input(&node,s(&hop["path"],"ingress_interface"),&hop["path"]["original_flow"]);let alternatives=super::path::explore_path(path_input)?;
+  for candidate in arr(&alternatives,"candidates") {
+   if s(&candidate["result"],"disposition")!="modeled_forward"||candidate["result"]["selected_route"]==hop["path"]["selected_route"]{continue}
+   if branches.len()>=32 {truncated=true;trunc_reasons.push(json!("terminal branch limit reached"));break}
+   if evaluations>=128 {truncated=true;trunc_reasons.push(json!("hop evaluation limit reached"));break}
+   let route=s(&candidate["result"]["selected_route"],"id");if route.is_empty(){continue}let mut forced=HashMap::new();forced.insert(node_id.clone(),route.to_owned());let result=evaluate_network_forced(input.clone(),&forced)?;evaluations+=arr(&result["forward"],"hops").len().max(1);
+   let mut ids=Vec::new();for h in arr(&result["forward"],"hops"){let n=arr(&input,"nodes").into_iter().find(|n|s(n,"id")==s(&h,"node_id"));let Some(n)=n else{ids.push(String::new());continue};let pi=path_input(&n,s(&h["path"],"ingress_interface"),&h["path"]["original_flow"]);let cs=super::path::explore_path(pi)?;let matching=arr(&cs,"candidates").into_iter().find(|c|c["result"]==h["path"]);ids.push(matching.map(|c|s(&c,"id").to_owned()).unwrap_or_default());}
+   branches.push(exploration_branch(&result,&ids));
+  }
+  if truncated {break}
+ }
+ branches.sort_by(|a,b|s(a,"id").cmp(s(b,"id")));let all_blocked=!branches.is_empty()&&branches.iter().all(|b|s(b,"disposition")=="blocked");let all_round=!branches.is_empty()&&branches.iter().all(|b|s(b,"disposition")=="modeled_round_trip");let disposition=if all_blocked&&!truncated{"blocked"}else if all_round&&!truncated{"modeled_round_trip"}else{"indeterminate"};let complete=!truncated;let mut reasons=Vec::new();for r in trunc_reasons{if !reasons.contains(&r){reasons.push(r)}}
+ Ok(json!({"engine_contract_version":"graphlayer-network-exploration-v1","original_flow":input["flow"],"branches":branches,"disposition":disposition,"complete":complete,"truncated":truncated,"reasons":reasons,"assumptions":["configuration and topology are supplied evidence, not live device or link state","only explicitly linked IPv4 paths and bounded route choices are explored","equal-best route choices are configured alternatives; this does not prove ECMP is enabled or predict a hardware hash/session choice","return session state is modeled only when the exact reverse tuple and selected forward state are supported"]}))
 }
