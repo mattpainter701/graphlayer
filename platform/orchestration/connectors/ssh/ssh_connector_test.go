@@ -1,12 +1,17 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,15 +22,50 @@ import (
 	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
 )
 
+func TestReadPrivateKeyEnforcesLimitWithoutLeakingPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "private-key")
+	valid := bytes.Repeat([]byte("k"), int(maxSSHPrivateKeyBytes))
+	if err := os.WriteFile(path, valid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readPrivateKey(path)
+	if err != nil || !bytes.Equal(got, valid) {
+		t.Fatalf("key at size limit was rejected: got %d bytes, err %v", len(got), err)
+	}
+
+	tooLarge := bytes.Repeat([]byte("sensitive-key-material"), int(maxSSHPrivateKeyBytes/8))
+	if err := os.WriteFile(path, tooLarge, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = readPrivateKey(path)
+	if err == nil || !strings.Contains(err.Error(), "size limit") || strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "sensitive-key-material") {
+		t.Fatalf("oversized key error was missing or exposed sensitive details: %v", err)
+	}
+
+	missingPath := filepath.Join(t.TempDir(), "missing-key")
+	_, err = readPrivateKey(missingPath)
+	if err == nil || strings.Contains(err.Error(), missingPath) {
+		t.Fatalf("key-file error exposed its path: %v", err)
+	}
+}
+
 func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 	t.Parallel()
+	for _, algorithm := range []string{"ed25519", "rsa"} {
+		t.Run(algorithm, func(t *testing.T) {
+			t.Parallel()
+			assertSSHConnectorConnectsWithHostKey(t, algorithm)
+		})
+	}
+}
 
+func assertSSHConnectorConnectsWithHostKey(t *testing.T, hostKeyAlgorithm string) {
 	const (
 		username = "tester"
 		password = "secret"
 	)
 
-	listener, serverConfig := newTestSSHServer(t, username, password)
+	listener, serverConfig, hostKey := newTestSSHServer(t, username, password, hostKeyAlgorithm)
 	defer listener.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,6 +78,7 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 	}()
 	defer func() {
 		cancel()
+		_ = listener.Close()
 		wg.Wait()
 	}()
 
@@ -51,6 +92,12 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 		t.Fatalf("failed to parse port: %v", err)
 	}
 
+	knownHosts := filepath.Join(t.TempDir(), "known_hosts")
+	knownHostLine := fmt.Sprintf("[%s]:%d %s", host, port, gossh.MarshalAuthorizedKey(hostKey))
+	if err := os.WriteFile(knownHosts, []byte(knownHostLine), 0600); err != nil {
+		t.Fatalf("failed to write fixture known_hosts: %v", err)
+	}
+
 	config := &base.ConnectionConfig{
 		Host:       host,
 		Port:       port,
@@ -59,6 +106,7 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 		Timeout:    5 * time.Second,
 		RetryCount: 1,
 		RetryDelay: 100 * time.Millisecond,
+		Options:    map[string]interface{}{"known_hosts_path": knownHosts},
 	}
 
 	connector, err := NewSSHConnector(config, types.DeviceTypeGenericSSH)
@@ -81,14 +129,53 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 	if state := connector.GetConnectionState(); state != base.ConnectionStateConnected {
 		t.Fatalf("unexpected connection state: %s", state)
 	}
+
+	for _, command := range []string{"show version", "show interfaces"} {
+		result, err := connector.ExecuteCommand(ctx, command, 2*time.Second)
+		if err != nil {
+			t.Fatalf("ExecuteCommand(%q) returned error: %v", command, err)
+		}
+		if result == nil || !strings.Contains(result.Output, "fixture output") {
+			t.Fatalf("expected parsed SSH fixture output for %q, got %#v", command, result)
+		}
+	}
+
+	startCalls := make(chan struct{})
+	var calls sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		calls.Add(1)
+		go func() {
+			defer calls.Done()
+			<-startCalls
+			_, _ = connector.ExecuteCommand(ctx, "show version", time.Second)
+		}()
+	}
+	close(startCalls)
+	if err := connector.Disconnect(context.Background()); err != nil {
+		t.Fatalf("disconnect during concurrent command calls: %v", err)
+	}
+	calls.Wait()
 }
 
-func newTestSSHServer(t *testing.T, username, password string) (net.Listener, *gossh.ServerConfig) {
+func newTestSSHServer(t *testing.T, username, password, hostKeyAlgorithm string) (net.Listener, *gossh.ServerConfig, gossh.PublicKey) {
 	t.Helper()
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate host key: %v", err)
+	var privateKey any
+	switch hostKeyAlgorithm {
+	case "ed25519":
+		_, key, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("failed to generate host key: %v", err)
+		}
+		privateKey = key
+	case "rsa":
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatalf("failed to generate host key: %v", err)
+		}
+		privateKey = key
+	default:
+		t.Fatalf("unsupported test host key algorithm %q", hostKeyAlgorithm)
 	}
 
 	signer, err := gossh.NewSignerFromKey(privateKey)
@@ -111,7 +198,7 @@ func newTestSSHServer(t *testing.T, username, password string) (net.Listener, *g
 		t.Fatalf("failed to listen for test ssh server: %v", err)
 	}
 
-	return listener, config
+	return listener, config, signer.PublicKey()
 }
 
 func acceptTestSSHConnections(listener net.Listener, config *gossh.ServerConfig, done <-chan struct{}) {
@@ -145,11 +232,29 @@ func acceptTestSSHConnections(listener net.Listener, config *gossh.ServerConfig,
 				}
 			}()
 
-			go func() {
-				for ch := range chans {
+			for ch := range chans {
+				if ch.ChannelType() != "session" {
 					ch.Reject(gossh.UnknownChannelType, "channel not supported")
+					continue
 				}
-			}()
+				channel, requests, err := ch.Accept()
+				if err != nil {
+					continue
+				}
+				go func() {
+					defer channel.Close()
+					for request := range requests {
+						if request.Type != "exec" {
+							request.Reply(false, nil)
+							continue
+						}
+						request.Reply(true, nil)
+						_, _ = channel.Write([]byte("fixture output\n"))
+						_, _ = channel.SendRequest("exit-status", false, []byte{0, 0, 0, 0})
+						return
+					}
+				}()
+			}
 		}(conn)
 	}
 }

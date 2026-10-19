@@ -1,0 +1,24 @@
+{
+  "release_commit": "418e550f173938bad7dc7d86995d4a12945f9f23",
+  "capture_run": "https://github.com/mattpainter701/graphlayer/actions/runs/39183884734",
+  "capture_source": "e2e/capture-release/workspace_v7.go.txt",
+  "description": "Written by the exact released Go application and released Rust worker, including policy, NAT path, multi-vendor network, exploration, sites and named snapshot sets. Preserved without modification.",
+  "sha256": {
+    "investigation-0230b3e7f87d2bcd46f32c069bbf7600c3ee5c699c46c063bc8b454a7e675f7e.json": "63fb8fe334d0922d1ae41291cad520f910995c4a6e9a30fca24985c03a1ed7ca",
+    "network-exploration-7f8bc9911c620d31ca004a59b29f2c0423671f680b33d10c74405d7b280f8213.json": "16ea6edd04a9fa54c67456adc29d2c45f2d963bd34c9d93b657d123b98749128",
+    "network-investigation-359729470d012b5dfb0d7ddc719c43bad5f1ad93f00c3e3eadedc61f67cd0755.json": "c5c1a3923bdcb1b9ffd836553f229a4a8986e395b780af60e060b4e7c45746ed",
+    "path-investigation-3d021c1d2947763b25c3318c387194abd827e8097b7f2494b0f72a1535db5973.json": "cf8fae3db41a31b7bab11b58df71f466c83cd85f6348f137460285b45884ceca",
+    "snapshot-044292cad845de223e2f9cb4ceb74f6672e1e0848fbda1174d5095ac72a56eb0.json": "403a6b054abc43bfb7590f6bcfda318944c0910d23f087811f0934f651ffa5ee",
+    "snapshot-09ec6ba787eccb81b53c0e03d822e3a087513e260a6fa40efaf81e155fd93ce2.json": "457e047170fbdc9ebe87ef0d83bc9630e96445b188cd236ed31504940908544f",
+    "snapshot-1d27dbc18823eb95eaba6f2f053a7a4893943c5b525991b663c6d41fd2495399.json": "05dca124f4f29560cbe5e861590b11aa3982cdb4238e88dc458d260349642a67",
+    "snapshot-2be5901c49d81b4e4f19ca60ed830bec7dcfbbec1ca7a2295030094789fd58ee.json": "d56336ca9cf7f6ab87edffb4213056d6a2660c5f595d5098992766ffc4a72eda",
+    "snapshot-5c696ec965af1e1d31304ec5f62e04619ba7bfc34bf8d6562ce4cf65d87632b0.json": "ef6a578edf54d7dbb97316d3068ff974e8201c020bf6d4f4a8ed2c1c5ac3f587",
+    "snapshot-5f1df1ea18520da74bf58de5ae12c16c7eac288931a774ab261e3a61466353f0.json": "cf0a6c8d22292d2286df34ee5aa5e9ef8c580685f610ddb67ff5fd89c6e62244",
+    "snapshot-babd25a1a56ab0125cadfdfeb12668ad0a17e6bbdd9c44cb2015aa669c4f73eb.json": "3f77a89b83a815b6bd341035acb90d0647f5c7d2ea9e4789dac1b655cd4b51fe",
+    "snapshot-eb2f23a88cf7df97cf86aefb7662308e220843c8387454ccd20b19739d5a53b9.json": "5ef62811ea6c479d61263147da611fe39aee3ffaa69ba586bc654d03e2907d57",
+    "snapshot-fbb77033c329046069647c0651b1c1226ddc672ecf45a534ff11a4c6b101dbb1.json": "777e9d50f55413c9cefd019819c7bbdcb148eb257a160df41f7e06fcee82a513",
+    "workspace-transaction-2319588c3f278918517fc88e1e9a783ab4733f3d97f4f82bc9fa7e27159df210.json": "405dc0b8d0cb8451213128d30bb927383cbca7e2ab15818265c11bb102332239",
+    "workspace-transaction-518d4bed71145cc8ac7f5cc9afe97625114bc2efd21776c569db238af261d4b8.json": "2aa7683426cc62c6240cdbbbda83605120ca8ec2b88264f03482520a0925468d",
+    "workspace-transaction-d7e476b1bf2b4fcaad9bd823723deb29ff4b30e055eff9724e762d0d5b332b94.json": "8e6bf376cab597a73017ea385a210ebc9d8bfa1b56831246271145baa149f2c7"
+  }
+}

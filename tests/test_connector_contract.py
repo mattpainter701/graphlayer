@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import os
+import http.server
+import base64
+import hashlib
+import json
 import sys
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -29,7 +34,48 @@ class DummyConnector(BaseConnector):
         return {"status": "ok", "kwargs": kwargs}
 
 
+class SolarWindsFixtureHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, format, *args):  # pragma: no cover - keep test output quiet
+        return
+
+    def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler API
+        length = int(self.headers.get("Content-Length", "0"))
+        request = json.loads(self.rfile.read(length))
+        expected_auth = "Basic " + base64.b64encode(b"user:pass").decode("ascii")
+        expected_query = "SELECT TOP 1 EngineID FROM Orion.Engines"
+        is_invoke = self.path.endswith("/Invoke/Cirrus.ConfigArchive/DownloadConfig")
+        valid_body = request == [[1], "Running"] if is_invoke else request.get("query") == expected_query
+        if self.headers.get("Authorization") != expected_auth or not valid_body:
+            self.send_response(401)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        response = [987] if is_invoke else {"results": [{"EngineID": 1}]}
+        self.wfile.write(json.dumps(response).encode())
+
+
 class ConnectorContractTests(unittest.TestCase):
+    def test_canonical_fingerprint_matches_python_json_bytes(self):
+        cases = [
+            {"z": "snowman ☃ and control\n\x01", "a": [1e-5, 1e20]},
+            {"negative_zero": -0.0, "nested": {"é": "café", "integer": 10**100}},
+            {"unicode": "東京 / café", "array": [True, None, {"b": 2, "a": 1}]},
+        ]
+        for value in cases:
+            with self.subTest(value=value):
+                canonical = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                       ensure_ascii=False, default=str).encode("utf-8")
+                expected = "sha256:" + hashlib.sha256(canonical).hexdigest()
+                self.assertEqual(BaseConnector.canonical_fingerprint(value), expected)
+        connector = DummyConnector("fingerprint-guid", {"connector_type": "dummy", "host": "example.local"})
+        payload = {"nested": {"unicode": "λ\n", "values": [-0.0, 1e-5, 1e20, 10**100]}}
+        record = connector.build_normalized_record("device", "fingerprint-1", payload)
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                               ensure_ascii=False, default=str).encode("utf-8")
+        self.assertEqual(record.raw_fingerprint, "sha256:" + hashlib.sha256(canonical).hexdigest())
+
     def test_base_connector_contract_aliases(self):
         connector = DummyConnector(
             "dummy-guid",
@@ -111,13 +157,26 @@ class ConnectorContractTests(unittest.TestCase):
         )
         self.assertEqual(connector._sanitize_filename("Core Switch/01"), "Core_Switch01")
 
-        # The legacy test helper should fail cleanly if the external SDK is unavailable.
-        result = solarwinds_test_connection(
-            "swis.example.local",
-            "user",
-            "pass",
-        )
-        self.assertIn(result["status"], {"success", "error"})
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), SolarWindsFixtureHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address
+            result = solarwinds_test_connection(
+                f"http://{host}:{port}", "user", "pass",
+                verify_ssl=False,
+            )
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["engine_count"], 1)
+            connector.host = f"http://{host}:{port}"
+            connector.connector_data["host"] = connector.host
+            connector.connector_data["username"] = "user"
+            connector.connector_data["password"] = "pass"
+            self.assertEqual(connector.trigger_ncm_download([1]), [987])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_netbox_package_export(self):
         connector = NetBoxConnector(

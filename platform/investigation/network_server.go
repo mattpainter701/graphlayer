@@ -80,6 +80,9 @@ func (a *App) evaluateNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inv, err := a.store.EvaluateNetwork(req)
+	if analysisUnavailable(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ErrPathUnavailable):
 		apiError(w, 409, "path_unavailable", "Reimport the original configuration for each older snapshot to create path metadata.")

@@ -146,7 +146,7 @@ func (s *Store) EvaluateNetwork(req NetworkRequest) (*NetworkInvestigation, erro
 	}
 	result, err := networkpath.Evaluate(in)
 	if err != nil {
-		return nil, ErrInvalidFlow
+		return nil, flowEvaluationError(err)
 	}
 	inv := &NetworkInvestigation{ID: networkIdentity(req, result), CreatedAt: time.Now().UTC(), Request: req, Result: result}
 	data, err := json.Marshal(inv)

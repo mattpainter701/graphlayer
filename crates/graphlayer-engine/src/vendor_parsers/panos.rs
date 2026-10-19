@@ -1,0 +1,1521 @@
+use super::common::*;
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Default)]
+struct Rule {
+    name: String,
+    line: usize,
+    lines: Vec<usize>,
+    from: Vec<String>,
+    to: Vec<String>,
+    src: Vec<String>,
+    dst: Vec<String>,
+    svc: Vec<String>,
+    apps: Vec<String>,
+    action: String,
+    disabled: bool,
+    sx: String,
+    dx: String,
+    bad: bool,
+    hs: bool,
+    hd: bool,
+    hv: bool,
+}
+#[derive(Clone)]
+struct Address {
+    prefix: String,
+    line: usize,
+}
+fn safe(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || "_.-:/".contains(c))
+}
+fn tokens(s: &str) -> Result<Vec<String>, String> {
+    let mut out = vec![];
+    let (mut b, mut q, mut esc, mut active) = (String::new(), false, false, false);
+    for c in s.chars() {
+        if esc {
+            b.push(c);
+            esc = false;
+            active = true;
+            continue;
+        }
+        if q && c == '\\' {
+            esc = true;
+            continue;
+        }
+        if c == '"' {
+            q = !q;
+            active = true;
+            continue;
+        }
+        if !q && c.is_whitespace() {
+            if active {
+                out.push(std::mem::take(&mut b));
+                active = false
+            }
+            continue;
+        }
+        b.push(c);
+        active = true
+    }
+    if q || esc {
+        return Err("malformed quoted SET command".into());
+    }
+    if active {
+        out.push(b)
+    }
+    let (mut result, mut list) = (vec![], false);
+    for x in out {
+        match x.as_str() {
+            "[" if !list => list = true,
+            "[" => return Err("nested SET list".into()),
+            "]" if list => list = false,
+            "]" => return Err("unbalanced SET list".into()),
+            _ => result.push(x),
+        }
+    }
+    if list {
+        return Err("unbalanced SET list".into());
+    }
+    Ok(result)
+}
+fn pan_interface_address(s: &str) -> Option<String> {
+    if let Some((ip, bits)) = s.split_once('/') {
+        let addr = ip.parse::<std::net::Ipv4Addr>().ok()?;
+        let prefix = bits.parse::<u8>().ok()?;
+        if prefix > 32 {
+            return None;
+        }
+        return Some(format!("{}/{}", addr, prefix));
+    }
+    if let Ok(ip) = s.parse::<std::net::Ipv4Addr>() {
+        return Some(format!("{}/32", ip));
+    }
+    None
+}
+fn names(v: &[String]) -> Vec<String> {
+    if v.is_empty() {
+        return vec!["any".into()];
+    }
+    let mut o = vec![];
+    for x in v {
+        if !o.contains(x) {
+            o.push(x.clone())
+        }
+    }
+    o
+}
+fn expand(
+    n: &str,
+    addr: &BTreeMap<String, Address>,
+    groups: &BTreeMap<String, Vec<String>>,
+    depth: usize,
+) -> Result<Vec<Address>, String> {
+    if n == "any" {
+        return Ok(vec![Address {
+            prefix: "0.0.0.0/0".into(),
+            line: 0,
+        }]);
+    }
+    if let Some(p) = ipv4_prefix(n) {
+        return Ok(vec![Address { prefix: p, line: 0 }]);
+    }
+    if let Some(a) = addr.get(n) {
+        return Ok(vec![a.clone()]);
+    }
+    if depth > 8 {
+        return Err("address group nesting limit exceeded".into());
+    }
+    let m = groups.get(n).ok_or("unresolved address object")?;
+    let mut o = vec![];
+    for x in m {
+        o.extend(expand(x, addr, groups, depth + 1)?);
+        if o.len() > 256 {
+            return Err("address group expansion exceeds 256".into());
+        }
+    }
+    Ok(o)
+}
+fn group_dependencies(
+    names: &[String],
+    groups: &BTreeMap<String, Vec<String>>,
+    lines: &BTreeMap<String, Vec<usize>>,
+) -> Vec<usize> {
+    fn visit(
+        n: &str,
+        d: usize,
+        g: &BTreeMap<String, Vec<String>>,
+        ls: &BTreeMap<String, Vec<usize>>,
+        seen: &mut BTreeSet<String>,
+        out: &mut Vec<usize>,
+    ) {
+        if d > 8 || !seen.insert(n.to_string()) {
+            return;
+        }
+        if let Some(v) = ls.get(n) {
+            for x in v {
+                if !out.contains(x) {
+                    out.push(*x)
+                }
+            }
+        }
+        if let Some(m) = g.get(n) {
+            for child in m {
+                visit(child, d + 1, g, ls, seen, out)
+            }
+        }
+    }
+    let (mut seen, mut out) = (BTreeSet::new(), vec![]);
+    for n in names {
+        visit(n, 0, groups, lines, &mut seen, &mut out)
+    }
+    out
+}
+fn service(
+    n: &str,
+    sv: &BTreeMap<String, (String, String, usize)>,
+) -> Result<(String, String, usize), String> {
+    if n == "any" {
+        return Ok(("ip".into(), String::new(), 0));
+    }
+    let (p, port, l) = sv.get(n).ok_or("unresolved service")?;
+    let port = if let Some((a, b)) = port.split_once('-') {
+        let x = a.parse::<u32>().map_err(|_| "invalid service port range")?;
+        let y = b.parse::<u32>().map_err(|_| "invalid service port range")?;
+        if y < x || y > 65535 || x == 0 {
+            return Err("invalid service port range".into());
+        }
+        format!("{}-{}", x, y)
+    } else {
+        let x = port.parse::<u32>().map_err(|_| "invalid service port")?;
+        if x == 0 || x > 65535 {
+            return Err("invalid service port".into());
+        }
+        x.to_string()
+    };
+    Ok((p.clone(), port, *l))
+}
+fn refs(e: &mut Vec<Value>, hash: &str, ns: &[usize], kind: &str, summary: &str) -> Vec<String> {
+    unique(
+        ns.iter()
+            .filter(|n| **n > 0)
+            .map(|n| add_evidence(e, hash, *n, kind, summary))
+            .collect::<Vec<_>>(),
+    )
+}
+fn pan_source_lines(raw: &str) -> Vec<Value> {
+    raw.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .split('\n')
+        .enumerate()
+        .map(|(i, _)| json!({"number":i+1,"text":"[OMITTED NON-POLICY CONFIGURATION]"}))
+        .collect()
+}
+fn parse_source(t: &[String]) -> String {
+    let name_ok = |x: &str| safe(x) && x.len() <= 128;
+    let zone_ok = |x: &str| safe(x) && x.len() <= 64;
+    let intf_ok = |x: &str| safe(x) && x.len() <= 48;
+    if t.len() == 4 && t[0] == "address" && name_ok(&t[1]) && t[2] == "ip-netmask" {
+        if let Some(p) = ipv4_prefix(&t[3]) {
+            return format!("set address {} ip-netmask {}", t[1], p);
+        }
+    }
+    if t.len() >= 4
+        && t[0] == "address-group"
+        && name_ok(&t[1])
+        && t[2] == "static"
+        && t[3..].iter().all(|x| name_ok(x))
+    {
+        let m = names(&t[3..]);
+        if !m.is_empty() && m.len() <= 256 {
+            return format!("set address-group {} static [ {} ]", t[1], m.join(" "));
+        }
+    }
+    if t.len() == 6
+        && t[0] == "service"
+        && name_ok(&t[1])
+        && t[2] == "protocol"
+        && ["tcp", "udp"].contains(&t[3].as_str())
+        && t[4] == "port"
+        && service(
+            "_",
+            &BTreeMap::from([("_".to_string(), (t[3].clone(), t[5].clone(), 0))]),
+        )
+        .is_ok()
+    {
+        return format!("set {}", t.join(" "));
+    }
+    if t.len() == 5
+        && t[0] == "zone"
+        && zone_ok(&t[1])
+        && t[2] == "network"
+        && t[3] == "layer3"
+        && intf_ok(&t[4])
+    {
+        return format!("set {}", t.join(" "));
+    }
+    if t.len() == 6
+        && t[0] == "network"
+        && t[1] == "interface"
+        && t[2] == "ethernet"
+        && intf_ok(&t[3])
+        && t[4] == "link-state"
+        && ["up", "down"].contains(&t[5].as_str())
+    {
+        return format!("set {}", t.join(" "));
+    }
+    if t.len() == 7
+        && t[0] == "network"
+        && t[1] == "interface"
+        && t[2] == "ethernet"
+        && intf_ok(&t[3])
+        && t[4] == "layer3"
+        && t[5] == "ip"
+    {
+        if let Some(p) = pan_interface_address(&t[6]) {
+            return format!("set {} {}", t[..6].join(" "), p);
+        }
+    }
+    if t.len() == 5
+        && t[0] == "network"
+        && t[1] == "virtual-router"
+        && name_ok(&t[2])
+        && t[3] == "interface"
+        && intf_ok(&t[4])
+    {
+        return format!("set {}", t.join(" "));
+    }
+    if t.len() == 9
+        && t[0] == "network"
+        && t[1] == "virtual-router"
+        && name_ok(&t[2])
+        && t[3] == "routing-table"
+        && t[4] == "ip"
+        && t[5] == "static-route"
+        && name_ok(&t[6])
+        && t[7] == "destination"
+    {
+        if let Some(p) = ipv4_prefix(&t[8]) {
+            return format!("set {} {}", t[..8].join(" "), p);
+        }
+    }
+    if t.len() == 9
+        && t[0] == "network"
+        && t[1] == "virtual-router"
+        && name_ok(&t[2])
+        && t[3] == "routing-table"
+        && t[4] == "ip"
+        && t[5] == "static-route"
+        && name_ok(&t[6])
+        && t[7] == "interface"
+        && intf_ok(&t[8])
+    {
+        return format!("set {}", t.join(" "));
+    }
+    if t.len() == 10
+        && t[0] == "network"
+        && t[1] == "virtual-router"
+        && name_ok(&t[2])
+        && t[3] == "routing-table"
+        && t[4] == "ip"
+        && t[5] == "static-route"
+        && name_ok(&t[6])
+        && t[7] == "nexthop"
+        && t[8] == "ip-address"
+    {
+        if let Ok(ip) = t[9].parse::<std::net::IpAddr>() {
+            return format!("set {} {}", t[..9].join(" "), ip);
+        }
+    }
+    if t.len() >= 5
+        && t[0] == "rulebase"
+        && ["security", "nat"].contains(&t[1].as_str())
+        && t[2] == "rules"
+        && name_ok(&t[3])
+        && t.len() > 5
+    {
+        let field = &t[4];
+        let vals = &t[5..];
+        let valid = match field.as_str() {
+            "from" | "to" => vals.iter().all(|x| zone_ok(x)),
+            "source" | "destination" => vals.iter().all(|x| name_ok(x)),
+            "service" => vals.iter().all(|x| name_ok(x)),
+            "application" => vals == ["any"],
+            "action" => vals.len() == 1 && ["allow", "deny", "drop"].contains(&vals[0].as_str()),
+            "disabled" => vals.len() == 1 && ["yes", "no"].contains(&vals[0].as_str()),
+            "source-translation" => {
+                vals == ["none"]
+                    || vals.len() == 3
+                        && vals[0] == "static-ip"
+                        && vals[1] == "translated-address"
+                        && ipv4_prefix(&vals[2]).is_some()
+            }
+            "destination-translation" => {
+                vals.len() == 2
+                    && vals[0] == "translated-address"
+                    && ipv4_prefix(&vals[1]).is_some()
+            }
+            _ => false,
+        };
+        if valid {
+            let mut normalized = t.to_vec();
+            if field == "source-translation" && vals.len() == 3 {
+                normalized[7] = ipv4_prefix(&vals[2]).unwrap_or_else(|| vals[2].clone());
+            } else if field == "destination-translation" && vals.len() == 2 {
+                normalized[6] = ipv4_prefix(&vals[1]).unwrap_or_else(|| vals[1].clone());
+            }
+            return format!("set {}", normalized.join(" "));
+        }
+    }
+    String::new()
+}
+
+pub fn parse_with_hash(input: &str, artifact_hash: &str) -> Result<Value, String> {
+    if input.len() > 2 * 1024 * 1024 {
+        return Err("PAN-OS config exceeds 2 MiB limit".into());
+    }
+    let raw = input.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<&str> = raw.split('\n').collect();
+    if lines.len() > 50001 {
+        return Err("PAN-OS config exceeds 50,000 line limit".into());
+    }
+    let hash = artifact_hash.to_string();
+    let mut source = pan_source_lines(input);
+    let (mut evidence, mut warnings, mut pwarnings) = (vec![], vec![], vec![]);
+    let (
+        mut addresses,
+        mut groups,
+        mut group_lines,
+        mut services,
+        mut zones,
+        mut interfaces,
+        mut ips,
+        mut vrifs,
+        mut vrnames,
+    ) = (
+        BTreeMap::<String, Address>::new(),
+        BTreeMap::<String, Vec<String>>::new(),
+        BTreeMap::<String, Vec<usize>>::new(),
+        BTreeMap::<String, (String, String, usize)>::new(),
+        BTreeMap::<String, Vec<String>>::new(),
+        BTreeMap::<String, Value>::new(),
+        BTreeMap::<String, Vec<String>>::new(),
+        BTreeMap::<String, Vec<String>>::new(),
+        BTreeSet::<String>::new(),
+    );
+    let mut invalid_addresses = BTreeSet::<String>::new();
+    let (mut interface_lines, mut zone_lines, mut vr_lines) = (
+        BTreeMap::<String, Vec<usize>>::new(),
+        BTreeMap::<String, Vec<usize>>::new(),
+        BTreeMap::<String, Vec<usize>>::new(),
+    );
+    let mut invalid_nat_name = false;
+    let (mut rules, mut nats, mut statics) = (
+        Vec::<Rule>::new(),
+        Vec::<Rule>::new(),
+        Vec::<(String, String, String, String, usize, Vec<usize>)>::new(),
+    );
+    let (mut hostname, mut unsafe_scope) = ("panos-device".to_string(), false);
+    for (i, line) in lines.iter().enumerate() {
+        let n = i + 1;
+        let s = line.trim();
+        if s.is_empty() {
+            continue;
+        }
+        let t = tokens(s).map_err(|e| format!("line {}: {}", n, e))?;
+        if t.is_empty() {
+            continue;
+        }
+        if t[0] != "set" {
+            if s.starts_with('#') {
+                continue;
+            }
+            return Err(format!("line {}: expected native SET command", n));
+        }
+        if t.len() < 2 {
+            return Err(format!("line {}: incomplete SET command", n));
+        }
+        let a = &t[1..];
+        if a.len() >= 4 && a[0] == "deviceconfig" && a[1] == "system" && a[2] == "hostname" {
+            hostname = if safe(&a[3]) {
+                a[3].clone()
+            } else {
+                "panos-device".into()
+            };
+            continue;
+        }
+        if a.len() >= 4 && a[0] == "address" {
+            if safe(&a[1]) && a.len() == 4 && a[2] == "ip-netmask" {
+                if let Some(p) = ipv4_prefix(&a[3]) {
+                    if let Some(old) = addresses.get(&a[1]) {
+                        if old.prefix != p {
+                            addresses.remove(&a[1]);
+                            invalid_addresses.insert(a[1].clone());
+                            warnings.push(warning(
+                                "conflicting_address_object",
+                                "Address object is redefined with a different value",
+                                n,
+                            ));
+                            pwarnings.push(warning(
+                                "conflicting_address_object",
+                                "Address object is redefined with a different value",
+                                n,
+                            ));
+                        }
+                    } else if !invalid_addresses.contains(&a[1]) {
+                        addresses
+                            .entry(a[1].clone())
+                            .or_insert(Address { prefix: p, line: n });
+                    }
+                } else {
+                    warnings.push(warning(
+                        "unsupported_address",
+                        "Address object could not be normalized",
+                        n,
+                    ));
+                    pwarnings.push(warning(
+                        "unsupported_address",
+                        "Address object could not be normalized",
+                        n,
+                    ));
+                }
+            } else {
+                let msg = if safe(&a[1]) {
+                    "Unsupported address object syntax"
+                } else {
+                    "Address object name is invalid"
+                };
+                warnings.push(warning("unsupported_address", msg, n));
+                pwarnings.push(warning("unsupported_address", msg, n));
+            }
+            continue;
+        }
+        if a.len() >= 4 && a[0] == "address-group" {
+            let ns = names(&a[3..]);
+            if safe(&a[1]) && a[2] == "static" && ns.len() <= 256 && ns.iter().all(|x| safe(x)) {
+                groups.entry(a[1].clone()).or_default().extend(ns);
+                group_lines.entry(a[1].clone()).or_default().push(n)
+            } else {
+                let msg = if !safe(&a[1])
+                    || ns.is_empty()
+                    || ns.len() > 256
+                    || !ns.iter().all(|x| safe(x))
+                {
+                    "Address group name or member is invalid"
+                } else {
+                    "Only static address groups are supported"
+                };
+                warnings.push(warning("unsupported_address_group", msg, n));
+                pwarnings.push(warning("unsupported_address_group", msg, n));
+            }
+            continue;
+        }
+        if a[0] == "service" {
+            if a.len() == 6
+                && a[2] == "protocol"
+                && ["tcp", "udp"].contains(&a[3].as_str())
+                && a[4] == "port"
+                && safe(&a[1])
+            {
+                services.insert(a[1].clone(), (a[3].clone(), a[5].clone(), n));
+            } else {
+                warnings.push(warning(
+                    "unsupported_service",
+                    "Custom service has unmodeled matching controls",
+                    n,
+                ));
+                pwarnings.push(warning(
+                    "unsupported_service",
+                    "Custom service has unmodeled matching controls",
+                    n,
+                ));
+            }
+            continue;
+        }
+        if a.len() == 5 && a[0] == "zone" && a[2] == "network" && a[3] == "layer3" {
+            if safe(&a[1]) && a[1].len() <= 64 && safe(&a[4]) && a[4].len() <= 48 {
+                zones.entry(a[1].clone()).or_default().push(a[4].clone());
+                zone_lines.entry(a[4].clone()).or_default().push(n)
+            } else {
+                warnings.push(warning(
+                    "unsupported_zone",
+                    "Zone or interface name is invalid",
+                    n,
+                ));
+                pwarnings.push(warning(
+                    "unsupported_zone",
+                    "Zone or interface name is invalid",
+                    n,
+                ));
+            }
+            continue;
+        }
+        if a.len() >= 6 && a[0] == "network" && a[1] == "interface" && a[2] == "ethernet" {
+            let name = &a[3];
+            if !safe(name) || name.len() > 48 {
+                warnings.push(warning(
+                    "unsupported_interface",
+                    "Interface name is invalid",
+                    n,
+                ));
+                pwarnings.push(warning(
+                    "unsupported_interface",
+                    "Interface name is invalid",
+                    n,
+                ));
+                continue;
+            }
+            let x=interfaces.entry(name.clone()).or_insert_with(||json!({"name":name,"physical":name,"resolved":true,"shutdown":false,"evidence_refs":[]}));
+            if a[4] == "layer3" && a[5] == "ip" && a.len() == 7 {
+                if let Some(p) = pan_interface_address(&a[6]) {
+                    ips.entry(name.clone()).or_default().push(p);
+                    interface_lines.entry(name.clone()).or_default().push(n)
+                } else {
+                    warnings.push(warning(
+                        "unsupported_interface_ip",
+                        "Invalid interface address",
+                        n,
+                    ));
+                    pwarnings.push(warning(
+                        "unsupported_interface_ip",
+                        "Invalid interface address",
+                        n,
+                    ));
+                }
+            } else if a[4] == "link-state"
+                && a.len() == 6
+                && ["up", "down"].contains(&a[5].as_str())
+            {
+                x["shutdown"] = json!(a[5] == "down");
+                interface_lines.entry(name.clone()).or_default().push(n)
+            } else {
+                x["resolved"] = json!(false);
+                warnings.push(warning(
+                    "unsupported_interface_control",
+                    "Interface forwarding control is outside the supported subset",
+                    n,
+                ));
+                pwarnings.push(warning(
+                    "unsupported_interface_control",
+                    "Interface forwarding control is outside the supported subset",
+                    n,
+                ));
+            }
+            continue;
+        }
+        if a.len() >= 5 && a[0] == "network" && a[1] == "virtual-router" {
+            let vr = &a[2];
+            if !safe(vr) {
+                warnings.push(warning(
+                    "unsupported_virtual_router",
+                    "Virtual router name is invalid",
+                    n,
+                ));
+                pwarnings.push(warning(
+                    "unsupported_virtual_router",
+                    "Virtual router name is invalid",
+                    n,
+                ));
+                continue;
+            }
+            vrnames.insert(vr.clone());
+            if a[3] == "interface" && a.len() == 5 {
+                vrifs.entry(vr.clone()).or_default().push(a[4].clone());
+                vr_lines.entry(a[4].clone()).or_default().push(n);
+                continue;
+            }
+            if a.len() >= 8 && a[3] == "routing-table" && a[4] == "ip" && a[5] == "static-route" {
+                let name = a[6].clone();
+                if a[7] == "destination" && a.len() == 9 {
+                    statics.push((name, a[8].clone(), String::new(), String::new(), n, vec![n]))
+                } else if a[7] == "interface" && a.len() == 9 {
+                    if let Some(r) = statics.iter_mut().rev().find(|x| x.0 == name) {
+                        r.3 = a[8].clone();
+                        r.5.push(n)
+                    }
+                } else if a[7] == "nexthop" && a.len() == 10 && a[8] == "ip-address" {
+                    if let Ok(ip) = a[9].parse::<std::net::IpAddr>() {
+                        if let Some(r) = statics.iter_mut().rev().find(|x| x.0 == name) {
+                            r.2 = ip.to_string();
+                            r.5.push(n)
+                        }
+                    } else {
+                        warnings.push(warning(
+                            "unsupported_route",
+                            "Unsupported static route control",
+                            n,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_route",
+                            "Unsupported static route control",
+                            n,
+                        ));
+                    }
+                } else {
+                    warnings.push(warning(
+                        "unsupported_route",
+                        "Unsupported static route control",
+                        n,
+                    ));
+                    pwarnings.push(warning(
+                        "unsupported_route",
+                        "Unsupported static route control",
+                        n,
+                    ));
+                }
+                continue;
+            }
+            continue;
+        }
+        if a.len() >= 5
+            && a[0] == "rulebase"
+            && ["security", "nat"].contains(&a[1].as_str())
+            && a[2] == "rules"
+        {
+            if !safe(&a[3]) {
+                let (code, msg) = if a[1] == "security" {
+                    ("unsupported_policy_name", "Security rule name is invalid")
+                } else {
+                    ("unsupported_nat_name", "NAT rule name is invalid")
+                };
+                warnings.push(warning(code, msg, n));
+                pwarnings.push(warning(code, msg, n));
+                if a[1] == "nat" {
+                    invalid_nat_name = true
+                }
+                continue;
+            }
+            let collection = if a[1] == "nat" { &mut nats } else { &mut rules };
+            let r = if let Some(k) = collection.iter().position(|r| r.name == a[3]) {
+                &mut collection[k]
+            } else {
+                collection.push(Rule {
+                    name: a[3].clone(),
+                    line: n,
+                    ..Default::default()
+                });
+                collection.last_mut().unwrap()
+            };
+            r.lines.push(n);
+            if r.line == 0 || n < r.line {
+                r.line = n
+            }
+            let vals = &a[5..];
+            match a[4].as_str() {
+                "from" => r.from.extend(vals.iter().cloned()),
+                "to" => r.to.extend(vals.iter().cloned()),
+                "source" => {
+                    r.src.extend(vals.iter().cloned());
+                    r.hs = true
+                }
+                "destination" => {
+                    r.dst.extend(vals.iter().cloned());
+                    r.hd = true
+                }
+                "service" => {
+                    r.svc.extend(vals.iter().cloned());
+                    r.hv = true
+                }
+                "application" => {
+                    r.apps.extend(vals.iter().cloned());
+                    if a[1] == "security" && vals != ["any"] {
+                        r.bad = true;
+                        warnings.push(warning(
+                            "unsupported_application",
+                            "Application-ID semantics are unsupported",
+                            n,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_application",
+                            "Application-ID semantics are unsupported",
+                            n,
+                        ));
+                    }
+                }
+                "action" => {
+                    if vals.len() == 1 {
+                        r.action = vals[0].clone()
+                    } else {
+                        r.bad = true;
+                        warnings.push(warning(
+                            "unsupported_rule_control",
+                            "Invalid policy action",
+                            n,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_rule_control",
+                            "Invalid policy action",
+                            n,
+                        ));
+                    }
+                }
+                "disabled" => {
+                    if vals.len() == 1 && ["yes", "no"].contains(&vals[0].as_str()) {
+                        r.disabled = vals[0] == "yes"
+                    } else {
+                        r.bad = true;
+                        warnings.push(warning(
+                            "unsupported_rule_control",
+                            "Invalid rule enabled state",
+                            n,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_rule_control",
+                            "Invalid rule enabled state",
+                            n,
+                        ));
+                    }
+                }
+                "source-translation" => {
+                    if vals.len() == 3 && vals[0] == "static-ip" && vals[1] == "translated-address"
+                    {
+                        r.sx = vals[2].clone()
+                    } else if vals != ["none"] {
+                        r.bad = true;
+                        warnings.push(warning(
+                            "unsupported_nat_mode",
+                            "Dynamic source NAT is unsupported",
+                            n,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_nat_mode",
+                            "Dynamic source NAT is unsupported",
+                            n,
+                        ));
+                    }
+                }
+                "destination-translation" => {
+                    if vals.len() == 2 && vals[0] == "translated-address" {
+                        r.dx = vals[1].clone()
+                    } else {
+                        r.bad = true;
+                        warnings.push(warning(
+                            "unsupported_nat_mode",
+                            "Unsupported destination NAT mode",
+                            n,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_nat_mode",
+                            "Unsupported destination NAT mode",
+                            n,
+                        ));
+                    }
+                }
+                _ => {
+                    r.bad = true;
+                    warnings.push(warning(
+                        "unsupported_rule_control",
+                        "Unsupported policy rule control",
+                        n,
+                    ));
+                    pwarnings.push(warning(
+                        "unsupported_rule_control",
+                        "Unsupported policy rule control",
+                        n,
+                    ));
+                }
+            }
+            continue;
+        }
+        let low = a.join(" ").to_lowercase();
+        if a[0] == "shared"
+            || low.contains("vsys")
+            || low.contains("panorama")
+            || low.contains("global")
+            || low.contains("pbf")
+            || low.contains("pre-rulebase")
+            || low.contains("post-rulebase")
+        {
+            unsafe_scope = true;
+            warnings.push(warning(
+                "unsupported_control",
+                "Relevant PAN-OS control is outside the supported SET subset",
+                n,
+            ));
+            pwarnings.push(warning(
+                "unsupported_control",
+                "Relevant PAN-OS control is outside the supported SET subset",
+                n,
+            ));
+        }
+    }
+    for (i, line) in lines.iter().enumerate() {
+        let s = line.trim();
+        if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
+        if let Ok(t) = tokens(s) {
+            if t.len() > 1 && t[0] == "set" {
+                let a = &t[1..];
+                let low = a.join(" ").to_lowercase();
+                if a[0] == "network" && a.len() > 1 && a[1] == "virtual-router" {
+                    if ["protocol", "redistribution", "ecmp"]
+                        .iter()
+                        .any(|k| low.contains(k))
+                    {
+                        warnings.push(warning(
+                            "unsupported_dynamic_route",
+                            "Dynamic or advanced routing control is not modeled",
+                            i + 1,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_dynamic_route",
+                            "Dynamic or advanced routing control is not modeled",
+                            i + 1,
+                        ));
+                    }
+                    if low.contains("pbf") || low.contains("path-monitor") {
+                        unsafe_scope = true;
+                        warnings.push(warning(
+                            "unsupported_pbf",
+                            "Policy-based forwarding is outside the modeled routing subset",
+                            i + 1,
+                        ));
+                        pwarnings.push(warning(
+                            "unsupported_pbf",
+                            "Policy-based forwarding is outside the modeled routing subset",
+                            i + 1,
+                        ));
+                    }
+                }
+                let unknown_rulebase = a[0] == "rulebase"
+                    && !(a.len() >= 4
+                        && ["security", "nat"].contains(&a[1].as_str())
+                        && a[2] == "rules");
+                if a[0] == "shared"
+                    || low.contains("vsys")
+                    || low.contains("panorama")
+                    || low.contains("global")
+                    || low.contains("pbf")
+                    || low.contains("pre-rulebase")
+                    || low.contains("post-rulebase")
+                    || unknown_rulebase
+                {
+                    unsafe_scope = true;
+                    warnings.push(warning(
+                        "unsupported_control",
+                        "Relevant PAN-OS control is outside the supported SET subset",
+                        i + 1,
+                    ));
+                    pwarnings.push(warning(
+                        "unsupported_control",
+                        "Relevant PAN-OS control is outside the supported SET subset",
+                        i + 1,
+                    ));
+                }
+                let safe = parse_source(a);
+                if !safe.is_empty() {
+                    source[i]["text"] = json!(safe)
+                }
+            }
+        }
+    }
+    if rules.len() > 4096
+        || nats.len() > 4096
+        || addresses.len() > 4096
+        || services.len() > 4096
+        || groups.len() > 4096
+    {
+        return Err("PAN-OS object or policy count limit exceeded".into());
+    }
+    let mut routing_complete = true;
+    let mut nat_complete = !invalid_nat_name;
+    let mut policy_complete = !unsafe_scope;
+    let mut path_interfaces = vec![];
+    let mut path_routes = vec![];
+    let mut path_refs = vec![];
+    let mut policies = vec![];
+    let mut translations = vec![];
+    let mut chains = vec![];
+    let mut origins = vec![];
+    if vrnames.len() != 1 {
+        routing_complete = false;
+        let w = warning(
+            "ambiguous_virtual_router",
+            "Exactly one virtual router is required",
+            0,
+        );
+        warnings.push(w.clone());
+        pwarnings.push(w);
+    }
+    for (name, mut iface) in interfaces {
+        let these = ips.get(&name).cloned().unwrap_or_default();
+        if these.len() > 1 {
+            let w = warning(
+                "multiple_interface_ips",
+                "Multiple interface addresses are unsupported",
+                0,
+            );
+            warnings.push(w.clone());
+            pwarnings.push(w)
+        }
+        if these.len() == 1 {
+            iface["address"] = json!(these[0]);
+        }
+        let mut zone = String::new();
+        for (z, members) in &zones {
+            if members.contains(&name) {
+                if !zone.is_empty() {
+                    let w = warning(
+                        "multiple_interface_zones",
+                        "Interface is in multiple zones",
+                        0,
+                    );
+                    warnings.push(w.clone());
+                    pwarnings.push(w)
+                }
+                zone = z.clone()
+            }
+        }
+        if !zone.is_empty() {
+            iface["zone"] = json!(zone)
+        }
+        let mut il = interface_lines.get(&name).cloned().unwrap_or_default();
+        il.extend(zone_lines.get(&name).cloned().unwrap_or_default());
+        let mut ev = refs(
+            &mut evidence,
+            &hash,
+            &il,
+            "interface",
+            "Interface address or zone membership",
+        );
+        let vr = refs(
+            &mut evidence,
+            &hash,
+            vr_lines.get(&name).map(Vec::as_slice).unwrap_or(&[]),
+            "virtual_router_membership",
+            "Virtual router interface membership",
+        );
+        ev.extend(vr);
+        iface["evidence_refs"] = json!(unique(ev));
+        path_interfaces.push(iface);
+    }
+    if path_interfaces.len() > 1024 {
+        return Err("PAN-OS interface limit exceeded".into());
+    }
+    let members: BTreeSet<String> = if vrnames.len() == 1 {
+        vrifs
+            .get(vrnames.iter().next().unwrap())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    for m in &members {
+        if !path_interfaces.iter().any(|x| {
+            x["name"] == *m
+                && x["address"].is_string()
+                && x["resolved"] == true
+                && x["shutdown"] == false
+        }) {
+            routing_complete = false;
+            let w = warning(
+                "unresolved_virtual_router_interface",
+                "Virtual router interface lacks a modeled IPv4 address",
+                0,
+            );
+            warnings.push(w.clone());
+            pwarnings.push(w)
+        }
+    }
+    for iface in &path_interfaces {
+        let name = iface["name"].as_str().unwrap_or("");
+        if members.contains(name) && iface["resolved"] == true && iface["shutdown"] == false {
+            if let Some(addr) = iface["address"].as_str() {
+                let p = addr.split('/').next().unwrap_or(addr);
+                let bits = addr
+                    .split('/')
+                    .nth(1)
+                    .unwrap_or("32")
+                    .parse::<u8>()
+                    .unwrap_or(32);
+                if let Ok(ip) = p.parse::<std::net::Ipv4Addr>() {
+                    let mask = if bits == 0 {
+                        0
+                    } else {
+                        u32::MAX << (32 - bits)
+                    };
+                    let prefix = format!(
+                        "{}/{}",
+                        std::net::Ipv4Addr::from(u32::from(ip) & mask),
+                        bits
+                    );
+                    path_routes.push(json!({"id":format!("connected:{}:{}",name,prefix),"kind":"connected","prefix":prefix,"interface":name,"distance":0,"evidence_refs":iface["evidence_refs"]}));
+                }
+            }
+        }
+    }
+    if statics.len() + path_routes.len() > 4096 {
+        return Err("PAN-OS route limit exceeded".into());
+    }
+    for (name, dest, next, iface, line, ls) in statics {
+        let Some(prefix) = ipv4_prefix(&dest) else {
+            routing_complete = false;
+            let w = warning(
+                "incomplete_static_route",
+                "Static route is missing a valid destination, next hop, or interface",
+                line,
+            );
+            warnings.push(w.clone());
+            pwarnings.push(w);
+            continue;
+        };
+        if next.is_empty() || iface.is_empty() {
+            routing_complete = false;
+            let w = warning(
+                "incomplete_static_route",
+                "Static route is missing a valid destination, next hop, or interface",
+                line,
+            );
+            warnings.push(w.clone());
+            pwarnings.push(w);
+            continue;
+        }
+        let ev = refs(&mut evidence, &hash, &ls, "route", "Static route");
+        path_routes.push(json!({"id":format!("static:{}",name),"kind":"static","prefix":prefix,"interface":iface,"next_hop":next,"distance":10,"evidence_refs":ev}));
+    }
+    let zones_known =
+        |zs: &[String]| !zs.is_empty() && zs.iter().all(|z| z == "any" || zones.contains_key(z));
+    if !unsafe_scope {
+        for r in &rules {
+            if !zones_known(&r.from) || !zones_known(&r.to) {
+                let w = warning(
+                    "unknown_policy_zone",
+                    "Security rule references an unknown zone",
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                policy_complete = false;
+                continue;
+            }
+            if r.bad {
+                let w = warning(
+                    "unsupported_policy_expansion",
+                    "rule contains unsupported policy semantics",
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                policy_complete = false;
+                continue;
+            }
+            if !r.hs
+                || !r.hd
+                || !r.hv
+                || r.src.is_empty()
+                || r.dst.is_empty()
+                || r.svc.is_empty()
+                || r.apps != ["any"]
+                || r.action.is_empty()
+            {
+                let w = warning(
+                    "unsupported_policy_expansion",
+                    "security rule is missing a required explicit match field",
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                policy_complete = false;
+                continue;
+            }
+            let action = match r.action.to_lowercase().as_str() {
+                "allow" | "permit" => "permit",
+                "drop" | "deny" => "deny",
+                _ => {
+                    let w = warning(
+                        "unsupported_policy_expansion",
+                        "Unsupported security action",
+                        r.line,
+                    );
+                    warnings.push(w.clone());
+                    pwarnings.push(w);
+                    policy_complete = false;
+                    continue;
+                }
+            };
+            let mut ss = vec![];
+            let mut dd = vec![];
+            let mut bad = false;
+            let mut expansion_error = String::new();
+            for n in names(&r.src) {
+                match expand(&n, &addresses, &groups, 0) {
+                    Ok(v) => ss.extend(v),
+                    Err(e) => {
+                        bad = true;
+                        expansion_error = e
+                    }
+                }
+            }
+            for n in names(&r.dst) {
+                match expand(&n, &addresses, &groups, 0) {
+                    Ok(v) => dd.extend(v),
+                    Err(e) => {
+                        bad = true;
+                        expansion_error = e
+                    }
+                }
+            }
+            let ff = names(&r.from);
+            let tt = names(&r.to);
+            let sv = names(&r.svc);
+            let count = ss.len() * dd.len() * ff.len() * tt.len() * sv.len();
+            if bad || count > 256 || policies.len() + count > 4096 {
+                let msg = if expansion_error.is_empty() {
+                    "security rule expansion exceeds 256"
+                } else {
+                    &expansion_error
+                };
+                let w = warning("unsupported_policy_expansion", msg, r.line);
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                policy_complete = false;
+                continue;
+            }
+            let er = refs(
+                &mut evidence,
+                &hash,
+                &r.lines,
+                "security_rule",
+                "Security policy rule",
+            );
+            let mut service_error = String::new();
+            let gdep = group_dependencies(
+                &r.src
+                    .iter()
+                    .chain(r.dst.iter())
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                &groups,
+                &group_lines,
+            );
+            for f in &ff {
+                for t in &tt {
+                    for a in &ss {
+                        for b in &dd {
+                            for sn in &sv {
+                                let Ok((proto, port, sl)) = service(sn, &services) else {
+                                    bad = true;
+                                    service_error = service(sn, &services).unwrap_err();
+                                    continue;
+                                };
+                                let mut rr = er.clone();
+                                for dep in [a.line, b.line, sl] {
+                                    if dep > 0 {
+                                        rr.push(add_evidence(
+                                            &mut evidence,
+                                            &hash,
+                                            dep,
+                                            "policy_object",
+                                            "Address or service dependency",
+                                        ))
+                                    }
+                                }
+                                for dep in &gdep {
+                                    rr.push(add_evidence(
+                                        &mut evidence,
+                                        &hash,
+                                        *dep,
+                                        "policy_object",
+                                        "Address or service dependency",
+                                    ))
+                                }
+                                let id = format!(
+                                    "panos:{}:{}:{}:{}:{}:{}:{}-{}",
+                                    r.name, f, t, a.prefix, b.prefix, sn, proto, port
+                                );
+                                let pos = policies.len() + 1;
+                                let m = rule(
+                                    &id,
+                                    pos,
+                                    !r.disabled,
+                                    action,
+                                    (&a.prefix, &b.prefix, &proto, &port),
+                                    &unique(rr),
+                                );
+                                policies.push(json!({"id":id,"from":f,"to":t,"match":m,"evidence_refs":m["evidence_refs"]}));
+                                origins.push(json!({"rule_id":id,"acl_name":id,"line":r.line}));
+                            }
+                        }
+                    }
+                }
+            }
+            if bad {
+                policy_complete = false;
+                let w = warning(
+                    "unsupported_policy_expansion",
+                    if service_error.is_empty() {
+                        "unresolved service"
+                    } else {
+                        &service_error
+                    },
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w)
+            }
+        }
+    }
+    if !unsafe_scope {
+        for r in &nats {
+            if !zones_known(&r.from) || !zones_known(&r.to) {
+                nat_complete = false;
+                let w = warning(
+                    "unknown_nat_zone",
+                    "NAT rule references an unknown zone",
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                continue;
+            }
+            if r.bad {
+                nat_complete = false;
+                let w = warning(
+                    "unsupported_nat",
+                    "NAT requires one source and destination zone",
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                continue;
+            }
+            if !r.hs || !r.hd || !r.hv || r.from.len() != 1 || r.to.len() != 1 {
+                nat_complete = false;
+                let w = warning(
+                    "unsupported_nat",
+                    "NAT requires one source and destination zone",
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                continue;
+            }
+            let ar = expand(&names(&r.src)[0], &addresses, &groups, 0);
+            let br = expand(&names(&r.dst)[0], &addresses, &groups, 0);
+            let (src, dst) = match (ar, br) {
+                (Ok(a), Ok(b)) => (a, b),
+                (Err(e), _) | (_, Err(e)) => {
+                    nat_complete = false;
+                    let w = warning("unsupported_nat", &e, r.line);
+                    warnings.push(w.clone());
+                    pwarnings.push(w);
+                    continue;
+                }
+            };
+            if src.len() != 1 || dst.len() != 1 {
+                nat_complete = false;
+                let w = warning(
+                    "unsupported_nat",
+                    "NAT must resolve to one original source and destination",
+                    r.line,
+                );
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                continue;
+            }
+            if names(&r.svc).len() != 1 {
+                nat_complete = false;
+                let w = warning("unsupported_nat", "NAT must resolve to one service", r.line);
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                continue;
+            }
+            let sn = &names(&r.svc)[0];
+            let Ok((proto, port, sl)) = service(sn, &services) else {
+                nat_complete = false;
+                let err = service(sn, &services).unwrap_err();
+                let w = warning("unsupported_nat", &err, r.line);
+                warnings.push(w.clone());
+                pwarnings.push(w);
+                continue;
+            };
+            let (mut kind, mut orig, mut trans) =
+                ("none".to_string(), String::new(), String::new());
+            if !r.sx.is_empty() {
+                kind = "snat".into();
+                orig = src[0].prefix.clone();
+                let Some(p) = ipv4_prefix(&r.sx) else {
+                    nat_complete = false;
+                    let w = warning("unsupported_nat", "invalid translated address", r.line);
+                    warnings.push(w.clone());
+                    pwarnings.push(w);
+                    continue;
+                };
+                trans = p
+            }
+            if !r.dx.is_empty() {
+                if kind != "none" {
+                    nat_complete = false;
+                    let w = warning(
+                        "unsupported_nat",
+                        "combined source and destination translation is unsupported",
+                        r.line,
+                    );
+                    warnings.push(w.clone());
+                    pwarnings.push(w);
+                    continue;
+                }
+                kind = "dnat".into();
+                orig = dst[0].prefix.clone();
+                let Some(p) = ipv4_prefix(&r.dx) else {
+                    nat_complete = false;
+                    let w = warning("unsupported_nat", "invalid translated address", r.line);
+                    warnings.push(w.clone());
+                    pwarnings.push(w);
+                    continue;
+                };
+                trans = p
+            }
+            if kind != "none" && orig.split('/').nth(1) != trans.split('/').nth(1) {
+                nat_complete = false;
+                continue;
+            }
+            let mut rr = refs(
+                &mut evidence,
+                &hash,
+                &r.lines,
+                "nat_rule",
+                "NAT policy rule",
+            );
+            let gdep = group_dependencies(
+                &r.src
+                    .iter()
+                    .chain(r.dst.iter())
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                &groups,
+                &group_lines,
+            );
+            for dep in [src[0].line, dst[0].line, sl] {
+                if dep > 0 {
+                    rr.push(add_evidence(
+                        &mut evidence,
+                        &hash,
+                        dep,
+                        "policy_object",
+                        "Address or service dependency",
+                    ))
+                }
+            }
+            for dep in &gdep {
+                rr.push(add_evidence(
+                    &mut evidence,
+                    &hash,
+                    *dep,
+                    "policy_object",
+                    "Address or service dependency",
+                ))
+            }
+            let id = format!("panos-nat:{}", r.name);
+            let m = rule(
+                &id,
+                translations.len() + 1,
+                !r.disabled,
+                "permit",
+                (&src[0].prefix, &dst[0].prefix, &proto, &port),
+                &unique(rr.clone()),
+            );
+            translations.push(json!({"id":id,"kind":kind,"from":r.from[0],"to":r.to[0],"match":m,"original_prefix":orig,"translated_prefix":trans,"evidence_refs":rr}));
+        }
+    }
+    let mut seen_pwarn_refs = BTreeSet::new();
+    pwarnings.retain(|w| {
+        seen_pwarn_refs.insert(format!(
+            "{}/{}",
+            w["code"].as_str().unwrap_or(""),
+            w["line"].as_u64().unwrap_or(0)
+        ))
+    });
+    for w in &pwarnings {
+        if let Some(n) = w["line"].as_u64() {
+            let n = n as usize;
+            if n > 0 && n <= source.len() {
+                if source[n - 1]["text"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("[OMITTED")
+                {
+                    source[n - 1]["text"] = json!("[UNSUPPORTED PATH CONFIGURATION]")
+                }
+                path_refs.push(add_evidence(
+                    &mut evidence,
+                    &hash,
+                    n,
+                    "unsupported_path_input",
+                    w["message"].as_str().unwrap_or("Unsupported path input"),
+                ));
+            }
+        }
+        let code = w["code"].as_str().unwrap_or("");
+        if [
+            "unsupported_control",
+            "unsupported_dynamic_route",
+            "unsupported_nat",
+            "unsupported_address",
+            "unsupported_service",
+        ]
+        .contains(&code)
+        {
+            routing_complete = false;
+            nat_complete = false
+        }
+    }
+    let mut seen = BTreeSet::new();
+    warnings.retain(|w| {
+        seen.insert(format!(
+            "{}/{}",
+            w["code"].as_str().unwrap_or(""),
+            w["line"].as_u64().unwrap_or(0)
+        ))
+    });
+    let mut seenp = BTreeSet::new();
+    pwarnings.retain(|w| {
+        seenp.insert(format!(
+            "{}/{}",
+            w["code"].as_str().unwrap_or(""),
+            w["line"].as_u64().unwrap_or(0)
+        ))
+    });
+    if !pwarnings.is_empty() {
+        policy_complete = false;
+    }
+    for pol in &policies {
+        let id = pol["id"].as_str().unwrap_or("");
+        let m = pol["match"].clone();
+        chains.push(json!({"id":format!("panos-policy:{}",id),"name":id,"interface":"","direction":"zone","complete":false,"rules":[m.clone()],"evidence_refs":m["evidence_refs"],"warnings":[warning("zone_context_required","Zone context is required to evaluate this rule",0)]}));
+    }
+    if chains.is_empty() && !rules.is_empty() {
+        chains.push(json!({"id":"panos:policies","name":"PAN-OS unsupported policy inventory","interface":"","direction":"zone","complete":false,"rules":[],"evidence_refs":path_refs,"warnings":pwarnings}));
+    }
+    let mut path = json!({"version":"panos-path-v1","interfaces":path_interfaces,"routes":path_routes,"nat_rules":[],"policies":policies,"translations":translations,"routing_complete":routing_complete,"nat_complete":nat_complete,"policy_complete":policy_complete,"inter_interface":false,"warnings":pwarnings,"evidence_refs":path_refs});
+    if path["policies"].as_array().is_some_and(|x| x.is_empty()) {
+        path.as_object_mut().unwrap().remove("policies");
+    }
+    if path["translations"]
+        .as_array()
+        .is_some_and(|x| x.is_empty())
+    {
+        path.as_object_mut().unwrap().remove("translations");
+    }
+    if !policy_complete {
+        path.as_object_mut().unwrap().remove("policy_complete");
+    }
+    if path_refs.is_empty() {
+        path["evidence_refs"] = Value::Null;
+    }
+    let mut result = json!({"vendor":"paloalto-panos","parser_version":"panos-config-v1","hostname":hostname,"context":"vsys1","artifact_sha256":hash,"source_lines":source,"evidence":evidence,"chains":chains,"warnings":warnings,"capabilities":["PAN-OS SET format","IPv4 static and connected routes","ordered security policy","bounded static NAT"],"rule_origins":origins,"path":path});
+    if result["rule_origins"]
+        .as_array()
+        .is_some_and(|x| x.is_empty())
+    {
+        result.as_object_mut().unwrap().remove("rule_origins");
+    }
+    Ok(result)
+}

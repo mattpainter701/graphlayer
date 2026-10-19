@@ -12,6 +12,7 @@ import importlib
 from typing import Any, Dict, Iterable, Mapping, Type
 
 from .base_connector import BaseConnector
+from ..rust_worker import call_rust
 
 
 class ConnectorRegistry:
@@ -56,7 +57,7 @@ class ConnectorRegistry:
 
     @staticmethod
     def _normalize_type(connector_type: str) -> str:
-        return str(connector_type or "").strip().lower().replace("-", "_")
+        return call_rust("connector.normalize_type", {"connector_type": connector_type})
 
 
 _default_registry = ConnectorRegistry()

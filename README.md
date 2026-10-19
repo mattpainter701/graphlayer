@@ -26,10 +26,17 @@ launch commands and tests. This is a single-user investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.
 
 Rust is required for new parser, connector and analysis-engine behavior. The
-[language policy](docs/RUST_ARCHITECTURE.md) is enforced in CI. The first
-production port moves ASA forwarding inventory parsing into Rust; the rest of
-the legacy engine remains tracked migration work. See the
+[language policy](docs/RUST_ARCHITECTURE.md) is enforced in CI. The local app's
+ASA/PAN-OS/FortiOS parsing, model validation, policy, routing/NAT, return paths
+and multi-firewall exploration execute in Rust. Connector acquisition and
+normalization execute in Rust behind compatibility Go/Python APIs. Older
+experimental vendor and graph libraries remain frozen outside this runtime.
+See the
 [Rust worker and packaging guide](docs/RUST_WORKER.md) for builds and tests.
+
+Private configuration collections can be inventoried and checked with the
+[local corpus runner](docs/PRIVATE_CORPUS.md). Keep customer files outside the
+checkout; public CI uses synthetic and sanitized released fixtures.
 
 ```powershell
 cargo build --locked --release -p graphlayer-engine
@@ -79,7 +86,8 @@ The main platform code is located in the **[`platform/`](platform/)** directory.
 
 ### Vendor Support
 
-The platform supports multiple network vendors:
+The repository also contains older experimental vendor libraries. This table
+describes their locations, not additional supported investigation imports:
 
 | Vendor | Platforms | Location |
 |--------|-----------|----------|
@@ -121,8 +129,9 @@ import "github.com/mattpainter701/graphlayer/platform/vendors/cisco/ios"
 
 ### Graph Engine Direction
 
-GraphLayer is evaluating a focused Rust graph-engine refactor for graph
-construction, validation, algorithms, and high-volume exports. See
+Rust is required for graph construction, validation, algorithms and high-volume
+exports. The shipped investigation engine uses Rust; older graph prototypes
+must be ported before entering a user-facing workflow. See
 [`docs/graph_rust_migration_plan.md`](docs/graph_rust_migration_plan.md).
 
 ## 📊 Sample Data

@@ -3,8 +3,16 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +32,10 @@ func TestAPIConnectorConnectSetsConnectedState(t *testing.T) {
 	t.Parallel()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/payload" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -36,7 +48,6 @@ func TestAPIConnectorConnectSetsConnectedState(t *testing.T) {
 	}
 	defer cleanup()
 	defer connector.Disconnect(context.Background())
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -58,17 +69,22 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 
 	var (
 		mu     sync.Mutex
-		bodies []string
+		bodies [][]byte
 	)
+	wantBody := []byte{0x00, 'p', 'a', 'y', 'l', 'o', 'a', 'd', '-', 0xff, '\n'}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/payload" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("failed to read request body: %v", err)
 		}
 
 		mu.Lock()
-		bodies = append(bodies, string(data))
+		bodies = append(bodies, append([]byte(nil), data...))
 		count := len(bodies)
 		mu.Unlock()
 
@@ -77,7 +93,10 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 			return
 		}
 
+		w.Header().Add("Set-Cookie", "first=1")
+		w.Header().Add("Set-Cookie", "second=2")
 		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, " { \"ok\" : true } \n")
 	})
 
 	config, cleanup := newTLSConfigForHandler(t, handler, 2)
@@ -89,8 +108,13 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 	}
 	defer cleanup()
 	defer connector.Disconnect(context.Background())
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer connectCancel()
+	if err := connector.Connect(connectCtx); err != nil {
+		t.Fatalf("connect returned error: %v", err)
+	}
 
-	resp, err := connector.doRequest(context.Background(), http.MethodPost, "/payload", bytes.NewBufferString("payload-data"))
+	resp, err := connector.doRequest(context.Background(), http.MethodPost, "/payload", bytes.NewReader(wantBody))
 	if err != nil {
 		t.Fatalf("doRequest failed: %v", err)
 	}
@@ -98,6 +122,13 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status code: %d", resp.StatusCode)
+	}
+	if cookies := resp.Header.Values("Set-Cookie"); len(cookies) != 2 || cookies[0] != "first=1" || cookies[1] != "second=2" {
+		t.Fatalf("duplicate response headers were not preserved: %v", cookies)
+	}
+	responseBytes, err := io.ReadAll(resp.Body)
+	if err != nil || !bytes.Equal(responseBytes, []byte(" { \"ok\" : true } \n")) {
+		t.Fatalf("response body bytes changed: %q, err %v", responseBytes, err)
 	}
 
 	mu.Lock()
@@ -108,21 +139,157 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 	}
 
 	for i, body := range bodies {
-		if body != "payload-data" {
-			t.Fatalf("attempt %d body mismatch: %q", i+1, body)
+		if !bytes.Equal(body, wantBody) {
+			t.Fatalf("attempt %d body mismatch: %v", i+1, body)
 		}
+	}
+}
+
+func TestWriteConfigFileHonorsCanceledContext(t *testing.T) {
+	folder := t.TempDir()
+	path := filepath.Join(folder, "cancelled.txt")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := writeConfigFile(ctx, folder, filepath.Base(path), "sensitive config"); err == nil {
+		t.Fatal("expected cancelled config write to fail")
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("cancelled config write created target: %v", err)
+	}
+}
+
+func TestAPIConnectorConcurrentRequestAndDisconnect(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/payload" {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	config, cleanup := newTLSConfigForHandler(t, handler, 1)
+	defer cleanup()
+	var releaseOnce sync.Once
+	releaseRequest := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseRequest()
+	connector, err := NewAPIConnector(config, types.DeviceTypeGenericAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := connector.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	requestDone := make(chan error, 1)
+	go func() {
+		resp, err := connector.doRequest(ctx, http.MethodGet, "/payload", nil)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		requestDone <- err
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("request did not reach fixture server")
+	}
+	disconnectDone := make(chan error, 1)
+	go func() { disconnectDone <- connector.Disconnect(ctx) }()
+	releaseRequest()
+	if err := <-requestDone; err != nil {
+		t.Fatalf("in-flight request failed during disconnect: %v", err)
+	}
+	if err := <-disconnectDone; err != nil {
+		t.Fatalf("disconnect: %v", err)
+	}
+}
+
+func TestReadRequestBodyEnforcesLimit(t *testing.T) {
+	withinLimit := bytes.Repeat([]byte("x"), int(maxAPIRequestBodyBytes))
+	got, err := readRequestBody(bytes.NewReader(withinLimit))
+	if err != nil || !bytes.Equal(got, withinLimit) {
+		t.Fatalf("body at size limit was rejected: got %d bytes, err %v", len(got), err)
+	}
+
+	tooLarge := bytes.Repeat([]byte("x"), int(maxAPIRequestBodyBytes+1))
+	_, err = readRequestBody(bytes.NewReader(tooLarge))
+	if err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("oversized body was not rejected: %v", err)
+	}
+}
+
+type failingBodyReader struct{}
+
+func (failingBodyReader) Read([]byte) (int, error) { return 0, fmt.Errorf("secret body detail") }
+
+func TestReadRequestBodyDoesNotExposeReaderError(t *testing.T) {
+	_, err := readRequestBody(failingBodyReader{})
+	if err == nil || strings.Contains(err.Error(), "secret body detail") {
+		t.Fatalf("reader error leaked input details: %v", err)
 	}
 }
 
 func newTLSConfigForHandler(t *testing.T, handler http.Handler, retryCount int) (*base.ConnectionConfig, func()) {
 	t.Helper()
 
-	server := httptest.NewTLSServer(handler)
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate test CA key")
+	}
+	now := time.Now()
+	caTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "GraphLayer test CA"},
+		NotBefore:    now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("failed to create test CA certificate")
+	}
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate test server key")
+	}
+	leafTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:    now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caTemplate, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("failed to create test server certificate")
+	}
+	leafCert, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatalf("failed to parse test server certificate")
+	}
+	serverKey, err := tls.X509KeyPair(
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
+		mustMarshalECPrivateKey(t, leafKey),
+	)
+	if err != nil {
+		t.Fatalf("failed to load test server certificate")
+	}
+	server := httptest.NewUnstartedServer(handler)
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{serverKey}, MinVersion: tls.VersionTLS12}
+	server.StartTLS()
 
 	host, port := extractHostPort(t, server.URL)
-
-	certDER := server.TLS.Certificates[0].Certificate[0]
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if host != "127.0.0.1" || leafCert.IsCA {
+		t.Fatalf("invalid non-CA loopback test certificate")
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
 
 	certPath := filepath.Join(t.TempDir(), "server-cert.pem")
 	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
@@ -143,6 +310,15 @@ func newTLSConfigForHandler(t *testing.T, handler http.Handler, retryCount int) 
 	}
 
 	return config, cleanup
+}
+
+func mustMarshalECPrivateKey(t *testing.T, key *ecdsa.PrivateKey) []byte {
+	t.Helper()
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal test server key")
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
 }
 
 func extractHostPort(t *testing.T, rawURL string) (string, int) {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import hashlib
 import json
 import os
 import sys
@@ -32,6 +33,10 @@ class NetBoxFixtureHandler(http.server.BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        if self.headers.get("Authorization") != "Token token-123":
+            self.send_response(401)
+            self.end_headers()
+            return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         NetBoxFixtureHandler.request_log.append(self.path)
@@ -214,6 +219,10 @@ class NetBoxConnectorTests(unittest.TestCase):
             "ip_addresses": _load_fixture("ipam_ip_addresses_page1.json")["results"]
             + _load_fixture("ipam_ip_addresses_page2.json")["results"],
         }
+        raw_bundle["devices"][0]["custom_fields"]["fingerprint_probe"] = {
+            "unicode": "λ\n", "negative_zero": -0.0, "small": 1e-5,
+            "large": 1e20, "big_integer": 10**100,
+        }
 
         bundle = connector.transform(raw_bundle)
         self.assertEqual(bundle["count"], 8)
@@ -221,6 +230,10 @@ class NetBoxConnectorTests(unittest.TestCase):
         self.assertEqual(bundle["interfaces"][0]["payload"]["ip_addresses"][0]["address"], "10.0.0.2/24")
         self.assertEqual(bundle["links"][0]["payload"]["termination_b"]["device_name"], "edge-router-01")
         self.assertTrue(bundle["records"][0]["raw_fingerprint"].startswith("sha256:"))
+        normalized = next(record for record in bundle["devices"] if record["payload"]["id"] == "101")
+        canonical = json.dumps(normalized["payload"], sort_keys=True, separators=(",", ":"),
+                               ensure_ascii=False, default=str).encode("utf-8")
+        self.assertEqual(normalized["raw_fingerprint"], "sha256:" + hashlib.sha256(canonical).hexdigest())
 
     def test_smoke_connection_helper(self) -> None:
         host, port = self.server.server_address

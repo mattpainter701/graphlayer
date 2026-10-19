@@ -39,6 +39,9 @@ func (a *App) exploreNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inv, err := a.store.ExploreNetwork(req)
+	if analysisUnavailable(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ErrPathUnavailable):
 		apiError(w, 409, "path_unavailable", "Reimport older snapshots to create path metadata.")

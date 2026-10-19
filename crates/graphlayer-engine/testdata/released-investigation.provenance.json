@@ -1,0 +1,27 @@
+{
+  "release_commit": "418e550f173938bad7dc7d86995d4a12945f9f23",
+  "capture_run": "https://github.com/mattpainter701/graphlayer/actions/runs/39182018248",
+  "capture_method": "Instrumented public entry points in an isolated exact release checkout; all released firewall, policy, pathanalysis, networkpath, investigation and HTTP application tests passed.",
+  "artifact_sha256": {
+    "firewall.ndjson": "63197818543191bde44cfb1bf9d9470c033fcfc435edc7804e67768bf5d1c0c1",
+    "networkpath.ndjson": "394978265b162253304dbeac161fa0cfb63c6344f6601097229985f9bfdb061a",
+    "pathanalysis.ndjson": "963e65efbb4516d4c6b376af8c6f856737fa8d8aa965ee8f3c0b9b9957e7895e",
+    "policy.ndjson": "e2d63fcdd66fcb652b82ad04f819b687f2a94e5a962461994a6c380fe80de3e3"
+  },
+  "fixture_sha256": "55d91838dc1195be93e4e18532080bff5c94cf0d03d4227da0b79d2c0241482e",
+  "case_count": 1764,
+  "operations": {
+    "evaluate_network": 24,
+    "evaluate_path": 100,
+    "evaluate_policy": 437,
+    "evaluate_return": 51,
+    "explore_network": 15,
+    "explore_path": 70,
+    "explore_return": 35,
+    "parse_asa": 91,
+    "parse_fortigate": 40,
+    "parse_panos": 23,
+    "validate_policy": 668,
+    "validate_scope": 210
+  }
+}

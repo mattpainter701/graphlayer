@@ -43,7 +43,7 @@ func (s *Store) ExploreNetwork(req NetworkRequest) (*NetworkExploration, error) 
 	}
 	result, err := networkpath.Explore(in)
 	if err != nil {
-		return nil, ErrInvalidFlow
+		return nil, flowEvaluationError(err)
 	}
 	inv := &NetworkExploration{ID: explorationIdentity(req, result), CreatedAt: time.Now().UTC(), Request: req, Result: result}
 	data, err := json.Marshal(inv)

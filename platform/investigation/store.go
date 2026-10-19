@@ -40,6 +40,13 @@ var ErrPathUnavailable = errors.New("snapshot has no supported path metadata")
 var ErrWorkspaceConflict = errors.New("workspace revision or name conflict")
 var ErrWorkspaceInvalid = errors.New("invalid workspace metadata")
 
+func flowEvaluationError(err error) error {
+	if errors.Is(err, firewall.ErrAnalysisEngine) {
+		return err
+	}
+	return ErrInvalidFlow
+}
+
 type Snapshot struct {
 	ID              string    `json:"id"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -197,7 +204,13 @@ func NewStore(dir string) (*Store, error) {
 		switch record.Kind {
 		case "snapshot":
 			var snap Snapshot
-			if json.Unmarshal(record.Data, &snap) != nil || validateSnapshot(&snap) != nil || entry.Name() != "snapshot-"+snap.ID+".json" {
+			if json.Unmarshal(record.Data, &snap) != nil || entry.Name() != "snapshot-"+snap.ID+".json" {
+				return nil, errors.New("invalid stored snapshot")
+			}
+			if err := validateSnapshot(&snap); err != nil {
+				if errors.Is(err, firewall.ErrAnalysisEngine) {
+					return nil, err
+				}
 				return nil, errors.New("invalid stored snapshot")
 			}
 			if record.Version == legacyWorkspaceVersion && snap.ParserVersion != "asa-config-v1" || record.Version == priorWorkspaceVersion && snap.ParserVersion != "asa-config-v2" || (record.Version == networkWorkspaceVersion || record.Version == routingWorkspaceVersion) && (snap.ParserVersion != firewall.ParserVersion || snap.Vendor != "cisco-asa") {
@@ -257,24 +270,45 @@ func NewStore(dir string) (*Store, error) {
 			return nil, errors.New("invalid stored investigation")
 		}
 		if err := s.validateInvestigation(&inv, legacyInvestigations[inv.ID]); err != nil {
+			if errors.Is(err, firewall.ErrAnalysisEngine) {
+				return nil, err
+			}
 			return nil, errors.New("stored investigation does not match its snapshot")
 		}
 	}
 	for _, data := range s.paths {
 		var inv PathInvestigation
-		if json.Unmarshal(data, &inv) != nil || s.validatePathInvestigation(&inv) != nil {
+		if json.Unmarshal(data, &inv) != nil {
+			return nil, errors.New("stored path investigation does not replay against its snapshot")
+		}
+		if err := s.validatePathInvestigation(&inv); err != nil {
+			if errors.Is(err, firewall.ErrAnalysisEngine) {
+				return nil, err
+			}
 			return nil, errors.New("stored path investigation does not replay against its snapshot")
 		}
 	}
 	for _, data := range s.networks {
 		var inv NetworkInvestigation
-		if json.Unmarshal(data, &inv) != nil || s.validateNetworkInvestigation(&inv) != nil {
+		if json.Unmarshal(data, &inv) != nil {
+			return nil, errors.New("stored network investigation does not replay against its snapshots")
+		}
+		if err := s.validateNetworkInvestigation(&inv); err != nil {
+			if errors.Is(err, firewall.ErrAnalysisEngine) {
+				return nil, err
+			}
 			return nil, errors.New("stored network investigation does not replay against its snapshots")
 		}
 	}
 	for _, data := range s.explorations {
 		var inv NetworkExploration
-		if json.Unmarshal(data, &inv) != nil || s.validateNetworkExploration(&inv) != nil {
+		if json.Unmarshal(data, &inv) != nil {
+			return nil, errors.New("stored network exploration does not replay against its snapshots")
+		}
+		if err := s.validateNetworkExploration(&inv); err != nil {
+			if errors.Is(err, firewall.ErrAnalysisEngine) {
+				return nil, err
+			}
 			return nil, errors.New("stored network exploration does not replay against its snapshots")
 		}
 	}
@@ -335,7 +369,10 @@ func validateSnapshot(s *Snapshot) error {
 		}
 		b := bundle(s, chain)
 		probe := policy.Flow{Scope: b.Scope, Source: "192.0.2.1", Destination: "198.51.100.1", Protocol: "tcp", SourcePort: 49152, DestinationPort: 443}
-		if policy.Validate(b, probe) != nil {
+		if err := policy.Validate(b, probe); err != nil {
+			if errors.Is(err, firewall.ErrAnalysisEngine) {
+				return err
+			}
 			return errors.New("invalid normalized policy chain")
 		}
 	}
@@ -419,6 +456,9 @@ func (s *Store) ImportVendor(name string, raw []byte, vendor string) (*Snapshot,
 	}
 	snap := &Snapshot{ID: snapshotID(*parsed), CreatedAt: time.Now().UTC(), Name: name, SanitizedSHA256: digest(lines), Config: *parsed}
 	if err = validateSnapshot(snap); err != nil {
+		if errors.Is(err, firewall.ErrAnalysisEngine) {
+			return nil, false, err
+		}
 		return nil, false, ErrInvalidConfig
 	}
 	data, err := json.Marshal(snap)
@@ -515,20 +555,9 @@ func (s *Store) validateInvestigation(inv *Investigation, legacy bool) error {
 		if inv.Result.Scope != bundle(&snap, chain).Scope || inv.CreatedAt.IsZero() {
 			return errors.New("investigation scope mismatch")
 		}
-		result, err := policy.Evaluate(bundle(&snap, chain), inv.Result.Flow)
+		result, err := policy.EvaluateRecord(bundle(&snap, chain), inv.Result.Flow, chain.EvidenceRefs, legacy)
 		if err != nil {
 			return err
-		}
-		// Default deny is inferred from the selected attached ASA chain; its
-		// evidence anchor is the binding, not a fabricated explicit deny line.
-		if result.UsedDefault {
-			result.EvidenceRefs = append([]string(nil), chain.EvidenceRefs...)
-		}
-		// The v3 engine preserves v2 verdict semantics. Compare an explicit
-		// legacy projection without rewriting old bytes or inventing traces.
-		if legacy {
-			result.EngineContractVersion = "graphlayer-policy-v2"
-			result.RuleTraces = nil
 		}
 		want, _ := json.Marshal(result)
 		got, _ := json.Marshal(inv.Result)
@@ -561,12 +590,12 @@ func (s *Store) Evaluate(snapshotID, chainID string, flow policy.Flow) (*Investi
 	}
 	b := bundle(snap, *selected)
 	flow.Scope = b.Scope
-	result, err := policy.Evaluate(b, flow)
+	result, err := policy.EvaluateRecord(b, flow, selected.EvidenceRefs, false)
 	if err != nil {
+		if errors.Is(err, firewall.ErrAnalysisEngine) {
+			return nil, err
+		}
 		return nil, ErrInvalidFlow
-	}
-	if result.UsedDefault {
-		result.EvidenceRefs = append([]string(nil), selected.EvidenceRefs...)
 	}
 	resultData, err := json.Marshal(result)
 	if err != nil {

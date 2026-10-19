@@ -1,5 +1,12 @@
 #![forbid(unsafe_code)]
 
+pub mod asa_config;
+pub mod connectors;
+pub mod dispatch;
+pub mod investigation_engine;
+pub mod model_validation;
+pub mod vendor_parsers;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};

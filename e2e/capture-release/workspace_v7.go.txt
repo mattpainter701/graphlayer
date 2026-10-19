@@ -1,0 +1,33 @@
+package investigation
+
+import (
+    "os"
+    "testing"
+    "github.com/mattpainter701/graphlayer/platform/firewall"
+    "github.com/mattpainter701/graphlayer/platform/policy"
+)
+
+// This test is copied only into an isolated exact released source checkout.
+func TestCaptureReleasedV7Workspace(t *testing.T) {
+    directory:=os.Getenv("RELEASE_WORKSPACE_OUTPUT")
+    if directory=="" {t.Fatal("missing released fixture output")}
+    store,err:=NewStore(directory)
+    if err!=nil{t.Fatal(err)}
+    defer store.Close()
+    if _,err=store.RenameWorkspace("Released enterprise operations",0);err!=nil{t.Fatal(err)}
+    site,err:=store.CreateSite("Headquarters","Released source evidence",store.WorkspaceInfo().Revision)
+    if err!=nil{t.Fatal(err)}
+    snapshot,_,err:=store.Import("Released ASA policy",firewall.SampleASA())
+    if err!=nil{t.Fatal(err)}
+    if _,err=store.Evaluate(snapshot.ID,snapshot.Chains[0].ID,policy.Flow{Source:"192.0.2.1",Destination:"198.51.100.1",Protocol:"tcp",SourcePort:52000,DestinationPort:443});err!=nil{t.Fatal(err)}
+    pathSnapshot,_,err:=store.Import("Released routing and NAT",firewall.SamplePathASA())
+    if err!=nil{t.Fatal(err)}
+    if _,err=store.EvaluatePath(pathSnapshot.ID,"outside",policy.Flow{Source:"198.51.100.42",Destination:"198.51.100.15",Protocol:"tcp",SourcePort:52000,DestinationPort:443});err!=nil{t.Fatal(err)}
+    network:=importVendorNetworkSample(t,store)
+    if _,err=store.EvaluateNetwork(network);err!=nil{t.Fatal(err)}
+    exploration:=importExplorationSample(t,store)
+    if _,err=store.ExploreNetwork(exploration);err!=nil{t.Fatal(err)}
+    var snapshots []Snapshot
+    for _,node:=range exploration.Nodes{snapshot,err:=store.Snapshot(node.SnapshotID);if err!=nil{t.Fatal(err)};snapshots=append(snapshots,*snapshot)}
+    if _,_,err=store.PublishSnapshotSet("Released mixed-vendor baseline",site.ID,snapshots,store.WorkspaceInfo().Revision);err!=nil{t.Fatal(err)}
+}
