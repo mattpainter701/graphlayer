@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import threading
@@ -35,6 +36,13 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _reject_constant(_: str) -> None:
     raise ValueError("non-finite JSON number")
+
+
+def _finite_float(value: str) -> float:
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("non-finite JSON number")
+    return result
 
 
 def _read_bounded(process: subprocess.Popen[bytes], output: bytearray,
@@ -128,15 +136,24 @@ def call_rust(operation: str, input_data: Any, *, timeout: int = DEFAULT_TIMEOUT
         raise RustWorkerError("required Rust connector engine returned an invalid response")
     try:
         response = json.loads(bytes(output), object_pairs_hook=_unique_object,
-                              parse_constant=_reject_constant)
+                              parse_constant=_reject_constant, parse_float=_finite_float)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise RustWorkerError("required Rust connector engine returned an invalid response") from exc
     if not isinstance(response, dict):
         raise RustWorkerError("required Rust connector engine returned an invalid response")
-    if response.get("protocol_version") != PROTOCOL_VERSION or response.get("operation") != operation:
+    if not isinstance(response.get("protocol_version"), str) or response["protocol_version"] != PROTOCOL_VERSION:
         raise RustWorkerError("required Rust connector engine returned an invalid response")
-    if response.get("error"):
+    if not isinstance(response.get("operation"), str) or response["operation"] != operation:
+        raise RustWorkerError("required Rust connector engine returned an invalid response")
+    if "error" in response:
+        if (set(response) - {"protocol_version", "operation", "error", "error_kind"}
+                or not isinstance(response["error"], str) or not response["error"]
+                or "result" in response
+                or ("error_kind" in response and response["error_kind"] is not None
+                    and not isinstance(response["error_kind"], str))):
+            raise RustWorkerError("required Rust connector engine returned an invalid response")
         raise RustWorkerError("Rust connector operation failed")
-    if "result" not in response:
+    if (set(response) != {"protocol_version", "operation", "result"}
+            or response["result"] is None):
         raise RustWorkerError("required Rust connector engine returned an invalid response")
     return response["result"]

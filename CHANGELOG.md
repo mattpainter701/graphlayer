@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Move the local investigation app's ASA, PAN-OS and FortiOS parsers, model validation, policy decisions, routing/NAT, return paths and multi-firewall exploration into the required Rust engine. Preserve released workspace-v1 through v7 records, sanitized source evidence and saved investigation identities.
+- Run NetBox, ServiceNow, SolarWinds, SFTP/SMB and operational SSH/API connector acquisition in Rust, including persistent sessions and App-ID/ISDB parsing. Keep Go/Python compatibility APIs, require verified SSH host keys and fail unavailable workers without falling back to legacy parsing or rewriting history.
+
 - Add focused Workspace, Sources & imports, Investigation and Network path pages, with direct links, browser history navigation and a shared source-evidence drawer.
 - Add a searchable topology workspace with declared drafts, pan/zoom/fit, device focus, forward/return overlays and an inspector for snapshot-pinned routing, NAT, coverage and source evidence. Graph controls change presentation without recomputing or changing saved analysis.
 

@@ -53,8 +53,19 @@
 
 - Keep Rust as the source of truth. A facade that calls the old engine does
   not count as a Rust port.
+- The local investigation application's ASA/PAN-OS/FortiOS parsers, model
+  validation, policy/path/return/exploration engine and connector acquisition
+  must execute in Rust. Preserve public Go/Python signatures only as transport
+  and serialization adapters; remove the replaced production algorithms.
+- Legacy experimental libraries are frozen, not supported extensions. Port and
+  test their behavior in Rust before connecting them to a shipped workflow.
 - Preserve input compatibility and verify behavior with golden fixtures and
   focused parity checks as each implementation moves.
+- Never refresh released golden outputs from a replacement engine to hide a
+  mismatch. Preserve workspace-v1 through v7 bytes, evidence IDs, source hashes,
+  parser versions and saved investigation identities during replay.
+- Missing workers, protocol errors and timeouts must fail closed without
+  rewriting saved workspaces or selecting a Go/Python domain fallback.
 - Run `python scripts/check-rust-boundary.py` after changing production code
   in a guarded domain area. CI runs the same command.
 - Do not update legacy hashes to accept a change until the implementation has

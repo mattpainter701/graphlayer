@@ -74,6 +74,21 @@ func Evaluate(operation string, input, out any) error {
 	return Call(ctx, operation, input, out)
 }
 
+// Validate requires an explicit positive acknowledgement from a validator.
+// An empty object or a false result is a broken protocol, not validation success.
+func Validate(operation string, input any) error {
+	var result struct {
+		Valid bool `json:"valid"`
+	}
+	if err := Evaluate(operation, input, &result); err != nil {
+		return err
+	}
+	if !result.Valid {
+		return unavailable("worker returned an incomplete validation result")
+	}
+	return nil
+}
+
 func encode(operation string, input any) ([]byte, error) {
 	data, err := json.Marshal(request{Protocol, operation, input})
 	if err != nil || len(data)+1 > MaxInput {

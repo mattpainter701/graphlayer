@@ -90,6 +90,32 @@ class RustWorkerTransportTests(unittest.TestCase):
         for secret in ("credential-secret", "raw-server-response", "stderr-secret"):
             self.assertNotIn(secret, str(caught.exception))
 
+    def test_rejects_ambiguous_or_unexpected_response_envelopes(self) -> None:
+        base = {"protocol_version": "graphlayer-engine-v1", "operation": "connector.test"}
+        invalid = [
+            {**base, "result": None},
+            {**base, "result": True, "error_kind": "domain"},
+            {**base, "result": True, "unexpected": "value"},
+            {**base, "error": "failed", "result": True},
+            {**base, "error": 4},
+            {**base, "result": True, "protocol_version": 1},
+            {**base, "result": True, "operation": ["connector.test"]},
+        ]
+        for response in invalid:
+            with self.subTest(response=response):
+                self._worker(
+                    "import json,sys\nsys.stdin.read()\n"
+                    f"sys.stdout.write({json.dumps(response)!r})\n"
+                )
+                with self.assertRaisesRegex(RustWorkerError, "invalid response"):
+                    self._call("connector.test", {})
+
+    def test_rejects_non_finite_exponent_values(self) -> None:
+        response = '{"protocol_version":"graphlayer-engine-v1","operation":"connector.test","result":{"n":1e999}}'
+        self._worker(f"import sys\nsys.stdin.read()\nsys.stdout.write({response!r})\n")
+        with self.assertRaisesRegex(RustWorkerError, "invalid response"):
+            self._call("connector.test", {})
+
     def test_enforces_timeout(self) -> None:
         self._worker("import sys,time\nsys.stdin.read()\ntime.sleep(10)\n")
         with self.assertRaisesRegex(RustWorkerError, "timed out"):

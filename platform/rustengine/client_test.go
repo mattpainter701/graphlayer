@@ -43,9 +43,28 @@ func TestWorkerProcess(t *testing.T) {
 			_ = json.NewEncoder(os.Stdout).Encode(response{ProtocolVersion: Protocol, Operation: input.Operation, Error: "invalid flow source address", ErrorKind: "domain"})
 		case "wrong_operation":
 			_ = json.NewEncoder(os.Stdout).Encode(response{ProtocolVersion: Protocol, Operation: "wrong", Result: json.RawMessage(`{}`)})
+		case "missing_validation":
+			_ = json.NewEncoder(os.Stdout).Encode(response{ProtocolVersion: Protocol, Operation: input.Operation, Result: json.RawMessage(`{}`)})
+		case "false_validation":
+			_ = json.NewEncoder(os.Stdout).Encode(response{ProtocolVersion: Protocol, Operation: input.Operation, Result: json.RawMessage(`{"valid":false}`)})
 		default:
 			_ = json.NewEncoder(os.Stdout).Encode(response{ProtocolVersion: Protocol, Operation: input.Operation, Result: json.RawMessage(`{"valid":true}`)})
 		}
+	}
+}
+
+func TestValidationRequiresExplicitPositiveResult(t *testing.T) {
+	for _, mode := range []string{"missing_validation", "false_validation", "valid"} {
+		t.Run(mode, func(t *testing.T) {
+			fakeWorker(t, mode)
+			err := Validate("validate_scope", map[string]any{})
+			if mode == "valid" && err != nil {
+				t.Fatal(err)
+			}
+			if mode != "valid" && !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("incomplete validation result was accepted: %v", err)
+			}
+		})
 	}
 }
 

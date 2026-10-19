@@ -6,10 +6,22 @@ mod services;
 pub use parser::{expand_address, parse_running_config, ParsedConfig};
 pub use projection::parse_asa_with_hash;
 
-pub fn service_port(protocol:&str,name:&str)->Option<String>{services::service_port_for(protocol,name)}
-pub fn port_alternatives(fields:&[&str],protocol:&str,object:bool)->Option<(Vec<String>,usize)>{
-    if object&&!fields.first().is_some_and(|f|matches!(f.to_ascii_lowercase().as_str(),"eq"|"range")){return None;}
-    services::port_alternatives(fields,protocol)
+pub fn service_port(protocol: &str, name: &str) -> Option<String> {
+    services::service_port_for(protocol, name)
+}
+pub fn port_alternatives(
+    fields: &[&str],
+    protocol: &str,
+    object: bool,
+) -> Option<(Vec<String>, usize)> {
+    if object
+        && !fields
+            .first()
+            .is_some_and(|f| matches!(f.to_ascii_lowercase().as_str(), "eq" | "range"))
+    {
+        return None;
+    }
+    services::port_alternatives(fields, protocol)
 }
 
 use serde::{Deserialize, Serialize};
@@ -107,27 +119,45 @@ pub struct RawLine {
 fn unique<T: Clone + PartialEq>(items: &[T]) -> Vec<T> {
     let mut result = Vec::new();
     for item in items {
-        if !result.contains(item) { result.push(item.clone()); }
+        if !result.contains(item) {
+            result.push(item.clone());
+        }
     }
     result
 }
 fn warning(code: &str, message: &str, line: i32, acl: &str) -> ConfigWarning {
-    ConfigWarning { code: code.into(), message: message.into(), line, acl_name: acl.into() }
+    ConfigWarning {
+        code: code.into(),
+        message: message.into(),
+        line,
+        acl_name: acl.into(),
+    }
 }
 fn harmless(fields: &[&str]) -> bool {
-    fields.first().is_none_or(|f| matches!(f.to_ascii_lowercase().as_str(), "description"|"comment"|"tag"|"color"))
+    fields.first().is_none_or(|f| {
+        matches!(
+            f.to_ascii_lowercase().as_str(),
+            "description" | "comment" | "tag" | "color"
+        )
+    })
 }
 fn network_reference(expr: &str) -> (&str, &str) {
     match expr.split_once(':') {
-        Some((kind,name)) if matches!(kind,"network_object"|"network_group") => (name,kind),
-        _ => (expr,""),
+        Some((kind, name)) if matches!(kind, "network_object" | "network_group") => (name, kind),
+        _ => (expr, ""),
     }
 }
 fn object_id(objects: &BTreeMap<String, AddressObject>, expr: &str) -> String {
     let raw = expr.trim_start_matches('@');
     let (name, kind) = network_reference(raw);
     let kind = if kind.is_empty() {
-        if objects.get(name).is_some_and(|o| o.group) { "network_group" } else { "network_object" }
-    } else {kind};
+        if objects.get(name).is_some_and(|o| o.group) {
+            "network_group"
+        } else {
+            "network_object"
+        }
+    } else {
+        kind
+    };
     format!("{kind}:{name}")
 }

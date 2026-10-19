@@ -66,19 +66,20 @@ class DeltaSyncRecord:
 class DeltaSyncResult:
     records: list[DeltaSyncRecord]
     checkpoint: ConnectorCheckpoint
+    _selected: Mapping[str, list[DeltaSyncRecord]] = field(default_factory=dict, repr=False)
+    _summary: Mapping[str, int] = field(default_factory=dict, repr=False)
 
     @property
-    def added(self) -> list[DeltaSyncRecord]: return [item for item in self.records if item.action == DeltaAction.ADDED]
+    def added(self) -> list[DeltaSyncRecord]: return self._selected.get("added", [])
     @property
-    def updated(self) -> list[DeltaSyncRecord]: return [item for item in self.records if item.action == DeltaAction.UPDATED]
+    def updated(self) -> list[DeltaSyncRecord]: return self._selected.get("updated", [])
     @property
-    def unchanged(self) -> list[DeltaSyncRecord]: return [item for item in self.records if item.action == DeltaAction.UNCHANGED]
+    def unchanged(self) -> list[DeltaSyncRecord]: return self._selected.get("unchanged", [])
     @property
-    def stale(self) -> list[DeltaSyncRecord]: return [item for item in self.records if item.action == DeltaAction.STALE]
+    def stale(self) -> list[DeltaSyncRecord]: return self._selected.get("stale", [])
 
     def summary(self) -> Dict[str, int]:
-        return {"added": len(self.added), "updated": len(self.updated),
-                "unchanged": len(self.unchanged), "stale": len(self.stale), "total": len(self.records)}
+        return dict(self._summary)
 
 
 class ConnectorContract(abc.ABC):
@@ -225,7 +226,15 @@ class BaseConnector(ConnectorContract):
             "high_watermark": high_watermark, "include_stale": include_stale})
         deltas = [DeltaSyncRecord(DeltaAction(item["action"]), _record_from_dict(item["record"]),
                                  item.get("previous_fingerprint")) for item in result["records"]]
-        return DeltaSyncResult(deltas, ConnectorCheckpoint.from_dict(result["checkpoint"]))
+        selection = self._rust("connector.delta_select", {"records": result["records"]})
+        selected = {action: [DeltaSyncRecord(DeltaAction(item["action"]),
+                                             _record_from_dict(item["record"]),
+                                             item.get("previous_fingerprint"))
+                             for item in selection["selected"][action]]
+                    for action in ("added", "updated", "unchanged", "stale")}
+        summary = {key: int(value) for key, value in selection["summary"].items()}
+        return DeltaSyncResult(deltas, ConnectorCheckpoint.from_dict(result["checkpoint"]),
+                               selected, summary)
 
     def validate_required_fields(self, fields: Iterable[str]) -> None:
         fields = list(fields)

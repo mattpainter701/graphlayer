@@ -6,17 +6,11 @@ const ContractVersion = "graphlayer-policy-v3"
 
 // ValidateScope delegates scope validation to the authoritative Rust engine.
 func ValidateScope(scope Scope) error {
-	var result struct {
-		Valid bool `json:"valid"`
-	}
-	return rustengine.Evaluate("validate_scope", map[string]any{"scope": scope}, &result)
+	return rustengine.Validate("validate_scope", map[string]any{"scope": scope})
 }
 
 func Validate(bundle Bundle, flow Flow) error {
-	var result struct {
-		Valid bool `json:"valid"`
-	}
-	return rustengine.Evaluate("validate_policy", map[string]any{"bundle": bundle, "flow": flow}, &result)
+	return rustengine.Validate("validate_policy", map[string]any{"bundle": bundle, "flow": flow})
 }
 
 func Evaluate(bundle Bundle, flow Flow) (Result, error) {

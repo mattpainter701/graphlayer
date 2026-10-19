@@ -89,7 +89,7 @@ pub fn dispatch(op:&str,input:&Value)->Result<Value,String>{match op{
     "appid.panos.parse"=>panos_cache(&text(&input["xml"]),&text(&input["device_id"]),&text(&input["firmware_version"])),
     "appid.panos.default_service"=>{let (protocol,ports)=default_service(&text(&input["ident_by_ip_protocol"]),&text(&input["port"]));Ok(json!({"protocol":protocol,"ports":ports}))},
     "appid.panos.parse_firmware"=>Ok(json!(parse_panos_firmware(&text(&input["xml"])))),
-    "appid.fortigate.parse_entry"=>Ok(parse_isdb_entry(input["id"].as_i64().unwrap_or(0),&text(&input["output"])).unwrap_or(Value::Null)),
+    "appid.fortigate.parse_entry"=>{let entry=parse_isdb_entry(input["id"].as_i64().unwrap_or(0),&text(&input["output"]));Ok(json!({"found":entry.is_some(),"entry":entry}))},
     "appid.fortigate.parse_range"=>Ok(json!(parse_isdb_range(&text(&input["output"])))),
     "appid.fortigate.parse_version"=>Ok(json!(parse_isdb_version(&text(&input["output"])))),
     "appid.fortigate.parse_firmware"=>Ok(json!(parse_fortios_version(&text(&input["output"])))),
