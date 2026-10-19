@@ -30,7 +30,20 @@ pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
     }
 }
 
-fn fingerprint(value:&Value)->String{let bytes=serde_json::to_vec(value).unwrap_or_default();format!("sha256:{:x}",Sha256::digest(bytes))}
+fn fingerprint(value:&Value)->String{let bytes=python_json(value).unwrap_or_default();format!("sha256:{:x}",Sha256::digest(bytes))}
+fn python_json(value:&Value)->Result<Vec<u8>,String>{let mut out=String::new();write_python_json(value,&mut out)?;Ok(out.into_bytes())}
+fn write_python_json(value:&Value,out:&mut String)->Result<(),String>{match value{
+ Value::Null=>out.push_str("null"),Value::Bool(v)=>out.push_str(if *v{"true"}else{"false"}),
+ Value::Number(v)=>{if v.is_f64(){out.push_str(&python_float(v.as_f64().ok_or_else(||"invalid_number".to_string())?));}else{out.push_str(&v.to_string());}},
+ Value::String(v)=>out.push_str(&serde_json::to_string(v).map_err(|_|"invalid_string".to_string())?),
+ Value::Array(items)=>{out.push('[');for(i,item)in items.iter().enumerate(){if i>0{out.push(',')}write_python_json(item,out)?}out.push(']')},
+ Value::Object(items)=>{out.push('{');let mut keys=items.keys().collect::<Vec<_>>();keys.sort();for(i,key)in keys.into_iter().enumerate(){if i>0{out.push(',')}out.push_str(&serde_json::to_string(key).map_err(|_|"invalid_string".to_string())?);out.push(':');write_python_json(&items[key],out)?}out.push('}')},
+ }Ok(())}
+fn python_float(value:f64)->String{
+ if value==0.0{return if value.is_sign_negative(){"-0.0".into()}else{"0.0".into()}}
+ let mut buffer=ryu::Buffer::new();let number=buffer.format_finite(value);let negative=number.starts_with('-');let unsigned=number.trim_start_matches('-');let exponent_at=unsigned.find('e').or_else(||unsigned.find('E'));let(mantissa,exponent)=if let Some(at)=exponent_at{(&unsigned[..at],unsigned[at+1..].parse::<i32>().unwrap_or(0))}else{(unsigned,0)};let decimal_pos=mantissa.find('.').unwrap_or(mantissa.len())as i32+exponent;let mut digits=mantissa.chars().filter(|c|*c!='.').collect::<String>();let mut point=decimal_pos;while digits.starts_with('0')&&digits.len()>1{digits.remove(0);point-=1;}while digits.ends_with('0')&&digits.len()>1{digits.pop();}
+ let mut result=String::new();if negative{result.push('-')}let scientific=value.abs()>=1e16||value.abs()<1e-4;if scientific{result.push(digits.as_bytes()[0]as char);if digits.len()>1{result.push('.');result.push_str(&digits[1..]);}let power=point-1;result.push('e');result.push(if power>=0{'+'}else{'-'});let magnitude=power.unsigned_abs();if magnitude<10{result.push('0')}result.push_str(&magnitude.to_string());}else if point<=0{result.push_str("0.");result.extend(std::iter::repeat('0').take((-point)as usize));result.push_str(&digits);}else if point as usize>=digits.len(){result.push_str(&digits);result.extend(std::iter::repeat('0').take((point as usize)-digits.len()));result.push_str(".0");}else{let split=point as usize;result.push_str(&digits[..split]);result.push('.');result.push_str(&digits[split..]);}result
+}
 fn normalize_type(v:&str)->String{v.trim().to_lowercase().replace('-',"_")}
 fn correlation_keys(pairs:&[Value])->Value{let mut seen=BTreeSet::new();let mut out=Vec::new();for pair in pairs{let Some(a)=pair.as_array()else{continue};if a.len()!=2{continue}let label=text(&a[0]).trim().to_lowercase();let value=text(&a[1]).trim().to_lowercase();if !label.is_empty()&&!value.is_empty(){let key=format!("{label}:{value}");if seen.insert(key.clone()){out.push(json!(key));}}}Value::Array(out)}
 fn record_key(r:&Value)->String{let fp=text(&r["raw_fingerprint"]);if !fp.is_empty(){return format!("fingerprint:{fp}");}let mut keys=r["payload"]["correlation_keys"].as_array().cloned().unwrap_or_default().iter().map(|v|text(v).trim().to_lowercase()).filter(|s|!s.is_empty()).collect::<Vec<_>>();keys.sort();keys.dedup();if !keys.is_empty(){return format!("correlation:{}",keys.join("|"));}format!("source:{}:{}:{}",text(&r["source_connector"]),text(&r["record_type"]),text(&r["source_id"]))}
@@ -51,3 +64,10 @@ fn local_filename(remote:&str,root:&str)->String{let relative=remote.strip_prefi
 fn matches_patterns(i:&Value)->Result<Value,String>{let name=text(&i["filename"]);let includes=i["file_patterns"].as_array().cloned().unwrap_or_default();let excludes=i["exclude_patterns"].as_array().cloned().unwrap_or_default();let included=if includes.is_empty(){true}else{pattern_match(&name,&includes)?};let excluded=pattern_match(&name,&excludes)?;Ok(json!(included&&!excluded))}
 fn pattern_match(name:&str,patterns:&[Value])->Result<bool,String>{for p in patterns{let pat=text(p);if pat.is_empty(){continue}let regex=regex::Regex::new(&pat).map_err(|_|"invalid_file_pattern".to_string())?;if regex.is_match(name){return Ok(true)}}Ok(false)}
 fn sanitize_filename(name:&str)->String{name.replace(' ',"_").chars().filter(|c|!"<>:\"/\\|?*".contains(*c)).take(200).collect()}
+
+#[cfg(test)]
+mod fingerprint_tests{
+ use super::*;
+ #[test]fn python_float_spellings_match_json_encoder(){for(value,expected)in[( -0.0,"-0.0"),(1e-5,"1e-05"),(1e-4,"0.0001"),(1e15,"1000000000000000.0"),(1e16,"1e+16"),(1e20,"1e+20"),(1.25e-5,"1.25e-05")]{assert_eq!(python_float(value),expected);}}
+ #[test]fn canonical_json_sorts_keys_and_preserves_python_controls(){let value=json!({"z":"line\n\u{0001}","é":-0.0,"a":[1e-5,1e20]});assert_eq!(String::from_utf8(python_json(&value).unwrap()).unwrap(),"{\"a\":[1e-05,1e+20],\"z\":\"line\\n\\u0001\",\"é\":-0.0}");}
+}

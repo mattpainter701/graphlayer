@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import http.server
 import base64
+import hashlib
 import json
 import sys
 import threading
@@ -56,6 +57,19 @@ class SolarWindsFixtureHandler(http.server.BaseHTTPRequestHandler):
 
 
 class ConnectorContractTests(unittest.TestCase):
+    def test_canonical_fingerprint_matches_python_json_bytes(self):
+        cases = [
+            {"z": "snowman ☃ and control\n\x01", "a": [1e-5, 1e20]},
+            {"negative_zero": -0.0, "nested": {"é": "café", "integer": 10**100}},
+            {"unicode": "東京 / café", "array": [True, None, {"b": 2, "a": 1}]},
+        ]
+        for value in cases:
+            with self.subTest(value=value):
+                canonical = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                       ensure_ascii=False, default=str).encode("utf-8")
+                expected = "sha256:" + hashlib.sha256(canonical).hexdigest()
+                self.assertEqual(BaseConnector.canonical_fingerprint(value), expected)
+
     def test_base_connector_contract_aliases(self):
         connector = DummyConnector(
             "dummy-guid",

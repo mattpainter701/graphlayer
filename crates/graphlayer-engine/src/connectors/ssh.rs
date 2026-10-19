@@ -63,7 +63,7 @@ impl SessionDispatcher {
         let handler = KnownHostHandler { host: host.clone(), port, path: known_hosts };
         let interactive=cfg.get("interactive_shell").and_then(Value::as_bool).unwrap_or(false);
         let pattern=cfg.get("prompt_pattern").map(|v|v.as_str().unwrap_or("")).unwrap_or("").to_string();
-        let result = self.runtime.block_on(tokio::time::timeout(Duration::from_secs(timeout), async move {
+        let result = self.runtime.block_on(async move { tokio::time::timeout(Duration::from_secs(timeout), async move {
             let config = Arc::new(client::Config { inactivity_timeout: Some(Duration::from_secs(timeout)), ..Default::default() });
             let mut handle = client::connect(config, (host.as_str(), port), handler)
                 .await.map_err(|_| "ssh_connection_failed".to_string())?;
@@ -86,7 +86,7 @@ impl SessionDispatcher {
                 Some(channel)
             }else{None};
             Ok::<_, String>((handle,shell))
-        })).map_err(|_| "ssh_connection_timeout".to_string())?;
+        }).await }).map_err(|_| "ssh_connection_timeout".to_string())?;
         let (handle,shell) = result?;
         if let Some(previous) = self.sessions.insert(id.clone(), handle) {
             self.runtime.block_on(async { let old = previous; let _ = old.disconnect(Disconnect::ByApplication, "replaced", "English").await; });

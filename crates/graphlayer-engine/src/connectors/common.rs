@@ -8,6 +8,21 @@ pub const MAX_PAGE_SIZE: usize = 1000;
 pub const MAX_TOTAL_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_TOTAL_RECORDS: usize = 100_000;
 
+pub fn canonical_fingerprint(value:&Value)->String{let bytes=python_json(value).unwrap_or_default();let hash=Sha256::digest(bytes);format!("sha256:{hash:x}")}
+fn python_json(value:&Value)->Result<Vec<u8>,String>{let mut out=String::new();write_python_json(value,&mut out)?;Ok(out.into_bytes())}
+fn write_python_json(value:&Value,out:&mut String)->Result<(),String>{match value{
+ Value::Null=>out.push_str("null"),Value::Bool(v)=>out.push_str(if *v{"true"}else{"false"}),
+ Value::Number(v)=>{if v.is_f64(){out.push_str(&python_float(v.as_f64().ok_or_else(||"invalid_number".to_string())?));}else{out.push_str(&v.to_string());}},
+ Value::String(v)=>out.push_str(&serde_json::to_string(v).map_err(|_|"invalid_string".to_string())?),
+ Value::Array(items)=>{out.push('[');for(i,item)in items.iter().enumerate(){if i>0{out.push(',')}write_python_json(item,out)?}out.push(']')},
+ Value::Object(items)=>{out.push('{');let mut keys=items.keys().collect::<Vec<_>>();keys.sort();for(i,key)in keys.into_iter().enumerate(){if i>0{out.push(',')}out.push_str(&serde_json::to_string(key).map_err(|_|"invalid_string".to_string())?);out.push(':');write_python_json(&items[key],out)?}out.push('}')},
+ }Ok(())}
+fn python_float(value:f64)->String{
+ if value==0.0{return if value.is_sign_negative(){"-0.0".into()}else{"0.0".into()}}
+ let mut buffer=ryu::Buffer::new();let number=buffer.format_finite(value);let negative=number.starts_with('-');let unsigned=number.trim_start_matches('-');let exponent_at=unsigned.find('e').or_else(||unsigned.find('E'));let(mantissa,exponent)=if let Some(at)=exponent_at{(&unsigned[..at],unsigned[at+1..].parse::<i32>().unwrap_or(0))}else{(unsigned,0)};let decimal_pos=mantissa.find('.').unwrap_or(mantissa.len())as i32+exponent;let mut digits=mantissa.chars().filter(|c|*c!='.').collect::<String>();let mut point=decimal_pos;while digits.starts_with('0')&&digits.len()>1{digits.remove(0);point-=1;}while digits.ends_with('0')&&digits.len()>1{digits.pop();}
+ let mut result=String::new();if negative{result.push('-')}let scientific=value.abs()>=1e16||value.abs()<1e-4;if scientific{result.push(digits.as_bytes()[0]as char);if digits.len()>1{result.push('.');result.push_str(&digits[1..]);}let power=point-1;result.push('e');result.push(if power>=0{'+'}else{'-'});let magnitude=power.unsigned_abs();if magnitude<10{result.push('0')}result.push_str(&magnitude.to_string());}else if point<=0{result.push_str("0.");result.extend(std::iter::repeat('0').take((-point)as usize));result.push_str(&digits);}else if point as usize>=digits.len(){result.push_str(&digits);result.extend(std::iter::repeat('0').take((point as usize)-digits.len()));result.push_str(".0");}else{let split=point as usize;result.push_str(&digits[..split]);result.push('.');result.push_str(&digits[split..]);}result
+}
+
 pub fn text(value: &Value) -> String {
     match value {
         Value::Null => String::new(),
@@ -85,9 +100,7 @@ pub fn correlation(pairs: &[(&str, String)]) -> Value {
 }
 
 pub fn record(kind: &str, connector: &str, id: String, payload: Value, confidence: f64, metadata: Value) -> Value {
-    let bytes = serde_json::to_vec(&payload).unwrap_or_default();
-    let hash = Sha256::digest(bytes);
-    let fingerprint = format!("sha256:{hash:x}");
+    let fingerprint = canonical_fingerprint(&payload);
     serde_json::json!({
         "record_type": kind,
         "source_connector": connector,
