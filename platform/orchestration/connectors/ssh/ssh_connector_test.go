@@ -3,6 +3,7 @@ package ssh
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
@@ -50,13 +51,21 @@ func TestReadPrivateKeyEnforcesLimitWithoutLeakingPath(t *testing.T) {
 
 func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 	t.Parallel()
+	for _, algorithm := range []string{"ed25519", "rsa"} {
+		t.Run(algorithm, func(t *testing.T) {
+			t.Parallel()
+			assertSSHConnectorConnectsWithHostKey(t, algorithm)
+		})
+	}
+}
 
+func assertSSHConnectorConnectsWithHostKey(t *testing.T, hostKeyAlgorithm string) {
 	const (
 		username = "tester"
 		password = "secret"
 	)
 
-	listener, serverConfig, hostKey := newTestSSHServer(t, username, password)
+	listener, serverConfig, hostKey := newTestSSHServer(t, username, password, hostKeyAlgorithm)
 	defer listener.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -130,12 +139,25 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 	}
 }
 
-func newTestSSHServer(t *testing.T, username, password string) (net.Listener, *gossh.ServerConfig, gossh.PublicKey) {
+func newTestSSHServer(t *testing.T, username, password, hostKeyAlgorithm string) (net.Listener, *gossh.ServerConfig, gossh.PublicKey) {
 	t.Helper()
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate host key: %v", err)
+	var privateKey any
+	switch hostKeyAlgorithm {
+	case "ed25519":
+		_, key, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("failed to generate host key: %v", err)
+		}
+		privateKey = key
+	case "rsa":
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatalf("failed to generate host key: %v", err)
+		}
+		privateKey = key
+	default:
+		t.Fatalf("unsupported test host key algorithm %q", hostKeyAlgorithm)
 	}
 
 	signer, err := gossh.NewSignerFromKey(privateKey)

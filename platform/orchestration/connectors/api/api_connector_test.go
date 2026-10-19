@@ -3,9 +3,16 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -155,12 +162,59 @@ func TestReadRequestBodyDoesNotExposeReaderError(t *testing.T) {
 func newTLSConfigForHandler(t *testing.T, handler http.Handler, retryCount int) (*base.ConnectionConfig, func()) {
 	t.Helper()
 
-	server := httptest.NewTLSServer(handler)
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate test CA key")
+	}
+	now := time.Now()
+	caTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "GraphLayer test CA"},
+		NotBefore:    now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("failed to create test CA certificate")
+	}
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate test server key")
+	}
+	leafTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:    now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caTemplate, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("failed to create test server certificate")
+	}
+	leafCert, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatalf("failed to parse test server certificate")
+	}
+	serverKey, err := tls.X509KeyPair(
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
+		mustMarshalECPrivateKey(t, leafKey),
+	)
+	if err != nil {
+		t.Fatalf("failed to load test server certificate")
+	}
+	server := httptest.NewUnstartedServer(handler)
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{serverKey}, MinVersion: tls.VersionTLS12}
+	server.StartTLS()
 
 	host, port := extractHostPort(t, server.URL)
-
-	certDER := server.TLS.Certificates[0].Certificate[0]
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if host != "127.0.0.1" || leafCert.IsCA {
+		t.Fatalf("invalid non-CA loopback test certificate")
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
 
 	certPath := filepath.Join(t.TempDir(), "server-cert.pem")
 	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
@@ -181,6 +235,15 @@ func newTLSConfigForHandler(t *testing.T, handler http.Handler, retryCount int) 
 	}
 
 	return config, cleanup
+}
+
+func mustMarshalECPrivateKey(t *testing.T, key *ecdsa.PrivateKey) []byte {
+	t.Helper()
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal test server key")
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
 }
 
 func extractHostPort(t *testing.T, rawURL string) (string, int) {

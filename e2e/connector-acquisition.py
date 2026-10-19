@@ -20,6 +20,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -56,6 +57,24 @@ def request_http(opener: urllib.request.OpenerDirector, path: str, value: dict,
             return response.status, json.load(response)
     except urllib.error.HTTPError as error:
         return error.code, json.load(error)
+
+
+def require_evidence(snapshot: dict, refs: list[str]) -> None:
+    evidence = {item["id"]: item for item in snapshot.get("evidence", [])}
+    source_lines = {line["number"]: line["text"] for line in snapshot.get("source_lines", [])}
+    assert refs, "investigation returned no source evidence references"
+    for ref in refs:
+        item = evidence.get(ref)
+        assert item, f"evidence reference does not resolve in snapshot: {ref}"
+        first, last = item["start_line"], item["end_line"]
+        assert first <= last and all(number in source_lines for number in range(first, last + 1))
+        assert any(source_lines[number].strip() for number in range(first, last + 1))
+
+
+def saved_json(opener: urllib.request.OpenerDirector, path: str) -> dict:
+    with opener.open(BASE + path, timeout=10) as response:
+        assert response.status == 200
+        return json.load(response)
 
 
 class RustSession:
@@ -194,6 +213,7 @@ samples = [
     ("panos_sample.txt", "parse_panos", "paloalto-panos"),
     ("fortigate_sample.txt", "parse_fortigate", "fortinet-fortigate"),
 ]
+snapshots = {}
 for filename, operation, vendor in samples:
     source = (sftp_folder / filename).read_text(encoding="utf-8")
     parsed = call_rust(operation, {"config_base64": base64.b64encode(source.encode("utf-8")).decode("ascii")})
@@ -204,6 +224,7 @@ for filename, operation, vendor in samples:
                                     session["csrf_token"])
     assert status == 201, imported
     snapshot = imported["snapshot"]
+    snapshots[filename] = snapshot
     assert snapshot["vendor"] == vendor
     assert snapshot["source_lines"]
     assert snapshot["evidence"]
@@ -211,4 +232,88 @@ for filename, operation, vendor in samples:
     if filename == "asa_path_sample.txt":
         assert snapshot["path"]["evidence_refs"]
 
-print("SFTP, SMB and persistent SSH acquired fixture configs; Rust parsers and the live app retained source evidence.")
+# Run a saved ACL policy investigation against the acquired enterprise ASA bytes.
+enterprise = snapshots["enterprise.asa.txt"]
+assert enterprise["chains"], "acquired ASA policy sample imported without ACL chains"
+policy_status, policy_response = request_http(
+    client, f"/api/snapshots/{quote(enterprise['id'], safe='')}/evaluate",
+    {"chain_id": enterprise["chains"][0]["id"], "source": "192.0.2.42",
+     "destination": "10.20.4.15", "protocol": "tcp", "source_port": 51515,
+     "destination_port": 443}, session["csrf_token"],
+)
+assert policy_status == 200, policy_response
+policy_investigation = policy_response["investigation"]
+assert policy_investigation["snapshot_id"] == enterprise["id"]
+assert policy_investigation["result"]["disposition"] == "permit"
+require_evidence(enterprise, policy_investigation["result"].get("evidence_refs", []))
+policy_saved = saved_json(client, f"/api/investigations/{quote(policy_investigation['id'], safe='')}")["investigation"]
+assert policy_saved == policy_investigation
+policy_export = json.dumps(policy_saved, ensure_ascii=False, indent=2).encode("utf-8")
+assert json.loads(policy_export) == policy_saved
+
+# Evaluate the acquired ASA route/NAT sample, resolve every returned source
+# reference against the imported snapshot, and verify durable replay/export.
+path_snapshot = snapshots["asa_path_sample.txt"]
+path_status, path_response = request_http(
+    client, f"/api/snapshots/{quote(path_snapshot['id'], safe='')}/path-evaluate",
+    {"ingress_interface": "outside", "flow": {
+        "source": "198.51.100.42", "destination": "198.51.100.15",
+        "protocol": "tcp", "source_port": 52000, "destination_port": 443,
+    }}, session["csrf_token"],
+)
+assert path_status == 200, path_response
+path_investigation = path_response["investigation"]
+path_result = path_investigation["result"]
+assert path_investigation["snapshot_id"] == path_snapshot["id"]
+assert path_result["disposition"] == "modeled_forward"
+assert path_result["egress_interface"] == "dmz"
+assert path_result["egress_flow"]["destination"] == "10.20.4.15"
+assert path_result["selected_route"]["interface"] == "dmz"
+assert path_result["nat_rule_ids"]
+assert any(stage["name"] == "destination_nat" and stage["status"] == "matched"
+           for stage in path_result["stages"])
+refs = set(path_result.get("evidence_refs", []))
+for stage in path_result.get("stages", []):
+    refs.update(stage.get("evidence_refs", []))
+refs.update(path_result["selected_route"].get("evidence_refs", []))
+require_evidence(path_snapshot, sorted(refs))
+path_saved = saved_json(client, f"/api/path-investigations/{quote(path_investigation['id'], safe='')}")["investigation"]
+assert path_saved == path_investigation
+path_export = json.dumps(path_saved, ensure_ascii=False, indent=2).encode("utf-8")
+assert json.loads(path_export) == path_saved
+
+# The network API composes forward and return legs, even for one acquired ASA
+# node. This keeps return modeling in the Rust engine and gives each leg an
+# independently snapshot-qualified evidence set.
+node_id = "acquired-asa-path"
+network_status, network_response = request_http(
+    client, "/api/network-investigations",
+    {"nodes": [{"node_id": node_id, "snapshot_id": path_snapshot["id"]}],
+     "links": [],
+     "source": {"node_id": node_id, "interface": "outside"},
+     "destination": {"node_id": node_id, "interface": "dmz"},
+     "flow": {"source": "192.0.2.42", "destination": "198.51.100.15",
+              "protocol": "tcp", "source_port": 52000, "destination_port": 443}},
+    session["csrf_token"],
+)
+assert network_status == 200, network_response
+network_investigation = network_response["investigation"]
+network_result = network_investigation["result"]
+assert network_result["disposition"] == "modeled_round_trip"
+assert network_result["forward"]["disposition"] == "modeled_forward"
+assert network_result["return"]["disposition"] == "modeled_forward"
+assert network_result["forward"]["hops"] and network_result["return"]["hops"]
+assert network_result["return"]["final_flow"]["destination"] == "192.0.2.42"
+assert any(hop["path"].get("nat_rule_ids") for hop in network_result["forward"]["hops"])
+for direction in (network_result["forward"], network_result["return"]):
+    qualified = direction["hops"][0]["evidence"]
+    assert qualified and all(item["snapshot_id"] == path_snapshot["id"] for item in qualified)
+    require_evidence(path_snapshot, [item["ref"] for item in qualified])
+network_saved = saved_json(
+    client, f"/api/network-investigations/{quote(network_investigation['id'], safe='')}"
+)["investigation"]
+assert network_saved == network_investigation
+network_export = json.dumps(network_saved, ensure_ascii=False, indent=2).encode("utf-8")
+assert json.loads(network_export) == network_saved
+
+print("SFTP, SMB and persistent SSH acquisitions reached Rust parsers, saved policy/path/round-trip investigations, evidence and replay/export.")

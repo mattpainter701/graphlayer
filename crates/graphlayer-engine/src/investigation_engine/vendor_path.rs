@@ -721,10 +721,13 @@ pub fn evaluate_vendor_path(input: Value, route_id: Option<&str>) -> Result<Valu
             "same-interface hairpin forwarding is outside the vendor path model",
         ));
     }
-    let policy_flow = packet.clone();
+    let policy_flow = if kind == "forti" {
+        packet.clone()
+    } else {
+        flow.clone()
+    };
     let policy = policy_eval(&policies, scope, from, to, &policy_flow, kind)?;
     if let Some(pr) = policy {
-        r["policy_flow"] = packet.clone();
         r["policy"] = pr.clone();
         let ix = r["stages"]
             .as_array()
@@ -884,6 +887,9 @@ pub fn evaluate_vendor_path(input: Value, route_id: Option<&str>) -> Result<Valu
     r["egress_flow"] = packet;
     r["egress_flow"]["scope"] = scope.clone();
     r["disposition"] = json!("modeled_forward");
+    if r["policy"]["flow"].is_object() {
+        r["policy_flow"] = r["policy"]["flow"].clone();
+    }
     super::omit_empty_fields(&mut r);
     Ok(r)
 }

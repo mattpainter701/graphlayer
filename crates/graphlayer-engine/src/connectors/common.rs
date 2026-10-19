@@ -116,11 +116,14 @@ fn python_float(value: f64) -> String {
         result.push_str(&magnitude.to_string());
     } else if point <= 0 {
         result.push_str("0.");
-        result.extend(std::iter::repeat('0').take((-point) as usize));
+        result.extend(std::iter::repeat_n('0', (-point) as usize));
         result.push_str(&digits);
     } else if point as usize >= digits.len() {
         result.push_str(&digits);
-        result.extend(std::iter::repeat('0').take((point as usize) - digits.len()));
+        result.extend(std::iter::repeat_n(
+            '0',
+            (point as usize) - digits.len(),
+        ));
         result.push_str(".0");
     } else {
         let split = point as usize;
@@ -285,6 +288,42 @@ pub fn latest_timestamp(
         .unwrap_or_else(now_rfc3339)
 }
 
+fn parse_timestamp(value: &str) -> Option<DateTime<Utc>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(dt) = DateTime::parse_from_rfc3339(trimmed) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    for fmt in ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S%.f"] {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(trimmed, fmt) {
+            return Some(dt.and_utc());
+        }
+    }
+    None
+}
+
+pub fn normalize_base_url(raw: &Value, error: &str) -> Result<url::Url, String> {
+    let mut input = text(raw).trim().to_string();
+    if input.is_empty() {
+        return Err(error.to_string());
+    }
+    if !input.starts_with("http://") && !input.starts_with("https://") {
+        input = format!("https://{input}");
+    }
+    let url = url::Url::parse(&input).map_err(|_| "invalid_target_url".to_string())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || url.username() != ""
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("invalid_target_url".to_string());
+    }
+    Ok(url)
+}
+
 #[cfg(test)]
 mod fingerprint_tests {
     use super::*;
@@ -325,40 +364,4 @@ mod fingerprint_tests {
             Some(expected.as_str())
         );
     }
-}
-
-fn parse_timestamp(value: &str) -> Option<DateTime<Utc>> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if let Ok(dt) = DateTime::parse_from_rfc3339(trimmed) {
-        return Some(dt.with_timezone(&Utc));
-    }
-    for fmt in ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S%.f"] {
-        if let Ok(dt) = NaiveDateTime::parse_from_str(trimmed, fmt) {
-            return Some(dt.and_utc());
-        }
-    }
-    None
-}
-
-pub fn normalize_base_url(raw: &Value, error: &str) -> Result<url::Url, String> {
-    let mut input = text(raw).trim().to_string();
-    if input.is_empty() {
-        return Err(error.to_string());
-    }
-    if !input.starts_with("http://") && !input.starts_with("https://") {
-        input = format!("https://{input}");
-    }
-    let url = url::Url::parse(&input).map_err(|_| "invalid_target_url".to_string())?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || url.username() != ""
-        || url.password().is_some()
-        || url.fragment().is_some()
-    {
-        return Err("invalid_target_url".to_string());
-    }
-    Ok(url)
 }
