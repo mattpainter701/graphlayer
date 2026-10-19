@@ -1,64 +1,1247 @@
 use super::common::*;
-use serde_json::{json,Value};
-use std::collections::{BTreeMap,BTreeSet};
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
 
-#[derive(Clone,Default)] struct Entry{line:usize,lines:Vec<usize>,sets:BTreeMap<String,Vec<String>>}
-#[derive(Clone)] struct Service{proto:String,port:String}
-fn tokens(s:&str)->Result<Vec<String>,()>{let(mut out,mut b,mut q,mut esc,mut active)=(vec![],String::new(),false,false,false);for c in s.chars(){if esc{b.push(c);esc=false;active=true;continue}if q&&c=='\\'{esc=true;continue}if c=='"'{q=!q;active=true;continue}if c.is_whitespace()&&!q{if active{out.push(std::mem::take(&mut b));active=false}continue}b.push(c);active=true}if q||esc{return Err(())}if active{out.push(b)}Ok(out)}
-fn name(s:&str)->bool{!s.is_empty()&&s.chars().all(|c|c.is_alphanumeric()||"_.-".contains(c))}
-fn scalar(e:Option<&Entry>,k:&str)->String{e.and_then(|x|x.sets.get(k)).filter(|v|v.len()==1).map(|v|v[0].clone()).unwrap_or_default()}
-fn only(e:&Entry,allowed:&[&str])->bool{e.sets.keys().all(|k|allowed.contains(&k.as_str()))}
-fn forti_order(a:&str,b:&str)->std::cmp::Ordering{match(a.parse::<i64>(),b.parse::<i64>()){(Ok(x),Ok(y))=>x.cmp(&y),_=>a.to_lowercase().cmp(&b.to_lowercase())}}
-fn v4(s:&str)->Option<Ipv4Addr>{s.parse().ok()}
-fn iface_address(ip:&str,mask:&str)->Option<String>{Some(format!("{}/{}",v4(ip)?,mask_bits(mask)?))}
-fn forti_unique<I:IntoIterator<Item=String>>(items:I)->Vec<String>{items.into_iter().filter(|x|!x.is_empty()).collect::<BTreeSet<_>>().into_iter().collect()}
-fn entry_ref(e:&mut Vec<Value>,hash:&str,x:&Entry,kind:&str,summary:&str)->Vec<String>{let mut r=vec![];for n in &x.lines{r.push(add_forti(e,hash,*n,kind,summary))}forti_unique(r)}
-fn section_known(s:&str)->bool{matches!(s.to_lowercase().as_str(),"system interface"|"router static"|"firewall address"|"firewall service custom"|"firewall policy"|"firewall vip"|"firewall ippool"|"system settings"|"vdom"|"firewall central-snat-map"|"firewall central-dnat-map")}
-fn key_known(path:&str,key:&str)->bool{match path {"system interface"=>["vdom","ip","status","type","alias","role","description","allowaccess","mtu","speed"].contains(&key),"router static"=>["dst","gateway","device","distance","priority"].contains(&key),"firewall address"=>["subnet","type"].contains(&key),"firewall service custom"=>["protocol","tcp-portrange","udp-portrange"].contains(&key),"firewall policy"=>["srcintf","dstintf","srcaddr","dstaddr","service","schedule","action","status","nat","ippool","poolname","name","utm-status"].contains(&key),"firewall vip"=>["extip","mappedip","extintf","type","portforward","nat-source-vip"].contains(&key),"firewall ippool"=>["type","startip","endip","arp-reply"].contains(&key),"system settings"=>key=="central-nat",_=>false}}
-fn safe_value(k:&str,vs:&[String])->bool{if ["alias","role","description","allowaccess","name","comments","uuid"].contains(&k){return false}vs.iter().all(|v|!v.is_empty()&&v.len()<=128&&v.chars().all(|c|c.is_ascii_alphanumeric()||"_.-/:".contains(c)))}
-fn add_forti(ev:&mut Vec<Value>,hash:&str,n:usize,kind:&str,summary:&str)->String{let id=format!("forti:{}:{}",&hash[..16.min(hash.len())],n);if !ev.iter().any(|x|x["id"]==id){ev.push(json!({"id":id,"start_line":n,"end_line":n,"kind":kind,"summary":summary}))}id}
-fn complete_path_warning(w:&mut Vec<Value>,code:&str,msg:&str,n:usize){w.push(warning(code,msg,n));}
-pub fn parse_with_hash(input:&str, artifact_hash:&str)->Result<Value,String>{
- if input.len()>2*1024*1024{return Err("FortiOS configuration exceeds 2 MiB limit".into())}if input.contains('\0'){return Err("FortiOS configuration contains a NUL byte".into())}
- let raw=input.replace("\r\n","\n");let lines:Vec<&str>=raw.split('\n').collect();if lines.len()>50000{return Err("FortiOS configuration exceeds 50000 line limit".into())}
- let hash=artifact_hash.to_string();let mut source=source_lines(input,"[OMITTED CONFIGURATION]");let mut evidence=vec![];let mut pwarnings=vec![];let mut warnings=vec![];let mut entries:BTreeMap<String,BTreeMap<String,Entry>>=BTreeMap::new();let(mut stack,mut cur)=(Vec::<String>::new(),None::<(String,String)>);let(mut unsupported_sections,mut unsupported_commands)=(vec![],vec![]);
- for (i,line) in lines.iter().enumerate(){let n=i+1;let s=line.trim();if s.is_empty()||s.starts_with('#'){continue}let f=tokens(s).map_err(|_|format!("malformed FortiOS syntax at line {}",n))?;if f.is_empty(){continue}match f[0].to_lowercase().as_str(){"config"=>{if f.len()<2||stack.len()>16{return Err(format!("malformed or over-nested config at line {}",n))}let section=f[1..].join(" ");stack.push(section.to_lowercase());cur=None;if section_known(&section){source[i]["text"]=json!(format!("config {}",section))}else{source[i]["text"]=json!("config [UNSUPPORTED SECTION]");unsupported_sections.push((section.to_lowercase(),n))}add_forti(&mut evidence,&hash,n,"configuration_scope","Configuration section");},"edit"=>{if stack.is_empty()||f.len()!=2||cur.is_some(){return Err(format!("malformed edit at line {}",n))}if !name(&f[1])||f[1].len()>79{return Err(format!("invalid object name at line {}",n))}let path=stack.join(" ");if entries.entry(path.clone()).or_default().contains_key(&f[1]){return Err(format!("duplicate {} entry at line {}",path,n))}entries.get_mut(&path).unwrap().insert(f[1].clone(),Entry{line:n,lines:vec![n],sets:BTreeMap::new()});cur=Some((path.clone(),f[1].clone()));if section_known(&path){source[i]["text"]=json!(format!("edit {}",f[1]))}else{source[i]["text"]=json!("[OMITTED CONFIGURATION ENTRY]")}add_forti(&mut evidence,&hash,n,"configuration_entry","Configuration object");},"set"=>{if f.len()<3{return Err(format!("set outside edit or missing value at line {}",n))}let path=stack.join(" ");let direct=cur.is_none()&&(path=="system settings"||path=="system global"||!stack.is_empty()&&!section_known(&path));let key=if let Some((p,k))=&cur{(p.clone(),k.clone())}else if direct{(path.clone(),"root".into())}else{return Err(format!("set outside edit or missing value at line {}",n))};let e=entries.entry(key.0.clone()).or_default().entry(key.1.clone()).or_insert_with(||Entry{line:n,lines:vec![n],sets:BTreeMap::new()});let k=f[1].to_lowercase();if e.sets.contains_key(&k){return Err(format!("duplicate set {} at line {}",k,n))}e.sets.insert(k.clone(),f[2..].to_vec());if section_known(&path)&&key_known(&path,&k)&&safe_value(&k,&f[2..]){e.lines.push(n);source[i]["text"]=json!(format!("set {} {}",k,f[2..].join(" ")))}if direct{cur=None}},"next"=>{if cur.is_none()||f.len()!=1{return Err(format!("unbalanced next at line {}",n))}cur=None;source[i]["text"]=json!("next");add_forti(&mut evidence,&hash,n,"configuration_entry","Configuration object boundary");},"end"=>{if cur.is_some()||stack.is_empty()||f.len()!=1{return Err(format!("unbalanced end at line {}",n))}stack.pop();source[i]["text"]=json!("end");add_forti(&mut evidence,&hash,n,"configuration_scope","Configuration section boundary");},_=>unsupported_commands.push(n)}}
- if cur.is_some()||!stack.is_empty(){return Err("truncated FortiOS configuration block".into())}
- for group in entries.values(){for e in group.values(){for n in e.lines.iter().skip(1){add_forti(&mut evidence,&hash,*n,"configuration_value","Normalized configuration value");}}}
- let get=|path:&str,id:&str|entries.get(path).and_then(|m|m.get(id));let ids=|path:&str|->Vec<String>{let mut v:Vec<String>=entries.get(path).map(|m|m.keys().cloned().collect()).unwrap_or_default();v.sort_by(|a,b|forti_order(a,b));v};let mut hostname=scalar(get("system global","root"),"hostname");if hostname.is_empty()||!name(&hostname){hostname="fortigate-root".into()}
- let mut complete_route=unsupported_commands.is_empty();let mut complete_nat=true;let mut complete_policy=unsupported_commands.is_empty();
- for (section,n) in &unsupported_sections{if section.starts_with("router ")||section.starts_with("system sdwan")||section.contains("policy-route")||section.contains("pbr"){complete_path_warning(&mut pwarnings,"unsupported_routing_section","Dynamic, policy, or SD-WAN routing configuration is outside the supported model",*n);complete_route=false;}if ["vipgrp","central-snat","central-dnat","ippool6","vip6"].iter().any(|x|section.contains(x)){complete_path_warning(&mut pwarnings,"unsupported_nat_section","NAT configuration section is outside the supported model",*n);complete_nat=false;}if section.starts_with("firewall policy")||section.starts_with("firewall local-in"){complete_policy=false;complete_path_warning(&mut pwarnings,"unsupported_policy_section","Firewall policy section is outside the supported model",*n);}}
- for n in &unsupported_commands{source[*n-1]["text"]=json!("[UNSUPPORTED CONFIGURATION COMMAND]");complete_path_warning(&mut pwarnings,"unsupported_config","Configuration contains syntax outside the supported parser model",*n);complete_nat=false;}
- let global= get("system global","root");if !scalar(global,"vdom-mode").is_empty()&&!scalar(global,"vdom-mode").eq_ignore_ascii_case("no-vdom"){complete_policy=false;complete_route=false;pwarnings.push(warning("unsupported_vdom","Global VDOM mode is outside the supported single-root model",global.map(|e|e.line).unwrap_or(0)));}
- if let Some(vdoms)=entries.get("vdom"){if vdoms.len()>1||vdoms.len()==1&&!vdoms.contains_key("root"){complete_policy=false;complete_route=false;pwarnings.push(warning("unsupported_vdom","Multiple or non-root VDOM configuration is outside the supported model",vdoms.values().next().map(|e|e.line).unwrap_or(0)));}}
- if scalar(get("system settings","root"),"central-nat").eq_ignore_ascii_case("enable"){complete_nat=false;pwarnings.push(warning("central_nat_unsupported","Central NAT changes translation semantics outside this model",get("system settings","root").map(|e|e.line).unwrap_or(0)));}
- if let Some(e)=entries.get("firewall central-snat-map").and_then(|m|m.values().next()){complete_nat=false;pwarnings.push(warning("central_snat_unsupported","Central SNAT maps are outside the supported model",e.line));}
- if let Some(e)=entries.get("firewall central-dnat-map").and_then(|m|m.values().next()){complete_nat=false;pwarnings.push(warning("central_dnat_unsupported","Central DNAT maps are outside the supported model",e.line));}
- let mut interfaces=vec![];let mut routes=vec![];let mut policies=vec![];let mut translations=vec![];
- let interface_ids=ids("system interface");if interface_ids.len()>1024{return Err("FortiOS interface count exceeds limit".into())}
- for id in interface_ids.clone(){let e=get("system interface",&id).unwrap();let typ=scalar(Some(e),"type");if !typ.is_empty()&&!typ.eq_ignore_ascii_case("physical"){complete_route=false;pwarnings.push(warning("unsupported_interface_type","Tunnel, loopback, VLAN and virtual interface forwarding is outside the physical-interface model",e.line));continue}if id.len()>48{complete_route=false;pwarnings.push(warning("unsupported_interface","Interface name exceeds the supported limit",e.line));continue}if !only(e,&["vdom","ip","status","type","alias","role","description","allowaccess","mtu","speed"]){complete_route=false;pwarnings.push(warning("unsupported_interface","Interface has unsupported forwarding properties",e.line));continue}if !scalar(Some(e),"vdom").eq_ignore_ascii_case("root"){complete_route=false;pwarnings.push(warning("non_root_vdom","Interface is not explicitly assigned to the root VDOM",e.line));continue}let vals=e.sets.get("ip").cloned().unwrap_or_default();let mut addr=String::new();let mut connected=String::new();let mut resolved=false;if vals.len()==2{if let Some(v)=iface_address(&vals[0],&vals[1]){addr=v;connected=mask_prefix(&vals[0],&vals[1]).unwrap_or_default();resolved=true}}let status=scalar(Some(e),"status");if !status.is_empty()&&!status.eq_ignore_ascii_case("up")&&!status.eq_ignore_ascii_case("down"){resolved=false}let refs=entry_ref(&mut evidence,&hash,e,"path_interface","Interface addressing and state");if !resolved{complete_route=false;let msg=if vals.len()!=2||vals.first().map(String::is_empty).unwrap_or(true){"Interface has no explicit IPv4 address"}else{"Interface address or state is outside the supported model"};pwarnings.push(warning("unsupported_interface",msg,e.line));}let mut pi=json!({"name":id,"physical":id,"address":if addr.is_empty(){Value::Null}else{json!(addr)},"shutdown":status.eq_ignore_ascii_case("down"),"resolved":resolved,"evidence_refs":refs});if addr.is_empty(){pi.as_object_mut().unwrap().remove("address");}if resolved&&!connected.is_empty()&&!status.eq_ignore_ascii_case("down"){routes.push(json!({"id":format!("connected:{}",id),"kind":"connected","prefix":connected,"interface":id,"distance":0,"evidence_refs":refs}));}interfaces.push(pi)}
- let mut route_ids=ids("router static");route_ids.sort_by_key(|x|x.parse::<i64>().unwrap_or(i64::MAX));for id in route_ids{let e=get("router static",&id).unwrap();let vals=e.sets.get("dst").cloned().unwrap_or_default();let prefix=if vals.len()==2{mask_prefix(&vals[0],&vals[1])}else{None};let gateway=scalar(Some(e),"gateway");let dev=scalar(Some(e),"device");let dist=scalar(Some(e),"distance");let distance=if dist.is_empty(){10}else{dist.parse::<i32>().unwrap_or(-1)};let priority=scalar(Some(e),"priority");if routes.len()>=4096||!only(e,&["dst","gateway","device","distance","priority"])||prefix.is_none()||v4(&gateway).is_none()||dev.is_empty()||!interfaces.iter().any(|i|i["name"]==dev)||!(1..=254).contains(&distance)||(!priority.is_empty()&&priority!="0"){complete_route=false;pwarnings.push(warning("unsupported_route","Static route syntax, options, or limit is outside the supported model",e.line));continue}let refs=entry_ref(&mut evidence,&hash,e,"static_route","Static IPv4 route");routes.push(json!({"id":format!("static:{}",id),"kind":"static","prefix":prefix.unwrap(),"interface":dev,"next_hop":gateway,"distance":distance,"evidence_refs":refs}));}
- let mut addresses=BTreeMap::new();for id in ids("firewall address"){if let Some(e)=get("firewall address",&id){let v=e.sets.get("subnet").cloned().unwrap_or_default();if v.len()==2{if let Some(p)=mask_prefix(&v[0],&v[1]){addresses.insert(id,p);}}}}let mut services=BTreeMap::<String,Service>::new();for id in ids("firewall service custom"){if let Some(e)=get("firewall service custom",&id){if !only(e,&["protocol","tcp-portrange","udp-portrange","comments","uuid"]){continue}let proto_setting=scalar(Some(e),"protocol").to_uppercase();if !proto_setting.is_empty()&&!(["TCP","UDP","TCP/UDP/SCTP"].contains(&proto_setting.as_str())){continue}let tcp=scalar(Some(e),"tcp-portrange");let udp=scalar(Some(e),"udp-portrange");let (proto,mut port)=if !tcp.is_empty()&&udp.is_empty(){("tcp",tcp)}else if !udp.is_empty()&&tcp.is_empty(){("udp",udp)}else{continue};if proto_setting=="TCP"&&proto!="tcp"||proto_setting=="UDP"&&proto!="udp"{continue}if let Some((a,b))=port.split_once('-'){if a!=b{continue}port=a.into()}if port.parse::<u32>().is_ok_and(|n|n>0&&n<=65535){services.insert(id,Service{proto:proto.into(),port});}}}
- let mut vips=BTreeMap::<String,(String,String,String)>::new();for id in ids("firewall vip"){let e=get("firewall vip",&id).unwrap();let ext=scalar(Some(e),"extip");let mapped=scalar(Some(e),"mappedip");let iface=scalar(Some(e),"extintf");if let (Some(a),Some(b))=(v4(&ext),v4(&mapped)){if !iface.is_empty(){vips.insert(id.clone(),(format!("{}/32",b),iface,format!("{}/32",a)));}}}for id in ids("firewall vip"){let e=get("firewall vip",&id).unwrap();let ext=scalar(Some(e),"extip");let mapped=scalar(Some(e),"mappedip");let iface=scalar(Some(e),"extintf");let pf=scalar(Some(e),"portforward");if !only(e,&["extip","mappedip","extintf","type","portforward","nat-source-vip","comments","uuid","arp-reply"])||scalar(Some(e),"nat-source-vip").eq_ignore_ascii_case("enable")||!scalar(Some(e),"type").is_empty()&&!scalar(Some(e),"type").eq_ignore_ascii_case("static-nat")||v4(&ext).is_none()||v4(&mapped).is_none()||iface.is_empty()||e.sets.contains_key("portforward")&&!pf.eq_ignore_ascii_case("disable"){complete_nat=false;if only(e,&["extip","mappedip","extintf","type","portforward","nat-source-vip","comments","uuid","arp-reply"])&&!scalar(Some(e),"nat-source-vip").eq_ignore_ascii_case("enable")&&e.sets.contains_key("portforward")&&!pf.eq_ignore_ascii_case("disable"){pwarnings.push(warning("vip_port_forward_unsupported","Port-forward VIP is outside the supported model",e.line));}else{let msg=if !only(e,&["extip","mappedip","extintf","type","portforward","nat-source-vip","comments","uuid","arp-reply"])||scalar(Some(e),"nat-source-vip").eq_ignore_ascii_case("enable"){"VIP has unsupported translation options"}else{"VIP is not a static one-to-one IPv4 mapping"};pwarnings.push(warning("unsupported_vip",msg,e.line));}continue}let orig=format!("{}/32",v4(&ext).unwrap());let trans=format!("{}/32",v4(&mapped).unwrap());let refs=entry_ref(&mut evidence,&hash,e,"static_vip","Static one-to-one virtual IP");let mid=format!("vip:{}",id);let m=rule(&mid,0,true,"permit",("any",&orig,"ip",""),&refs);translations.push(json!({"id":mid,"kind":"dnat","from":iface,"to":"any","match":m,"original_prefix":orig,"translated_prefix":trans,"evidence_refs":refs}));vips.insert(id,(trans,iface,orig));}
- let vip_names=ids("firewall vip");let mut vip_ambiguous=false;for (i,a) in vip_names.iter().enumerate(){for b in vip_names.iter().skip(i+1){if let(Some(x),Some(y))=(get("firewall vip",a),get("firewall vip",b)){if scalar(Some(x),"extip")==scalar(Some(y),"extip")&&scalar(Some(x),"extintf")==scalar(Some(y),"extintf"){vip_ambiguous=true}}}}
- let mut pools=BTreeMap::<String,String>::new();for id in ids("firewall ippool"){let e=get("firewall ippool",&id).unwrap();let typ=scalar(Some(e),"type");let start=scalar(Some(e),"startip");let end=scalar(Some(e),"endip");let arp=scalar(Some(e),"arp-reply").to_lowercase();if !only(e,&["type","startip","endip","arp-reply","comments","uuid"]){complete_nat=false;pwarnings.push(warning("unsupported_ippool","IP pool has unsupported address or forwarding options",e.line));continue}if typ!="one-to-one"||v4(&start).is_none()||v4(&end).is_none()||start!=end{complete_nat=false;pwarnings.push(warning("unsupported_ippool","IP pool is not a single-address one-to-one pool",e.line));continue}if arp!="disable"{complete_nat=false;pwarnings.push(warning("ippool_local_address_unsupported","IP pool ARP reply is enabled or defaults to enabled; local-address behavior is outside the supported model",e.line));continue}pools.insert(id,start);} let mut origins=vec![];let mut pool_sources=BTreeMap::<String,BTreeSet<String>>::new();let mut policy_ids=ids("firewall policy");policy_ids.sort_by_key(|x|get("firewall policy",x).map(|e|e.line).unwrap_or(usize::MAX));if policy_ids.len()>4096{return Err("FortiOS policy count exceeds limit".into())}
- for id in policy_ids{let e=get("firewall policy",&id).unwrap();if scalar(Some(e),"status").eq_ignore_ascii_case("disable"){continue}let src_names=e.sets.get("srcaddr").cloned().unwrap_or_default();let dst_names=e.sets.get("dstaddr").cloned().unwrap_or_default();let svc_names=e.sets.get("service").cloned().unwrap_or_default();let from=scalar(Some(e),"srcintf");let to=scalar(Some(e),"dstintf");let action=scalar(Some(e),"action").to_lowercase();if src_names.len()!=1||dst_names.len()!=1||svc_names.is_empty()||from.is_empty()||to.is_empty()||scalar(Some(e),"schedule")!="always"||!matches!(action.as_str(),"accept"|"deny")||!only(e,&["srcintf","dstintf","srcaddr","dstaddr","service","schedule","action","status","nat","ippool","poolname","name","utm-status","logtraffic","comments","uuid","policyid"])||scalar(Some(e),"utm-status").eq_ignore_ascii_case("enable"){complete_policy=false;pwarnings.push(warning("unsupported_policy","Firewall policy has unsupported matching or action semantics",e.line));continue}if !interfaces.iter().any(|i|i["name"].as_str().is_some_and(|n|n.eq_ignore_ascii_case(&from))){complete_policy=false;pwarnings.push(warning("unresolved_policy_interface","Policy interface is not configured",e.line));continue}let src=if src_names[0].eq_ignore_ascii_case("all"){Some("any".into())}else{addresses.get(&src_names[0]).cloned()};let vip=vips.get(&dst_names[0]);if vip.is_none()&&ids("firewall vip").contains(&dst_names[0]){complete_policy=false;pwarnings.push(warning("unsupported_policy_vip","Policy-selected VIP cannot be normalized",e.line));continue}let dst=if let Some((mapped,_,_))=vip{Some(mapped.clone())}else if dst_names[0].eq_ignore_ascii_case("all"){Some("any".into())}else{addresses.get(&dst_names[0]).cloned()};let (Some(src),Some(dst))=(src,dst)else{complete_policy=false;pwarnings.push(warning("unsupported_policy_address","Policy source or destination address is unresolved",e.line));continue};if vip_ambiguous&&vip.is_some(){complete_policy=false;pwarnings.push(warning("ambiguous_vip","Overlapping static VIPs make destination translation ambiguous",e.line));continue}if svc_names.len()>256||svc_names.iter().any(|sn|!sn.eq_ignore_ascii_case("all")&&!services.contains_key(sn)){complete_policy=false;pwarnings.push(warning("unsupported_policy_service","Policy service is unresolved or exceeds expansion limit",e.line));continue}let mut refs=entry_ref(&mut evidence,&hash,e,"firewall_policy","Ordered firewall policy");let mut vipid=String::new();if vip.is_some(){vipid=format!("vip:{}",dst_names[0]);}for sn in &src_names{if let Some(ae)=get("firewall address",sn){refs.extend(entry_ref(&mut evidence,&hash,ae,"policy_address","Policy address object"));}}for sn in &svc_names{if let Some(se)=get("firewall service custom",sn){refs.extend(entry_ref(&mut evidence,&hash,se,"policy_service","Policy service object"));}}if let Some(ve)=get("firewall vip",&dst_names[0]){refs.extend(entry_ref(&mut evidence,&hash,ve,"static_vip","Static one-to-one virtual IP"));}refs=forti_unique(refs);let nat_on=scalar(Some(e),"nat").eq_ignore_ascii_case("enable");let pool_on=scalar(Some(e),"ippool").eq_ignore_ascii_case("enable");let mut pool_name=String::new();if nat_on&&pool_on{if e.sets.get("poolname").map(|v|v.len()!=1).unwrap_or(true){complete_policy=false;pwarnings.push(warning("unsupported_policy_snat","Policy selects an unsupported dynamic or multiple IP pool",e.line));continue}pool_name=e.sets["poolname"][0].clone();if src.split("/").nth(1)!=Some("32")||v4(src.split("/").next().unwrap_or("")).is_none(){complete_policy=false;pwarnings.push(warning("unsupported_policy_snat","Static one-to-one SNAT requires one literal IPv4 source address",e.line));continue}if !pools.contains_key(&pool_name){complete_policy=false;pwarnings.push(warning("unsupported_policy_snat","Policy IP pool is unresolved or its local-address behavior is unsupported",e.line));continue}}else if nat_on{complete_nat=false;pwarnings.push(warning("dynamic_snat_unsupported","Default-interface or dynamic SNAT is outside the static model",e.line));}for sn in &svc_names{let svc=if sn.eq_ignore_ascii_case("all"){Service{proto:"any".into(),port:String::new()}}else if let Some(s)=services.get(sn){s.clone()}else{complete_policy=false;pwarnings.push(warning("unsupported_policy_service","Policy service is unresolved or exceeds expansion limit",e.line));continue};let rid=format!("policy:{}:{}",id,policies.len()+1);let act=if action=="accept"{"permit"}else{"deny"};let pos=policies.len();let m=rule(&rid,pos,true,act,(&src,&dst,&svc.proto,&svc.port),&refs);let mut pol=json!({"id":rid,"from":from,"to":to,"match":m,"evidence_refs":refs});if !vipid.is_empty(){pol["vip"]=json!(vipid);}if !pool_name.is_empty(){let pool_ip=pools[&pool_name].clone();let prior=pool_sources.entry(pool_ip.clone()).or_default();if !prior.is_empty()&&!prior.contains(&src){complete_nat=false;pwarnings.push(warning("ippool_address_reused","One-to-one IP pool address is reused for different source prefixes",get("firewall ippool",&pool_name).map(|x|x.line).unwrap_or(0)));}prior.insert(src.clone());let sid=format!("snat:{}:{}",id,pos+1);let orig=if src=="any"{"0.0.0.0/0".to_string()}else{src.clone()};let pref=get("firewall ippool",&pool_name).map(|x|entry_ref(&mut evidence,&hash,x,"static_ippool","Static one-address IP pool")).unwrap_or_default();let mut trrefs=refs.clone();trrefs.extend(pref);trrefs=forti_unique(trrefs);let tm=rule(&sid,0,true,"permit",(&src,&dst,&svc.proto,&svc.port),&trrefs);translations.push(json!({"id":sid,"kind":"snat","from":from,"to":to,"match":tm,"original_prefix":orig,"translated_prefix":format!("{}/32",pool_ip),"policy_id":rid,"evidence_refs":trrefs}));pol["source_nat"]=json!(sid);}policies.push(pol);origins.push(json!({"rule_id":rid,"acl_name":"FortiGate firewall policy","line":e.line}));if policies.len()>4096{return Err("FortiOS expanded policy count exceeds limit".into())}}}
- if vip_ambiguous{complete_nat=false;}if entries.get("firewall policy").map(|m|m.is_empty()).unwrap_or(true){complete_policy=false;warnings.push(warning("no_policy_configuration","No firewall policies were present in the supported configuration",0));}
-  for w in &pwarnings{let code=w["code"].as_str().unwrap_or("");if !matches!(code,"unsupported_routing_section"|"unsupported_vdom"|"unsupported_interface_type"|"unsupported_interface"|"non_root_vdom"|"unsupported_route"|"unresolved_route_interface"){complete_nat=false;}}
-  let mut path_refs=vec![];for arr in [&interfaces,&routes,&policies,&translations]{for v in arr{if let Some(rs)=v["evidence_refs"].as_array(){for r in rs{if let Some(x)=r.as_str(){path_refs.push(x.to_string())}}}}}
-  for w in &pwarnings{let n=w["line"].as_u64().unwrap_or(0) as usize;if n>0&&n<=source.len(){if source[n-1]["text"].as_str().unwrap_or("").starts_with("[OMITTED"){source[n-1]["text"]=json!("[UNSUPPORTED PATH CONFIGURATION]")}let id=add_forti(&mut evidence,&hash,n,"unsupported_path_input",w["message"].as_str().unwrap_or("Unsupported path input"));path_refs.push(id)}}
-  path_refs.sort();path_refs.dedup();evidence.sort_by_key(|x|(x["start_line"].as_u64().unwrap_or(0),x["id"].as_str().unwrap_or("").to_string()));pwarnings.sort_by_key(|x|(x["line"].as_u64().unwrap_or(0),x["code"].as_str().unwrap_or("").to_string()));warnings.sort_by_key(|x|(x["line"].as_u64().unwrap_or(0),x["code"].as_str().unwrap_or("").to_string()));
-  let mut chain_refs=policies.iter().flat_map(|p|p["evidence_refs"].as_array().into_iter().flatten().filter_map(|r|r.as_str().map(str::to_string))).collect::<Vec<_>>();chain_refs.sort();chain_refs.dedup();let chain=json!({"id":"fortigate:policies","name":"FortiGate firewall policy","interface":"","direction":"forward","complete":false,"rules":policies.iter().map(|p|p["match"].clone()).collect::<Vec<_>>(),"evidence_refs":chain_refs,"warnings":[warning("incomplete_chain_context","Selected policy chain lacks full interface and VIP context",0)]});let chains=if entries.get("firewall policy").map(|m|!m.is_empty()).unwrap_or(false){vec![chain]}else{vec![]};
-  translations.sort_by_key(|x|x["id"].as_str().unwrap_or("").to_string());let mut path=json!({"version":"fortios-path-v1","interfaces":interfaces,"routes":routes,"nat_rules":[],"policies":policies,"translations":translations,"routing_complete":complete_route,"nat_complete":complete_nat,"policy_complete":complete_policy,"inter_interface":false,"warnings":pwarnings,"evidence_refs":path_refs});if path["policies"].as_array().is_some_and(|x|x.is_empty()){path.as_object_mut().unwrap().remove("policies");}if path["translations"].as_array().is_some_and(|x|x.is_empty()){path.as_object_mut().unwrap().remove("translations");}if !complete_policy{path.as_object_mut().unwrap().remove("policy_complete");}
-  let mut result=json!({"vendor":"fortinet-fortigate","parser_version":"fortios-config-v1","hostname":hostname,"context":"root","artifact_sha256":hash,"source_lines":source,"evidence":evidence,"chains":chains,"warnings":warnings,"capabilities":["FortiOS root VDOM IPv4 interfaces and connected routes","static IPv4 routes","ordered firewall policies","literal subnet addresses","numeric TCP/UDP services","static one-to-one IPv4 VIP and IP pool translations"],"rule_origins":origins,"path":path});if result["rule_origins"].as_array().is_some_and(|x|x.is_empty()){result.as_object_mut().unwrap().remove("rule_origins");}Ok(result)
+#[derive(Clone, Default)]
+struct Entry {
+    line: usize,
+    lines: Vec<usize>,
+    sets: BTreeMap<String, Vec<String>>,
 }
-
-
-
-
-
-
-
-
-
+#[derive(Clone)]
+struct Service {
+    proto: String,
+    port: String,
+}
+fn tokens(s: &str) -> Result<Vec<String>, ()> {
+    let (mut out, mut b, mut q, mut esc, mut active) = (vec![], String::new(), false, false, false);
+    for c in s.chars() {
+        if esc {
+            b.push(c);
+            esc = false;
+            active = true;
+            continue;
+        }
+        if q && c == '\\' {
+            esc = true;
+            continue;
+        }
+        if c == '"' {
+            q = !q;
+            active = true;
+            continue;
+        }
+        if c.is_whitespace() && !q {
+            if active {
+                out.push(std::mem::take(&mut b));
+                active = false
+            }
+            continue;
+        }
+        b.push(c);
+        active = true
+    }
+    if q || esc {
+        return Err(());
+    }
+    if active {
+        out.push(b)
+    }
+    Ok(out)
+}
+fn name(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || "_.-".contains(c))
+}
+fn scalar(e: Option<&Entry>, k: &str) -> String {
+    e.and_then(|x| x.sets.get(k))
+        .filter(|v| v.len() == 1)
+        .map(|v| v[0].clone())
+        .unwrap_or_default()
+}
+fn only(e: &Entry, allowed: &[&str]) -> bool {
+    e.sets.keys().all(|k| allowed.contains(&k.as_str()))
+}
+fn forti_order(a: &str, b: &str) -> std::cmp::Ordering {
+    match (a.parse::<i64>(), b.parse::<i64>()) {
+        (Ok(x), Ok(y)) => x.cmp(&y),
+        _ => a.to_lowercase().cmp(&b.to_lowercase()),
+    }
+}
+fn v4(s: &str) -> Option<Ipv4Addr> {
+    s.parse().ok()
+}
+fn iface_address(ip: &str, mask: &str) -> Option<String> {
+    Some(format!("{}/{}", v4(ip)?, mask_bits(mask)?))
+}
+fn forti_unique<I: IntoIterator<Item = String>>(items: I) -> Vec<String> {
+    items
+        .into_iter()
+        .filter(|x| !x.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+fn entry_ref(e: &mut Vec<Value>, hash: &str, x: &Entry, kind: &str, summary: &str) -> Vec<String> {
+    let mut r = vec![];
+    for n in &x.lines {
+        r.push(add_forti(e, hash, *n, kind, summary))
+    }
+    forti_unique(r)
+}
+fn section_known(s: &str) -> bool {
+    matches!(
+        s.to_lowercase().as_str(),
+        "system interface"
+            | "router static"
+            | "firewall address"
+            | "firewall service custom"
+            | "firewall policy"
+            | "firewall vip"
+            | "firewall ippool"
+            | "system settings"
+            | "vdom"
+            | "firewall central-snat-map"
+            | "firewall central-dnat-map"
+    )
+}
+fn key_known(path: &str, key: &str) -> bool {
+    match path {
+        "system interface" => [
+            "vdom",
+            "ip",
+            "status",
+            "type",
+            "alias",
+            "role",
+            "description",
+            "allowaccess",
+            "mtu",
+            "speed",
+        ]
+        .contains(&key),
+        "router static" => ["dst", "gateway", "device", "distance", "priority"].contains(&key),
+        "firewall address" => ["subnet", "type"].contains(&key),
+        "firewall service custom" => ["protocol", "tcp-portrange", "udp-portrange"].contains(&key),
+        "firewall policy" => [
+            "srcintf",
+            "dstintf",
+            "srcaddr",
+            "dstaddr",
+            "service",
+            "schedule",
+            "action",
+            "status",
+            "nat",
+            "ippool",
+            "poolname",
+            "name",
+            "utm-status",
+        ]
+        .contains(&key),
+        "firewall vip" => [
+            "extip",
+            "mappedip",
+            "extintf",
+            "type",
+            "portforward",
+            "nat-source-vip",
+        ]
+        .contains(&key),
+        "firewall ippool" => ["type", "startip", "endip", "arp-reply"].contains(&key),
+        "system settings" => key == "central-nat",
+        _ => false,
+    }
+}
+fn safe_value(k: &str, vs: &[String]) -> bool {
+    if [
+        "alias",
+        "role",
+        "description",
+        "allowaccess",
+        "name",
+        "comments",
+        "uuid",
+    ]
+    .contains(&k)
+    {
+        return false;
+    }
+    vs.iter().all(|v| {
+        !v.is_empty()
+            && v.len() <= 128
+            && v.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_.-/:".contains(c))
+    })
+}
+fn add_forti(ev: &mut Vec<Value>, hash: &str, n: usize, kind: &str, summary: &str) -> String {
+    let id = format!("forti:{}:{}", &hash[..16.min(hash.len())], n);
+    if !ev.iter().any(|x| x["id"] == id) {
+        ev.push(json!({"id":id,"start_line":n,"end_line":n,"kind":kind,"summary":summary}))
+    }
+    id
+}
+fn complete_path_warning(w: &mut Vec<Value>, code: &str, msg: &str, n: usize) {
+    w.push(warning(code, msg, n));
+}
+pub fn parse_with_hash(input: &str, artifact_hash: &str) -> Result<Value, String> {
+    if input.len() > 2 * 1024 * 1024 {
+        return Err("FortiOS configuration exceeds 2 MiB limit".into());
+    }
+    if input.contains('\0') {
+        return Err("FortiOS configuration contains a NUL byte".into());
+    }
+    let raw = input.replace("\r\n", "\n");
+    let lines: Vec<&str> = raw.split('\n').collect();
+    if lines.len() > 50000 {
+        return Err("FortiOS configuration exceeds 50000 line limit".into());
+    }
+    let hash = artifact_hash.to_string();
+    let mut source = source_lines(input, "[OMITTED CONFIGURATION]");
+    let mut evidence = vec![];
+    let mut pwarnings = vec![];
+    let mut warnings = vec![];
+    let mut entries: BTreeMap<String, BTreeMap<String, Entry>> = BTreeMap::new();
+    let (mut stack, mut cur) = (Vec::<String>::new(), None::<(String, String)>);
+    let (mut unsupported_sections, mut unsupported_commands) = (vec![], vec![]);
+    for (i, line) in lines.iter().enumerate() {
+        let n = i + 1;
+        let s = line.trim();
+        if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
+        let f = tokens(s).map_err(|_| format!("malformed FortiOS syntax at line {}", n))?;
+        if f.is_empty() {
+            continue;
+        }
+        match f[0].to_lowercase().as_str() {
+            "config" => {
+                if f.len() < 2 || stack.len() > 16 {
+                    return Err(format!("malformed or over-nested config at line {}", n));
+                }
+                let section = f[1..].join(" ");
+                stack.push(section.to_lowercase());
+                cur = None;
+                if section_known(&section) {
+                    source[i]["text"] = json!(format!("config {}", section))
+                } else {
+                    source[i]["text"] = json!("config [UNSUPPORTED SECTION]");
+                    unsupported_sections.push((section.to_lowercase(), n))
+                }
+                add_forti(
+                    &mut evidence,
+                    &hash,
+                    n,
+                    "configuration_scope",
+                    "Configuration section",
+                );
+            }
+            "edit" => {
+                if stack.is_empty() || f.len() != 2 || cur.is_some() {
+                    return Err(format!("malformed edit at line {}", n));
+                }
+                if !name(&f[1]) || f[1].len() > 79 {
+                    return Err(format!("invalid object name at line {}", n));
+                }
+                let path = stack.join(" ");
+                if entries.entry(path.clone()).or_default().contains_key(&f[1]) {
+                    return Err(format!("duplicate {} entry at line {}", path, n));
+                }
+                entries.get_mut(&path).unwrap().insert(
+                    f[1].clone(),
+                    Entry {
+                        line: n,
+                        lines: vec![n],
+                        sets: BTreeMap::new(),
+                    },
+                );
+                cur = Some((path.clone(), f[1].clone()));
+                if section_known(&path) {
+                    source[i]["text"] = json!(format!("edit {}", f[1]))
+                } else {
+                    source[i]["text"] = json!("[OMITTED CONFIGURATION ENTRY]")
+                }
+                add_forti(
+                    &mut evidence,
+                    &hash,
+                    n,
+                    "configuration_entry",
+                    "Configuration object",
+                );
+            }
+            "set" => {
+                if f.len() < 3 {
+                    return Err(format!("set outside edit or missing value at line {}", n));
+                }
+                let path = stack.join(" ");
+                let direct = cur.is_none()
+                    && (path == "system settings"
+                        || path == "system global"
+                        || !stack.is_empty() && !section_known(&path));
+                let key = if let Some((p, k)) = &cur {
+                    (p.clone(), k.clone())
+                } else if direct {
+                    (path.clone(), "root".into())
+                } else {
+                    return Err(format!("set outside edit or missing value at line {}", n));
+                };
+                let e = entries
+                    .entry(key.0.clone())
+                    .or_default()
+                    .entry(key.1.clone())
+                    .or_insert_with(|| Entry {
+                        line: n,
+                        lines: vec![n],
+                        sets: BTreeMap::new(),
+                    });
+                let k = f[1].to_lowercase();
+                if e.sets.contains_key(&k) {
+                    return Err(format!("duplicate set {} at line {}", k, n));
+                }
+                e.sets.insert(k.clone(), f[2..].to_vec());
+                if section_known(&path) && key_known(&path, &k) && safe_value(&k, &f[2..]) {
+                    e.lines.push(n);
+                    source[i]["text"] = json!(format!("set {} {}", k, f[2..].join(" ")))
+                }
+                if direct {
+                    cur = None
+                }
+            }
+            "next" => {
+                if cur.is_none() || f.len() != 1 {
+                    return Err(format!("unbalanced next at line {}", n));
+                }
+                cur = None;
+                source[i]["text"] = json!("next");
+                add_forti(
+                    &mut evidence,
+                    &hash,
+                    n,
+                    "configuration_entry",
+                    "Configuration object boundary",
+                );
+            }
+            "end" => {
+                if cur.is_some() || stack.is_empty() || f.len() != 1 {
+                    return Err(format!("unbalanced end at line {}", n));
+                }
+                stack.pop();
+                source[i]["text"] = json!("end");
+                add_forti(
+                    &mut evidence,
+                    &hash,
+                    n,
+                    "configuration_scope",
+                    "Configuration section boundary",
+                );
+            }
+            _ => unsupported_commands.push(n),
+        }
+    }
+    if cur.is_some() || !stack.is_empty() {
+        return Err("truncated FortiOS configuration block".into());
+    }
+    for group in entries.values() {
+        for e in group.values() {
+            for n in e.lines.iter().skip(1) {
+                add_forti(
+                    &mut evidence,
+                    &hash,
+                    *n,
+                    "configuration_value",
+                    "Normalized configuration value",
+                );
+            }
+        }
+    }
+    let get = |path: &str, id: &str| entries.get(path).and_then(|m| m.get(id));
+    let ids = |path: &str| -> Vec<String> {
+        let mut v: Vec<String> = entries
+            .get(path)
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        v.sort_by(|a, b| forti_order(a, b));
+        v
+    };
+    let mut hostname = scalar(get("system global", "root"), "hostname");
+    if hostname.is_empty() || !name(&hostname) {
+        hostname = "fortigate-root".into()
+    }
+    let mut complete_route = unsupported_commands.is_empty();
+    let mut complete_nat = true;
+    let mut complete_policy = unsupported_commands.is_empty();
+    for (section, n) in &unsupported_sections {
+        if section.starts_with("router ")
+            || section.starts_with("system sdwan")
+            || section.contains("policy-route")
+            || section.contains("pbr")
+        {
+            complete_path_warning(
+                &mut pwarnings,
+                "unsupported_routing_section",
+                "Dynamic, policy, or SD-WAN routing configuration is outside the supported model",
+                *n,
+            );
+            complete_route = false;
+        }
+        if ["vipgrp", "central-snat", "central-dnat", "ippool6", "vip6"]
+            .iter()
+            .any(|x| section.contains(x))
+        {
+            complete_path_warning(
+                &mut pwarnings,
+                "unsupported_nat_section",
+                "NAT configuration section is outside the supported model",
+                *n,
+            );
+            complete_nat = false;
+        }
+        if section.starts_with("firewall policy") || section.starts_with("firewall local-in") {
+            complete_policy = false;
+            complete_path_warning(
+                &mut pwarnings,
+                "unsupported_policy_section",
+                "Firewall policy section is outside the supported model",
+                *n,
+            );
+        }
+    }
+    for n in &unsupported_commands {
+        source[*n - 1]["text"] = json!("[UNSUPPORTED CONFIGURATION COMMAND]");
+        complete_path_warning(
+            &mut pwarnings,
+            "unsupported_config",
+            "Configuration contains syntax outside the supported parser model",
+            *n,
+        );
+        complete_nat = false;
+    }
+    let global = get("system global", "root");
+    if !scalar(global, "vdom-mode").is_empty()
+        && !scalar(global, "vdom-mode").eq_ignore_ascii_case("no-vdom")
+    {
+        complete_policy = false;
+        complete_route = false;
+        pwarnings.push(warning(
+            "unsupported_vdom",
+            "Global VDOM mode is outside the supported single-root model",
+            global.map(|e| e.line).unwrap_or(0),
+        ));
+    }
+    if let Some(vdoms) = entries.get("vdom") {
+        if vdoms.len() > 1 || vdoms.len() == 1 && !vdoms.contains_key("root") {
+            complete_policy = false;
+            complete_route = false;
+            pwarnings.push(warning(
+                "unsupported_vdom",
+                "Multiple or non-root VDOM configuration is outside the supported model",
+                vdoms.values().next().map(|e| e.line).unwrap_or(0),
+            ));
+        }
+    }
+    if scalar(get("system settings", "root"), "central-nat").eq_ignore_ascii_case("enable") {
+        complete_nat = false;
+        pwarnings.push(warning(
+            "central_nat_unsupported",
+            "Central NAT changes translation semantics outside this model",
+            get("system settings", "root").map(|e| e.line).unwrap_or(0),
+        ));
+    }
+    if let Some(e) = entries
+        .get("firewall central-snat-map")
+        .and_then(|m| m.values().next())
+    {
+        complete_nat = false;
+        pwarnings.push(warning(
+            "central_snat_unsupported",
+            "Central SNAT maps are outside the supported model",
+            e.line,
+        ));
+    }
+    if let Some(e) = entries
+        .get("firewall central-dnat-map")
+        .and_then(|m| m.values().next())
+    {
+        complete_nat = false;
+        pwarnings.push(warning(
+            "central_dnat_unsupported",
+            "Central DNAT maps are outside the supported model",
+            e.line,
+        ));
+    }
+    let mut interfaces = vec![];
+    let mut routes = vec![];
+    let mut policies = vec![];
+    let mut translations = vec![];
+    let interface_ids = ids("system interface");
+    if interface_ids.len() > 1024 {
+        return Err("FortiOS interface count exceeds limit".into());
+    }
+    for id in interface_ids.clone() {
+        let e = get("system interface", &id).unwrap();
+        let typ = scalar(Some(e), "type");
+        if !typ.is_empty() && !typ.eq_ignore_ascii_case("physical") {
+            complete_route = false;
+            pwarnings.push(warning("unsupported_interface_type","Tunnel, loopback, VLAN and virtual interface forwarding is outside the physical-interface model",e.line));
+            continue;
+        }
+        if id.len() > 48 {
+            complete_route = false;
+            pwarnings.push(warning(
+                "unsupported_interface",
+                "Interface name exceeds the supported limit",
+                e.line,
+            ));
+            continue;
+        }
+        if !only(
+            e,
+            &[
+                "vdom",
+                "ip",
+                "status",
+                "type",
+                "alias",
+                "role",
+                "description",
+                "allowaccess",
+                "mtu",
+                "speed",
+            ],
+        ) {
+            complete_route = false;
+            pwarnings.push(warning(
+                "unsupported_interface",
+                "Interface has unsupported forwarding properties",
+                e.line,
+            ));
+            continue;
+        }
+        if !scalar(Some(e), "vdom").eq_ignore_ascii_case("root") {
+            complete_route = false;
+            pwarnings.push(warning(
+                "non_root_vdom",
+                "Interface is not explicitly assigned to the root VDOM",
+                e.line,
+            ));
+            continue;
+        }
+        let vals = e.sets.get("ip").cloned().unwrap_or_default();
+        let mut addr = String::new();
+        let mut connected = String::new();
+        let mut resolved = false;
+        if vals.len() == 2 {
+            if let Some(v) = iface_address(&vals[0], &vals[1]) {
+                addr = v;
+                connected = mask_prefix(&vals[0], &vals[1]).unwrap_or_default();
+                resolved = true
+            }
+        }
+        let status = scalar(Some(e), "status");
+        if !status.is_empty()
+            && !status.eq_ignore_ascii_case("up")
+            && !status.eq_ignore_ascii_case("down")
+        {
+            resolved = false
+        }
+        let refs = entry_ref(
+            &mut evidence,
+            &hash,
+            e,
+            "path_interface",
+            "Interface addressing and state",
+        );
+        if !resolved {
+            complete_route = false;
+            let msg = if vals.len() != 2 || vals.first().map(String::is_empty).unwrap_or(true) {
+                "Interface has no explicit IPv4 address"
+            } else {
+                "Interface address or state is outside the supported model"
+            };
+            pwarnings.push(warning("unsupported_interface", msg, e.line));
+        }
+        let mut pi = json!({"name":id,"physical":id,"address":if addr.is_empty(){Value::Null}else{json!(addr)},"shutdown":status.eq_ignore_ascii_case("down"),"resolved":resolved,"evidence_refs":refs});
+        if addr.is_empty() {
+            pi.as_object_mut().unwrap().remove("address");
+        }
+        if resolved && !connected.is_empty() && !status.eq_ignore_ascii_case("down") {
+            routes.push(json!({"id":format!("connected:{}",id),"kind":"connected","prefix":connected,"interface":id,"distance":0,"evidence_refs":refs}));
+        }
+        interfaces.push(pi)
+    }
+    let mut route_ids = ids("router static");
+    route_ids.sort_by_key(|x| x.parse::<i64>().unwrap_or(i64::MAX));
+    for id in route_ids {
+        let e = get("router static", &id).unwrap();
+        let vals = e.sets.get("dst").cloned().unwrap_or_default();
+        let prefix = if vals.len() == 2 {
+            mask_prefix(&vals[0], &vals[1])
+        } else {
+            None
+        };
+        let gateway = scalar(Some(e), "gateway");
+        let dev = scalar(Some(e), "device");
+        let dist = scalar(Some(e), "distance");
+        let distance = if dist.is_empty() {
+            10
+        } else {
+            dist.parse::<i32>().unwrap_or(-1)
+        };
+        let priority = scalar(Some(e), "priority");
+        if routes.len() >= 4096
+            || !only(e, &["dst", "gateway", "device", "distance", "priority"])
+            || prefix.is_none()
+            || v4(&gateway).is_none()
+            || dev.is_empty()
+            || !interfaces.iter().any(|i| i["name"] == dev)
+            || !(1..=254).contains(&distance)
+            || (!priority.is_empty() && priority != "0")
+        {
+            complete_route = false;
+            pwarnings.push(warning(
+                "unsupported_route",
+                "Static route syntax, options, or limit is outside the supported model",
+                e.line,
+            ));
+            continue;
+        }
+        let refs = entry_ref(&mut evidence, &hash, e, "static_route", "Static IPv4 route");
+        routes.push(json!({"id":format!("static:{}",id),"kind":"static","prefix":prefix.unwrap(),"interface":dev,"next_hop":gateway,"distance":distance,"evidence_refs":refs}));
+    }
+    let mut addresses = BTreeMap::new();
+    for id in ids("firewall address") {
+        if let Some(e) = get("firewall address", &id) {
+            let v = e.sets.get("subnet").cloned().unwrap_or_default();
+            if v.len() == 2 {
+                if let Some(p) = mask_prefix(&v[0], &v[1]) {
+                    addresses.insert(id, p);
+                }
+            }
+        }
+    }
+    let mut services = BTreeMap::<String, Service>::new();
+    for id in ids("firewall service custom") {
+        if let Some(e) = get("firewall service custom", &id) {
+            if !only(
+                e,
+                &[
+                    "protocol",
+                    "tcp-portrange",
+                    "udp-portrange",
+                    "comments",
+                    "uuid",
+                ],
+            ) {
+                continue;
+            }
+            let proto_setting = scalar(Some(e), "protocol").to_uppercase();
+            if !proto_setting.is_empty()
+                && !(["TCP", "UDP", "TCP/UDP/SCTP"].contains(&proto_setting.as_str()))
+            {
+                continue;
+            }
+            let tcp = scalar(Some(e), "tcp-portrange");
+            let udp = scalar(Some(e), "udp-portrange");
+            let (proto, mut port) = if !tcp.is_empty() && udp.is_empty() {
+                ("tcp", tcp)
+            } else if !udp.is_empty() && tcp.is_empty() {
+                ("udp", udp)
+            } else {
+                continue;
+            };
+            if proto_setting == "TCP" && proto != "tcp" || proto_setting == "UDP" && proto != "udp"
+            {
+                continue;
+            }
+            if let Some((a, b)) = port.split_once('-') {
+                if a != b {
+                    continue;
+                }
+                port = a.into()
+            }
+            if port.parse::<u32>().is_ok_and(|n| n > 0 && n <= 65535) {
+                services.insert(
+                    id,
+                    Service {
+                        proto: proto.into(),
+                        port,
+                    },
+                );
+            }
+        }
+    }
+    let mut vips = BTreeMap::<String, (String, String, String)>::new();
+    for id in ids("firewall vip") {
+        let e = get("firewall vip", &id).unwrap();
+        let ext = scalar(Some(e), "extip");
+        let mapped = scalar(Some(e), "mappedip");
+        let iface = scalar(Some(e), "extintf");
+        if let (Some(a), Some(b)) = (v4(&ext), v4(&mapped)) {
+            if !iface.is_empty() {
+                vips.insert(
+                    id.clone(),
+                    (format!("{}/32", b), iface, format!("{}/32", a)),
+                );
+            }
+        }
+    }
+    for id in ids("firewall vip") {
+        let e = get("firewall vip", &id).unwrap();
+        let ext = scalar(Some(e), "extip");
+        let mapped = scalar(Some(e), "mappedip");
+        let iface = scalar(Some(e), "extintf");
+        let pf = scalar(Some(e), "portforward");
+        if !only(
+            e,
+            &[
+                "extip",
+                "mappedip",
+                "extintf",
+                "type",
+                "portforward",
+                "nat-source-vip",
+                "comments",
+                "uuid",
+                "arp-reply",
+            ],
+        ) || scalar(Some(e), "nat-source-vip").eq_ignore_ascii_case("enable")
+            || !scalar(Some(e), "type").is_empty()
+                && !scalar(Some(e), "type").eq_ignore_ascii_case("static-nat")
+            || v4(&ext).is_none()
+            || v4(&mapped).is_none()
+            || iface.is_empty()
+            || e.sets.contains_key("portforward") && !pf.eq_ignore_ascii_case("disable")
+        {
+            complete_nat = false;
+            if only(
+                e,
+                &[
+                    "extip",
+                    "mappedip",
+                    "extintf",
+                    "type",
+                    "portforward",
+                    "nat-source-vip",
+                    "comments",
+                    "uuid",
+                    "arp-reply",
+                ],
+            ) && !scalar(Some(e), "nat-source-vip").eq_ignore_ascii_case("enable")
+                && e.sets.contains_key("portforward")
+                && !pf.eq_ignore_ascii_case("disable")
+            {
+                pwarnings.push(warning(
+                    "vip_port_forward_unsupported",
+                    "Port-forward VIP is outside the supported model",
+                    e.line,
+                ));
+            } else {
+                let msg = if !only(
+                    e,
+                    &[
+                        "extip",
+                        "mappedip",
+                        "extintf",
+                        "type",
+                        "portforward",
+                        "nat-source-vip",
+                        "comments",
+                        "uuid",
+                        "arp-reply",
+                    ],
+                ) || scalar(Some(e), "nat-source-vip").eq_ignore_ascii_case("enable")
+                {
+                    "VIP has unsupported translation options"
+                } else {
+                    "VIP is not a static one-to-one IPv4 mapping"
+                };
+                pwarnings.push(warning("unsupported_vip", msg, e.line));
+            }
+            continue;
+        }
+        let orig = format!("{}/32", v4(&ext).unwrap());
+        let trans = format!("{}/32", v4(&mapped).unwrap());
+        let refs = entry_ref(
+            &mut evidence,
+            &hash,
+            e,
+            "static_vip",
+            "Static one-to-one virtual IP",
+        );
+        let mid = format!("vip:{}", id);
+        let m = rule(&mid, 0, true, "permit", ("any", &orig, "ip", ""), &refs);
+        translations.push(json!({"id":mid,"kind":"dnat","from":iface,"to":"any","match":m,"original_prefix":orig,"translated_prefix":trans,"evidence_refs":refs}));
+        vips.insert(id, (trans, iface, orig));
+    }
+    let vip_names = ids("firewall vip");
+    let mut vip_ambiguous = false;
+    for (i, a) in vip_names.iter().enumerate() {
+        for b in vip_names.iter().skip(i + 1) {
+            if let (Some(x), Some(y)) = (get("firewall vip", a), get("firewall vip", b)) {
+                if scalar(Some(x), "extip") == scalar(Some(y), "extip")
+                    && scalar(Some(x), "extintf") == scalar(Some(y), "extintf")
+                {
+                    vip_ambiguous = true
+                }
+            }
+        }
+    }
+    let mut pools = BTreeMap::<String, String>::new();
+    for id in ids("firewall ippool") {
+        let e = get("firewall ippool", &id).unwrap();
+        let typ = scalar(Some(e), "type");
+        let start = scalar(Some(e), "startip");
+        let end = scalar(Some(e), "endip");
+        let arp = scalar(Some(e), "arp-reply").to_lowercase();
+        if !only(
+            e,
+            &["type", "startip", "endip", "arp-reply", "comments", "uuid"],
+        ) {
+            complete_nat = false;
+            pwarnings.push(warning(
+                "unsupported_ippool",
+                "IP pool has unsupported address or forwarding options",
+                e.line,
+            ));
+            continue;
+        }
+        if typ != "one-to-one" || v4(&start).is_none() || v4(&end).is_none() || start != end {
+            complete_nat = false;
+            pwarnings.push(warning(
+                "unsupported_ippool",
+                "IP pool is not a single-address one-to-one pool",
+                e.line,
+            ));
+            continue;
+        }
+        if arp != "disable" {
+            complete_nat = false;
+            pwarnings.push(warning("ippool_local_address_unsupported","IP pool ARP reply is enabled or defaults to enabled; local-address behavior is outside the supported model",e.line));
+            continue;
+        }
+        pools.insert(id, start);
+    }
+    let mut origins = vec![];
+    let mut pool_sources = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut policy_ids = ids("firewall policy");
+    policy_ids.sort_by_key(|x| {
+        get("firewall policy", x)
+            .map(|e| e.line)
+            .unwrap_or(usize::MAX)
+    });
+    if policy_ids.len() > 4096 {
+        return Err("FortiOS policy count exceeds limit".into());
+    }
+    for id in policy_ids {
+        let e = get("firewall policy", &id).unwrap();
+        if scalar(Some(e), "status").eq_ignore_ascii_case("disable") {
+            continue;
+        }
+        let src_names = e.sets.get("srcaddr").cloned().unwrap_or_default();
+        let dst_names = e.sets.get("dstaddr").cloned().unwrap_or_default();
+        let svc_names = e.sets.get("service").cloned().unwrap_or_default();
+        let from = scalar(Some(e), "srcintf");
+        let to = scalar(Some(e), "dstintf");
+        let action = scalar(Some(e), "action").to_lowercase();
+        if src_names.len() != 1
+            || dst_names.len() != 1
+            || svc_names.is_empty()
+            || from.is_empty()
+            || to.is_empty()
+            || scalar(Some(e), "schedule") != "always"
+            || !matches!(action.as_str(), "accept" | "deny")
+            || !only(
+                e,
+                &[
+                    "srcintf",
+                    "dstintf",
+                    "srcaddr",
+                    "dstaddr",
+                    "service",
+                    "schedule",
+                    "action",
+                    "status",
+                    "nat",
+                    "ippool",
+                    "poolname",
+                    "name",
+                    "utm-status",
+                    "logtraffic",
+                    "comments",
+                    "uuid",
+                    "policyid",
+                ],
+            )
+            || scalar(Some(e), "utm-status").eq_ignore_ascii_case("enable")
+        {
+            complete_policy = false;
+            pwarnings.push(warning(
+                "unsupported_policy",
+                "Firewall policy has unsupported matching or action semantics",
+                e.line,
+            ));
+            continue;
+        }
+        if !interfaces.iter().any(|i| {
+            i["name"]
+                .as_str()
+                .is_some_and(|n| n.eq_ignore_ascii_case(&from))
+        }) {
+            complete_policy = false;
+            pwarnings.push(warning(
+                "unresolved_policy_interface",
+                "Policy interface is not configured",
+                e.line,
+            ));
+            continue;
+        }
+        let src = if src_names[0].eq_ignore_ascii_case("all") {
+            Some("any".into())
+        } else {
+            addresses.get(&src_names[0]).cloned()
+        };
+        let vip = vips.get(&dst_names[0]);
+        if vip.is_none() && ids("firewall vip").contains(&dst_names[0]) {
+            complete_policy = false;
+            pwarnings.push(warning(
+                "unsupported_policy_vip",
+                "Policy-selected VIP cannot be normalized",
+                e.line,
+            ));
+            continue;
+        }
+        let dst = if let Some((mapped, _, _)) = vip {
+            Some(mapped.clone())
+        } else if dst_names[0].eq_ignore_ascii_case("all") {
+            Some("any".into())
+        } else {
+            addresses.get(&dst_names[0]).cloned()
+        };
+        let (Some(src), Some(dst)) = (src, dst) else {
+            complete_policy = false;
+            pwarnings.push(warning(
+                "unsupported_policy_address",
+                "Policy source or destination address is unresolved",
+                e.line,
+            ));
+            continue;
+        };
+        if vip_ambiguous && vip.is_some() {
+            complete_policy = false;
+            pwarnings.push(warning(
+                "ambiguous_vip",
+                "Overlapping static VIPs make destination translation ambiguous",
+                e.line,
+            ));
+            continue;
+        }
+        if svc_names.len() > 256
+            || svc_names
+                .iter()
+                .any(|sn| !sn.eq_ignore_ascii_case("all") && !services.contains_key(sn))
+        {
+            complete_policy = false;
+            pwarnings.push(warning(
+                "unsupported_policy_service",
+                "Policy service is unresolved or exceeds expansion limit",
+                e.line,
+            ));
+            continue;
+        }
+        let mut refs = entry_ref(
+            &mut evidence,
+            &hash,
+            e,
+            "firewall_policy",
+            "Ordered firewall policy",
+        );
+        let mut vipid = String::new();
+        if vip.is_some() {
+            vipid = format!("vip:{}", dst_names[0]);
+        }
+        for sn in &src_names {
+            if let Some(ae) = get("firewall address", sn) {
+                refs.extend(entry_ref(
+                    &mut evidence,
+                    &hash,
+                    ae,
+                    "policy_address",
+                    "Policy address object",
+                ));
+            }
+        }
+        for sn in &svc_names {
+            if let Some(se) = get("firewall service custom", sn) {
+                refs.extend(entry_ref(
+                    &mut evidence,
+                    &hash,
+                    se,
+                    "policy_service",
+                    "Policy service object",
+                ));
+            }
+        }
+        if let Some(ve) = get("firewall vip", &dst_names[0]) {
+            refs.extend(entry_ref(
+                &mut evidence,
+                &hash,
+                ve,
+                "static_vip",
+                "Static one-to-one virtual IP",
+            ));
+        }
+        refs = forti_unique(refs);
+        let nat_on = scalar(Some(e), "nat").eq_ignore_ascii_case("enable");
+        let pool_on = scalar(Some(e), "ippool").eq_ignore_ascii_case("enable");
+        let mut pool_name = String::new();
+        if nat_on && pool_on {
+            if e.sets.get("poolname").map(|v| v.len() != 1).unwrap_or(true) {
+                complete_policy = false;
+                pwarnings.push(warning(
+                    "unsupported_policy_snat",
+                    "Policy selects an unsupported dynamic or multiple IP pool",
+                    e.line,
+                ));
+                continue;
+            }
+            pool_name = e.sets["poolname"][0].clone();
+            if src.split("/").nth(1) != Some("32")
+                || v4(src.split("/").next().unwrap_or("")).is_none()
+            {
+                complete_policy = false;
+                pwarnings.push(warning(
+                    "unsupported_policy_snat",
+                    "Static one-to-one SNAT requires one literal IPv4 source address",
+                    e.line,
+                ));
+                continue;
+            }
+            if !pools.contains_key(&pool_name) {
+                complete_policy = false;
+                pwarnings.push(warning(
+                    "unsupported_policy_snat",
+                    "Policy IP pool is unresolved or its local-address behavior is unsupported",
+                    e.line,
+                ));
+                continue;
+            }
+        } else if nat_on {
+            complete_nat = false;
+            pwarnings.push(warning(
+                "dynamic_snat_unsupported",
+                "Default-interface or dynamic SNAT is outside the static model",
+                e.line,
+            ));
+        }
+        for sn in &svc_names {
+            let svc = if sn.eq_ignore_ascii_case("all") {
+                Service {
+                    proto: "any".into(),
+                    port: String::new(),
+                }
+            } else if let Some(s) = services.get(sn) {
+                s.clone()
+            } else {
+                complete_policy = false;
+                pwarnings.push(warning(
+                    "unsupported_policy_service",
+                    "Policy service is unresolved or exceeds expansion limit",
+                    e.line,
+                ));
+                continue;
+            };
+            let rid = format!("policy:{}:{}", id, policies.len() + 1);
+            let act = if action == "accept" { "permit" } else { "deny" };
+            let pos = policies.len();
+            let m = rule(
+                &rid,
+                pos,
+                true,
+                act,
+                (&src, &dst, &svc.proto, &svc.port),
+                &refs,
+            );
+            let mut pol = json!({"id":rid,"from":from,"to":to,"match":m,"evidence_refs":refs});
+            if !vipid.is_empty() {
+                pol["vip"] = json!(vipid);
+            }
+            if !pool_name.is_empty() {
+                let pool_ip = pools[&pool_name].clone();
+                let prior = pool_sources.entry(pool_ip.clone()).or_default();
+                if !prior.is_empty() && !prior.contains(&src) {
+                    complete_nat = false;
+                    pwarnings.push(warning(
+                        "ippool_address_reused",
+                        "One-to-one IP pool address is reused for different source prefixes",
+                        get("firewall ippool", &pool_name)
+                            .map(|x| x.line)
+                            .unwrap_or(0),
+                    ));
+                }
+                prior.insert(src.clone());
+                let sid = format!("snat:{}:{}", id, pos + 1);
+                let orig = if src == "any" {
+                    "0.0.0.0/0".to_string()
+                } else {
+                    src.clone()
+                };
+                let pref = get("firewall ippool", &pool_name)
+                    .map(|x| {
+                        entry_ref(
+                            &mut evidence,
+                            &hash,
+                            x,
+                            "static_ippool",
+                            "Static one-address IP pool",
+                        )
+                    })
+                    .unwrap_or_default();
+                let mut trrefs = refs.clone();
+                trrefs.extend(pref);
+                trrefs = forti_unique(trrefs);
+                let tm = rule(
+                    &sid,
+                    0,
+                    true,
+                    "permit",
+                    (&src, &dst, &svc.proto, &svc.port),
+                    &trrefs,
+                );
+                translations.push(json!({"id":sid,"kind":"snat","from":from,"to":to,"match":tm,"original_prefix":orig,"translated_prefix":format!("{}/32",pool_ip),"policy_id":rid,"evidence_refs":trrefs}));
+                pol["source_nat"] = json!(sid);
+            }
+            policies.push(pol);
+            origins
+                .push(json!({"rule_id":rid,"acl_name":"FortiGate firewall policy","line":e.line}));
+            if policies.len() > 4096 {
+                return Err("FortiOS expanded policy count exceeds limit".into());
+            }
+        }
+    }
+    if vip_ambiguous {
+        complete_nat = false;
+    }
+    if entries
+        .get("firewall policy")
+        .map(|m| m.is_empty())
+        .unwrap_or(true)
+    {
+        complete_policy = false;
+        warnings.push(warning(
+            "no_policy_configuration",
+            "No firewall policies were present in the supported configuration",
+            0,
+        ));
+    }
+    for w in &pwarnings {
+        let code = w["code"].as_str().unwrap_or("");
+        if !matches!(
+            code,
+            "unsupported_routing_section"
+                | "unsupported_vdom"
+                | "unsupported_interface_type"
+                | "unsupported_interface"
+                | "non_root_vdom"
+                | "unsupported_route"
+                | "unresolved_route_interface"
+        ) {
+            complete_nat = false;
+        }
+    }
+    let mut path_refs = vec![];
+    for arr in [&interfaces, &routes, &policies, &translations] {
+        for v in arr {
+            if let Some(rs) = v["evidence_refs"].as_array() {
+                for r in rs {
+                    if let Some(x) = r.as_str() {
+                        path_refs.push(x.to_string())
+                    }
+                }
+            }
+        }
+    }
+    for w in &pwarnings {
+        let n = w["line"].as_u64().unwrap_or(0) as usize;
+        if n > 0 && n <= source.len() {
+            if source[n - 1]["text"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("[OMITTED")
+            {
+                source[n - 1]["text"] = json!("[UNSUPPORTED PATH CONFIGURATION]")
+            }
+            let id = add_forti(
+                &mut evidence,
+                &hash,
+                n,
+                "unsupported_path_input",
+                w["message"].as_str().unwrap_or("Unsupported path input"),
+            );
+            path_refs.push(id)
+        }
+    }
+    path_refs.sort();
+    path_refs.dedup();
+    evidence.sort_by_key(|x| {
+        (
+            x["start_line"].as_u64().unwrap_or(0),
+            x["id"].as_str().unwrap_or("").to_string(),
+        )
+    });
+    pwarnings.sort_by_key(|x| {
+        (
+            x["line"].as_u64().unwrap_or(0),
+            x["code"].as_str().unwrap_or("").to_string(),
+        )
+    });
+    warnings.sort_by_key(|x| {
+        (
+            x["line"].as_u64().unwrap_or(0),
+            x["code"].as_str().unwrap_or("").to_string(),
+        )
+    });
+    let mut chain_refs = policies
+        .iter()
+        .flat_map(|p| {
+            p["evidence_refs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|r| r.as_str().map(str::to_string))
+        })
+        .collect::<Vec<_>>();
+    chain_refs.sort();
+    chain_refs.dedup();
+    let chain = json!({"id":"fortigate:policies","name":"FortiGate firewall policy","interface":"","direction":"forward","complete":false,"rules":policies.iter().map(|p|p["match"].clone()).collect::<Vec<_>>(),"evidence_refs":chain_refs,"warnings":[warning("incomplete_chain_context","Selected policy chain lacks full interface and VIP context",0)]});
+    let chains = if entries
+        .get("firewall policy")
+        .map(|m| !m.is_empty())
+        .unwrap_or(false)
+    {
+        vec![chain]
+    } else {
+        vec![]
+    };
+    translations.sort_by_key(|x| x["id"].as_str().unwrap_or("").to_string());
+    let mut path = json!({"version":"fortios-path-v1","interfaces":interfaces,"routes":routes,"nat_rules":[],"policies":policies,"translations":translations,"routing_complete":complete_route,"nat_complete":complete_nat,"policy_complete":complete_policy,"inter_interface":false,"warnings":pwarnings,"evidence_refs":path_refs});
+    if path["policies"].as_array().is_some_and(|x| x.is_empty()) {
+        path.as_object_mut().unwrap().remove("policies");
+    }
+    if path["translations"]
+        .as_array()
+        .is_some_and(|x| x.is_empty())
+    {
+        path.as_object_mut().unwrap().remove("translations");
+    }
+    if !complete_policy {
+        path.as_object_mut().unwrap().remove("policy_complete");
+    }
+    let mut result = json!({"vendor":"fortinet-fortigate","parser_version":"fortios-config-v1","hostname":hostname,"context":"root","artifact_sha256":hash,"source_lines":source,"evidence":evidence,"chains":chains,"warnings":warnings,"capabilities":["FortiOS root VDOM IPv4 interfaces and connected routes","static IPv4 routes","ordered firewall policies","literal subnet addresses","numeric TCP/UDP services","static one-to-one IPv4 VIP and IP pool translations"],"rule_origins":origins,"path":path});
+    if result["rule_origins"]
+        .as_array()
+        .is_some_and(|x| x.is_empty())
+    {
+        result.as_object_mut().unwrap().remove("rule_origins");
+    }
+    Ok(result)
+}

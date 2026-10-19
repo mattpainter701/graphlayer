@@ -13,17 +13,36 @@ fn evaluate(operation: &str, input: Value) -> Result<Value, String> {
 // keep every evidence field, duplicate, reference and all other arrays strict.
 fn normalize_unordered_evidence(operation: &str, value: &mut Value) {
     if operation == "parse_panos" {
-        if let Some(evidence) = value.pointer_mut("/result/evidence").and_then(Value::as_array_mut) {
+        if let Some(evidence) = value
+            .pointer_mut("/result/evidence")
+            .and_then(Value::as_array_mut)
+        {
             evidence.sort_by_key(Value::to_string);
         }
-        if let Some(interfaces) = value.pointer_mut("/result/path/interfaces").and_then(Value::as_array_mut) {
+        if let Some(interfaces) = value
+            .pointer_mut("/result/path/interfaces")
+            .and_then(Value::as_array_mut)
+        {
             interfaces.sort_by_key(Value::to_string);
         }
-        if let Some(routes) = value.pointer_mut("/result/path/routes").and_then(Value::as_array_mut) {
-            let positions: Vec<usize> = routes.iter().enumerate().filter(|(_, route)| route["kind"] == "connected").map(|(index, _)| index).collect();
-            let mut connected: Vec<Value> = positions.iter().map(|index| routes[*index].clone()).collect();
+        if let Some(routes) = value
+            .pointer_mut("/result/path/routes")
+            .and_then(Value::as_array_mut)
+        {
+            let positions: Vec<usize> = routes
+                .iter()
+                .enumerate()
+                .filter(|(_, route)| route["kind"] == "connected")
+                .map(|(index, _)| index)
+                .collect();
+            let mut connected: Vec<Value> = positions
+                .iter()
+                .map(|index| routes[*index].clone())
+                .collect();
             connected.sort_by_key(Value::to_string);
-            for (index, route) in positions.into_iter().zip(connected) { routes[index] = route; }
+            for (index, route) in positions.into_iter().zip(connected) {
+                routes[index] = route;
+            }
         }
     }
 }
@@ -33,7 +52,10 @@ fn unordered_parser_inventory_keeps_values_duplicates_and_static_order_strict() 
     let original = json!({"result":{"evidence":[{"id":"b"},{"id":"a"},{"id":"a"}],"path":{"interfaces":[{"name":"b"},{"name":"a"}],"routes":[{"kind":"connected","id":"b"},{"kind":"connected","id":"a"},{"kind":"static","id":"z"},{"kind":"static","id":"y"}]},"chains":[{"id":"z"},{"id":"a"}]}});
     let mut normalized = original.clone();
     normalize_unordered_evidence("parse_panos", &mut normalized);
-    assert_eq!(normalized["result"]["evidence"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        normalized["result"]["evidence"].as_array().unwrap().len(),
+        3
+    );
     assert_eq!(normalized["result"]["path"]["routes"][2]["id"], "z");
     assert_eq!(normalized["result"]["chains"], original["result"]["chains"]);
     let mut changed = normalized.clone();

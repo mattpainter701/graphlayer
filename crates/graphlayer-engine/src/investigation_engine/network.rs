@@ -101,10 +101,18 @@ fn address_on_interface(node: &Value, name: &str, addr: &str) -> bool {
         && ip(s(&i, "address").split('/').next().unwrap_or("")) != Some(addr)
 }
 pub(super) fn directly_connected(node: &Value, name: &str, addr: &str) -> bool {
-    let Some(i) = iface(node, name) else { return false; };
-    let Some((net, bits)) = prefix(s(&i, "address")) else { return false; };
-    let Some(addr) = ip(addr) else { return false; };
-    b(&i, "resolved") && !b(&i, "shutdown") && usable_host(addr, net, bits)
+    let Some(i) = iface(node, name) else {
+        return false;
+    };
+    let Some((net, bits)) = prefix(s(&i, "address")) else {
+        return false;
+    };
+    let Some(addr) = ip(addr) else {
+        return false;
+    };
+    b(&i, "resolved")
+        && !b(&i, "shutdown")
+        && usable_host(addr, net, bits)
         && arr(&node["config"]["path"], "routes").iter().any(|r| {
             s(r, "kind").eq_ignore_ascii_case("connected")
                 && s(r, "interface").eq_ignore_ascii_case(name)
@@ -141,7 +149,12 @@ fn link_refs(nodes: &HashMap<String, Value>, link: &Value) -> Vec<Value> {
 fn append_evidence(hop: &mut Value, evidence: Vec<Value>) {
     if !evidence.is_empty() {
         let fields = hop.as_object_mut().unwrap();
-        fields.entry("evidence").or_insert_with(|| json!([])).as_array_mut().unwrap().extend(evidence);
+        fields
+            .entry("evidence")
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .unwrap()
+            .extend(evidence);
     }
 }
 fn path_input(node: &Value, ingress: &str, flow: &Value) -> Value {
@@ -423,7 +436,10 @@ pub fn evaluate_network(input: Value) -> Result<Value, String> {
             ));
         }
         result["forward"]["hops"][last]["link"] = link_json(&link);
-        append_evidence(&mut result["forward"]["hops"][last], link_refs(&by_id, &link));
+        append_evidence(
+            &mut result["forward"]["hops"][last],
+            link_refs(&by_id, &link),
+        );
         current = peer;
     }
     Ok(uncertain(
@@ -480,7 +496,17 @@ fn evaluate_return_path(
             h["path"].clone(),
         ) {
             Ok(path) => path,
-            Err(error) => return Ok((hop_results, "indeterminate".into(), vec![format!("return path is not established on node {}: {error}", s(h, "node_id"))], zero_flow())),
+            Err(error) => {
+                return Ok((
+                    hop_results,
+                    "indeterminate".into(),
+                    vec![format!(
+                        "return path is not established on node {}: {error}",
+                        s(h, "node_id")
+                    )],
+                    zero_flow(),
+                ))
+            }
         };
         let snap = s(&node["scope"], "snapshot_id");
         let ev = refs(
@@ -498,14 +524,16 @@ fn evaluate_return_path(
         hop_results.push(hop_value);
         if s(&path, "disposition") != "modeled_forward" {
             let disp = s(&path, "disposition").to_owned();
-            let mut reasons: Vec<String> = arr(&path, "reasons").iter().filter_map(Value::as_str).map(str::to_owned).collect();
-            reasons.push(format!("return path is blocked or indeterminate on node {}", s(h, "node_id")));
-            return Ok((
-                hop_results,
-                disp,
-                reasons,
-                Value::Null,
+            let mut reasons: Vec<String> = arr(&path, "reasons")
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            reasons.push(format!(
+                "return path is blocked or indeterminate on node {}",
+                s(h, "node_id")
             ));
+            return Ok((hop_results, disp, reasons, Value::Null));
         }
         if index == 0 {
             if !address_on_interface(

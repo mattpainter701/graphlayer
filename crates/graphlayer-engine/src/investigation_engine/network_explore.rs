@@ -96,7 +96,7 @@ fn contains(net: u32, bits: u8, addr: u32) -> bool {
     net & mask == addr & mask
 }
 fn usable(addr: u32, net: u32, bits: u8) -> bool {
-    if !contains(net, bits, addr)  {
+    if !contains(net, bits, addr) {
         return false;
     }
     if bits >= 31 {
@@ -117,7 +117,6 @@ fn address_on_interface(node: &Value, name: &str, addr: &str) -> bool {
         && !b(i, "shutdown")
         && usable(addr, net, bits)
         && ip(s(i, "address").split('/').next().unwrap_or("")) != Some(addr)
-
 }
 fn link_facts(nodes: &HashMap<String, Value>, link: &Value) -> bool {
     let (Some(na), Some(nb)) = (
@@ -213,10 +212,25 @@ fn branch_id(hops: &[Value], ids: &[String]) -> String {
             node: s(h, "node_id"),
             candidate: ids.get(i).map(String::as_str).unwrap_or(""),
             route: s(&h["path"]["selected_route"], "id"),
-            nat: h["path"].get("nat_rule_ids").and_then(Value::as_array).map(|values| values.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
+            nat: h["path"]
+                .get("nat_rule_ids")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                }),
         })
         .collect::<Vec<_>>();
-    let bytes = serde_json::to_string(&rows).unwrap_or_default().replace('&', "\\u0026").replace('<', "\\u003c").replace('>', "\\u003e").replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029");
+    let bytes = serde_json::to_string(&rows)
+        .unwrap_or_default()
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
     format!(
         "branch-{}",
         Sha256::digest(bytes.as_bytes())
@@ -279,8 +293,7 @@ impl Ctx {
         } else {
             zero_flow()
         };
-        let direction =
-            json!({"disposition":disp,"hops":st.hops,"final_flow":final_flow,"reasons":state_reasons(&st.reasons, st.reasons_nil)});
+        let direction = json!({"disposition":disp,"hops":st.hops,"final_flow":final_flow,"reasons":state_reasons(&st.reasons, st.reasons_nil)});
         let mut bd = disp.to_owned();
         let mut why = reason.to_owned();
         let status = if st.session.is_empty() {
@@ -539,7 +552,14 @@ impl Ctx {
         st.hops[last]["link"] = link_json(&link);
         let le = link_refs(&self.nodes, &link);
         if !le.is_empty() {
-            st.hops[last].as_object_mut().unwrap().entry("evidence").or_insert_with(|| json!([])).as_array_mut().unwrap().extend(le)
+            st.hops[last]
+                .as_object_mut()
+                .unwrap()
+                .entry("evidence")
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+                .unwrap()
+                .extend(le)
         }
         st.current = peer;
         self.walk(st, returning)
@@ -602,7 +622,13 @@ fn merge_session(current: &str, next: &str) -> String {
         next.into()
     }
 }
-fn state_reasons(reasons:&[String], was_nil:bool)->Value { if was_nil && reasons.is_empty(){Value::Null}else{json!(reasons)} }
+fn state_reasons(reasons: &[String], was_nil: bool) -> Value {
+    if was_nil && reasons.is_empty() {
+        Value::Null
+    } else {
+        json!(reasons)
+    }
+}
 fn zero_flow() -> Value {
     json!({"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""})
 }
@@ -628,7 +654,9 @@ fn exact_reverse(forward: &[Value], reverse: &Value) -> bool {
         if i < rh.len() - 1 {
             let prior = &forward[forward.len() - 2 - i];
             if r["link"].is_null() || prior["link"].is_null() {
-                if r["link"].is_null() && prior["link"].is_null() {continue;}
+                if r["link"].is_null() && prior["link"].is_null() {
+                    continue;
+                }
                 return false;
             }
             let same = (r["link"]["a"] == prior["link"]["a"]
@@ -748,7 +776,9 @@ pub fn explore_network(input: Value) -> Result<Value, String> {
     out["branches"] = json!(branches);
     let mut rows = a(&out, "branches");
     rows.sort_by(|x, y| s(x, "id").cmp(s(y, "id")));
-    if rows.is_empty() {ctx.complete=false;}
+    if rows.is_empty() {
+        ctx.complete = false;
+    }
     out["branches"] = json!(rows);
     let all_blocked = !rows.is_empty() && rows.iter().all(|x| s(x, "disposition") == "blocked");
     let all_round = !rows.is_empty()

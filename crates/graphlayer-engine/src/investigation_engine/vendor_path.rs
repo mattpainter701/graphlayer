@@ -1,68 +1,1068 @@
-use serde_json::{json,Value};
-use std::net::Ipv4Addr;
 use super::policy::evaluate_policy;
+use serde_json::{json, Value};
+use std::net::Ipv4Addr;
 
-fn s<'a>(v:&'a Value,k:&str)->&'a str{v.get(k).and_then(Value::as_str).unwrap_or("")}
-fn flow_json(v:&Value)->Value{let mut f=v.clone();if let Some(o)=f.as_object_mut(){for k in ["source_port","destination_port"]{if v.get(k).and_then(Value::as_i64).unwrap_or(0)==0{o.remove(k);}}}f}
-fn arr(v:&Value,k:&str)->Vec<Value>{v.get(k).and_then(Value::as_array).cloned().unwrap_or_default()}
-fn b(v:&Value,k:&str)->bool{v.get(k).and_then(Value::as_bool).unwrap_or(false)}
-fn i(v:&Value,k:&str)->i64{v.get(k).and_then(Value::as_i64).unwrap_or(0)}
-fn num_ip(v:&str)->Option<u32>{v.parse::<Ipv4Addr>().ok().map(u32::from)}
-fn prefix(v:&str)->Option<(u32,u8)>{let(a,b)=v.split_once('/')?;let n=b.parse::<u8>().ok()?;if n>32{return None}let x=num_ip(a)?;let m=if n==0{0}else{u32::MAX<<(32-n)};Some((x&m,n))}
-fn has(n:u32,bits:u8,x:u32)->bool{let m=if bits==0{0}else{u32::MAX<<(32-bits)};n&m==x&m}
-fn eq_name(kind:&str,a:&str,b:&str)->bool{if a.eq_ignore_ascii_case("any")||a=="*"||b.eq_ignore_ascii_case("any")||b=="*"{true}else if kind=="pan"{a==b}else{a.eq_ignore_ascii_case(b)}}
-fn iface<'a>(all:&'a[Value],name:&str,kind:&str)->Vec<&'a Value>{all.iter().filter(|x|if kind=="pan"{s(x,"name")==name}else{s(x,"name").eq_ignore_ascii_case(name)}).collect()}
-fn stage(n:&str)->Value{json!({"name":n,"status":"not_evaluated","detail":""})}
-fn stages()->Value{json!([stage("ingress"),stage("destination_nat"),stage("ingress_policy"),stage("route"),stage("source_nat"),stage("egress")])}
-fn reason(r:&mut Value,stage_name:&str,disp:&str,detail:&str,why:&str)->Value{if !stage_name.is_empty(){let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")==stage_name).unwrap();r["stages"][ix]["status"]=json!(if disp=="blocked"{"blocked"}else{"unresolved"});if !detail.is_empty(){r["stages"][ix]["detail"]=json!(detail)}}r["disposition"]=json!(disp);if !why.is_empty(){r["reasons"].as_array_mut().unwrap().push(json!(why))}let mut out=r.clone();super::omit_empty_fields(&mut out);out}
-fn refs(v:&Value)->Vec<String>{let mut out=arr(v,"evidence_refs").iter().filter_map(Value::as_str).map(str::to_owned).filter(|x|!x.is_empty()).collect::<Vec<_>>();out.sort();out.dedup();out}
-fn ordered_refs(v:&Value)->Vec<String>{arr(v,"evidence_refs").iter().filter_map(Value::as_str).map(str::to_owned).filter(|x|!x.is_empty()).collect()}
-fn append_unique(to:&mut Vec<String>,from:Vec<String>){for x in from{if !x.is_empty()&&!to.contains(&x){to.push(x)}}to.sort()}
-fn add_result_refs(v:&mut Value,more:Vec<String>){let mut all=refs(v);append_unique(&mut all,more);if !all.is_empty(){v["evidence_refs"]=json!(all)}}
-fn policy_eval(policies:&[Value],scope:&Value,from:&str,to:&str,flow:&Value,kind:&str)->Result<Option<Value>,String>{let mut rules=Vec::new();let mut refs_all=Vec::new();let mut ids=std::collections::HashSet::new();for (idx,p) in policies.iter().enumerate(){if !eq_name(kind,s(p,"from"),from)||!eq_name(kind,s(p,"to"),to){continue}let mut rule=p["match"].clone();if s(&rule,"id").is_empty()||s(p,"id").is_empty(){return Err("vendor policy has a missing identifier".into())}if !ids.insert(s(p,"id").to_owned()){return Err("vendor policy rule identifiers are duplicated".into())}rule["id"]=json!(s(p,"id"));if rule["position"].as_i64().unwrap_or(0)<0{rule["position"]=json!(idx)}let mut er=refs(&rule);append_unique(&mut er,refs(p));rule["evidence_refs"]=json!(er);append_unique(&mut refs_all,refs(p));rules.push(rule)}if rules.is_empty(){return Ok(None)}let mut context=scope.clone();context["context"]=json!(format!("{}/vendor-policy/{from}/{to}",s(scope,"context")));let mut f=flow.clone();f["scope"]=context.clone();let bundle=json!({"scope":context,"complete":true,"default_action":"deny","rules":rules});let mut result=evaluate_policy(json!({"bundle":bundle,"flow":f}))?;let mut er=refs(&result);append_unique(&mut er,refs_all);if er.is_empty(){result.as_object_mut().unwrap().remove("evidence_refs");}else{result["evidence_refs"]=json!(er);}Ok(Some(result))}
-fn translation_match(t:&Value,flow:&Value,scope:&Value)->Result<bool,String>{if s(t,"id").is_empty()||! ["snat","dnat","none"].contains(&s(t,"kind")){return Err("translation has invalid identifier or kind".into())}let mut rule=t["match"].clone();if s(&rule,"id").is_empty(){return Err("translation match is incomplete".into())}if !b(&rule,"enabled"){return Ok(false)}rule["action"]=json!("permit");rule["position"]=json!(0);let mut f=flow.clone();f["scope"]=scope.clone();let result=evaluate_policy(json!({"bundle":{"scope":scope,"complete":true,"default_action":"deny","rules":[rule]},"flow":f}))?;match s(&result,"disposition"){"permit"=>Ok(true),"deny"=>Ok(false),_=>Err("translation match contains unsupported semantics".into())}}
-fn translated(f:&Value,t:&Value,destination:bool)->Result<Value,String>{let(from,to)=if (destination&&s(t,"kind")=="dnat")||(!destination&&s(t,"kind")=="snat"){(s(t,"original_prefix"),s(t,"translated_prefix"))}else{(s(t,"translated_prefix"),s(t,"original_prefix"))};let (Some((n,bits)),Some((m,bits2)))=(prefix(from),prefix(to))else{return Err("translation is not a supported equal-size IPv4 prefix mapping".into())};if bits!=bits2||from!=format!("{}/{}",Ipv4Addr::from(n),bits)||to!=format!("{}/{}",Ipv4Addr::from(m),bits2){return Err("translation is not a supported equal-size IPv4 prefix mapping".into())}let key=if destination{"destination"}else{"source"};let Some(addr)=num_ip(s(f,key))else{return Err("translation address is invalid".into())};if !has(n,bits,addr){return Err("translation address is outside the configured prefix".into())}let mut out=f.clone();out[key]=json!(Ipv4Addr::from(m|(addr&if bits==0{u32::MAX}else{!(u32::MAX<<(32-bits))})).to_string());Ok(out)}
-fn best_route(routes:&[Value],interfaces:&[Value],dest:&str,forced:Option<&str>)->Option<Value>{let addr=num_ip(dest)?;let mut found=Vec::new();let mut longest=-1i16;for r in routes{let Some((net,bits))=prefix(s(r,"prefix"))else{continue};if !["connected","static"].contains(&s(r,"kind").to_ascii_lowercase().as_str())||s(r,"prefix")!=format!("{}/{}",Ipv4Addr::from(net),bits)||!has(net,bits,addr)||s(r,"id").is_empty()||s(r,"interface").is_empty(){continue}if let Some(id)=forced{if s(r,"id")!=id{continue}}let bits=bits as i16;if bits>longest{found.clear();longest=bits}if bits==longest{found.push(r.clone())}}if found.is_empty(){return None}let min=found.iter().map(|r|i(r,"distance")).min()?;let best=found.into_iter().filter(|r|i(r,"distance")==min).collect::<Vec<_>>();if best.len()!=1{return None}let r=best[0].clone();let ifs=iface(interfaces,s(&r,"interface"),"forti");if ifs.len()!=1||!b(ifs[0],"resolved")||b(ifs[0],"shutdown"){return None}if s(&r,"kind").eq_ignore_ascii_case("static"){let nh=num_ip(s(&r,"next_hop"))?;let valid=routes.iter().any(|c|{if !s(c,"kind").eq_ignore_ascii_case("connected")||!s(c,"interface").eq_ignore_ascii_case(s(&r,"interface")){return false}let Some((n,bits))=prefix(s(c,"prefix"))else{return false};has(n,bits,nh)&&s(c,"prefix")==format!("{}/{}",Ipv4Addr::from(n),bits)});if !valid{return None}}Some(r)}
-fn apply_translate(f:&Value,t:&Value,destination:bool)->Result<Value,String>{translated(f,t,destination)}
-
-pub fn evaluate_vendor_path(input:Value,route_id:Option<&str>)->Result<Value,String>{
- let (pre_route_id,post_route_id)=route_id.map(|v|{let mut pre=None;let mut post=None;for part in v.split(';'){if let Some(x)=part.strip_prefix("pre="){pre=Some(x)}else if let Some(x)=part.strip_prefix("post="){post=Some(x)}else{post=Some(part)}}(pre,post)}).unwrap_or((None,None));
- let scope=&input["scope"];let flow_value=flow_json(&input["flow"]);let flow=&flow_value;if ["snapshot_id","device_id","context"].iter().any(|k|s(scope,k).trim().is_empty()){return Err("scope: snapshot_id, device_id, and context are required".into())}if flow["scope"]!=*scope{return Err("flow scope does not match path scope".into())}if s(&input,"ingress_interface").is_empty(){return Err("ingress_interface is required".into())}if num_ip(s(flow,"source")).is_none()||num_ip(s(flow,"destination")).is_none(){return Err("vendor path requires native IPv4 unicast source and destination".into())}let _=evaluate_policy(json!({"bundle":{"scope":scope,"complete":true,"default_action":"deny","rules":[]},"flow":flow}))?;
- let cfg=&input["config"];let p=&cfg["path"];let vendor=s(cfg,"vendor").to_ascii_lowercase();let kind=if ["palo-alto","palo_alto","paloalto","paloalto-panos","pan-os","panos"].contains(&vendor.as_str()){"pan"}else if ["fortinet","fortigate","fortinet-fortigate","fortios"].contains(&vendor.as_str()){"forti"}else{"unknown"};let contract="graphlayer-vendor-path-v1";let mut r=json!({"engine_contract_version":contract,"scope":scope,"ingress_interface":s(&input,"ingress_interface"),"original_flow":flow,"policy_flow":flow,"egress_flow":{"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""},"disposition":"indeterminate","stages":stages(),"reasons":[],"assumptions":["configuration-derived PAN-OS or FortiGate single-device path model","configuration evidence completeness is assumed where explicitly asserted","configured interface and route facts do not establish live link, neighbor, or session state","return modeling uses the supplied forward permit as established TCP/UDP state"]});
- let finish=|mut x:Value,d:&str,why:&str|{x["disposition"]=json!(d);if !why.is_empty(){x["reasons"].as_array_mut().unwrap().push(json!(why))}super::omit_empty_fields(&mut x);x};
- if s(cfg,"context")!=s(scope,"context")||p.is_null(){return Ok(finish(r,"indeterminate","configuration context or normalized path model is unavailable"))}if kind=="unknown"{return Ok(finish(r,"indeterminate","vendor path semantics are unsupported"))}let version=if kind=="pan"{"panos-path-v1"}else{"fortios-path-v1"};if s(p,"version")!=version{return Ok(finish(r,"indeterminate","vendor path configuration version is unsupported"))}r["evidence_refs"]=json!(refs(p));
- let ints=arr(p,"interfaces");let ingmatches=iface(&ints,s(&input,"ingress_interface"),kind);if ingmatches.len()!=1{return Ok(reason(&mut r,"ingress","indeterminate","ingress interface is missing or ambiguous","explicit ingress interface could not be resolved"))}let ingress=ingmatches[0];let si=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="ingress").unwrap();r["stages"][si]["evidence_refs"]=json!(ordered_refs(ingress));add_result_refs(&mut r,refs(ingress));if !b(ingress,"resolved")||b(ingress,"shutdown"){return Ok(reason(&mut r,"ingress","indeterminate","","ingress interface is not resolved and enabled"))}r["stages"][si]["status"]=json!("matched");r["stages"][si]["detail"]=json!("explicit ingress interface is resolved and enabled");
- if !b(p,"routing_complete")||!b(p,"policy_complete")||!b(p,"nat_complete"){for n in ["route","ingress_policy","destination_nat"]{let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")==n).unwrap();r["stages"][ix]["status"]=json!("unresolved")}return Ok(finish(r,"indeterminate","vendor routing, policy, or translation evidence is incomplete"))}
- let routes=arr(p,"routes");let translations=arr(p,"translations");let policies=arr(p,"policies");let mut translation_ids=std::collections::HashSet::new();for t in &translations{if s(t,"id").is_empty()||!translation_ids.insert(s(t,"id").to_owned())||s(t,"from").trim().is_empty()||s(t,"to").trim().is_empty(){return Ok(reason(&mut r,"destination_nat","indeterminate","","translation identifiers or zone/interface references are missing or duplicated"))}if s(t,"kind")!="none"{let a=prefix(s(t,"original_prefix"));let b=prefix(s(t,"translated_prefix"));if !["snat","dnat"].contains(&s(t,"kind"))||a.is_none()||b.is_none()||a.unwrap().1!=b.unwrap().1{return Ok(reason(&mut r,"destination_nat","indeterminate","","translation uses unsupported or invalid IPv4 mapping semantics"))}}let mf=t["match"].clone();if s(&mf,"id").is_empty()||s(&mf,"source").is_empty()||s(&mf,"destination").is_empty()||s(&mf,"protocol").is_empty(){return Ok(reason(&mut r,"destination_nat","indeterminate","","translation match is incomplete"))}}
- let mut dnat:Option<Value>=None;let mut snat:Option<Value>=None;let mut no_nat=false;let mut chosen_policy:Option<Value>=None;let mut pre_route:Option<Value>=None;let mut packet=flow.clone();
- if kind=="pan"{let Some(pr)=best_route(&routes,&ints,s(flow,"destination"),pre_route_id)else{return Ok(reason(&mut r,"route","blocked","","no supported connected or static route matches the destination"))};pre_route=Some(pr.clone());add_result_refs(&mut r,refs(&pr));let pre_if=iface(&ints,s(&pr,"interface"),kind);if s(ingress,"zone").is_empty()||pre_if.is_empty()||s(pre_if[0],"zone").is_empty(){return Ok(reason(&mut r,"route","indeterminate","","PAN-OS ingress or pre-NAT egress zone is unresolved"))}let from=s(ingress,"zone");let to=s(pre_if[0],"zone");for t in &translations{if !eq_name(kind,s(t,"from"),from)||!eq_name(kind,s(t,"to"),to){continue}if translation_match(t,flow,scope)?{match s(t,"kind"){"dnat"=>dnat=Some(t.clone()),"snat"=>snat=Some(t.clone()),"none"=>{no_nat=true;break},_=>{}}break}}}
- else {for pol in &policies{if !eq_name(kind,s(pol,"from"),s(&input,"ingress_interface"))||s(pol,"vip").is_empty(){continue}let tr=translations.iter().filter(|t|s(t,"id")==s(pol,"vip")).collect::<Vec<_>>();if tr.len()!=1||s(tr[0],"kind")!="dnat"||!eq_name(kind,s(tr[0],"from"),s(&input,"ingress_interface")){continue}if translation_match(tr[0],flow,scope)?{if dnat.as_ref().is_some_and(|d|s(d,"id")!=s(tr[0],"id")){return Ok(reason(&mut r,"destination_nat","indeterminate","","multiple active VIP translations may match"))}dnat=Some(tr[0].clone());chosen_policy=Some(pol.clone())}}if dnat.is_none(){for t in &translations{if s(t,"kind")=="dnat"&&translation_match(t,flow,scope)?{let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="destination_nat").unwrap();r["stages"][ix]["status"]=json!("unresolved");r["stages"][ix]["candidate_ids"]=json!([s(t,"id")]);return Ok(finish(r,"indeterminate","a matching FortiGate VIP is not authorized by a uniquely selected VIP policy"))}}}}
- if let Some(t)=dnat.as_ref(){packet=apply_translate(&packet,t,true)?;let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="destination_nat").unwrap();r["stages"][ix]["status"]=json!("matched");r["stages"][ix]["detail"]=json!("destination translated using the original packet tuple");r["stages"][ix]["before"]=flow.clone();r["stages"][ix]["after"]=packet.clone();r["stages"][ix]["candidate_ids"]=json!([s(t,"id")]);r["stages"][ix]["evidence_refs"]=json!(ordered_refs(t));add_result_refs(&mut r,refs(t));r["nat_rule_ids"]=json!([s(t,"id")]);}else{let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="destination_nat").unwrap();r["stages"][ix]["status"]=json!("not_applied");r["stages"][ix]["detail"]=json!(if no_nat{"explicit no-NAT rule matched and terminated ordered translation selection"}else{"no supported destination translation matched"});if no_nat{if let Some(t)=translations.iter().find(|t|s(t,"kind")=="none"&&translation_match(t,flow,scope).unwrap_or(false)){r["stages"][ix]["candidate_ids"]=json!([s(t,"id")]);r["stages"][ix]["evidence_refs"]=json!(ordered_refs(t));add_result_refs(&mut r,refs(t));}}}
- r["policy_flow"]=packet.clone();if local_addr(&ints,s(&packet,"destination")){return Ok(reason(&mut r,"ingress_policy","indeterminate","","translated destination addresses the firewall itself"))}
- let post=best_route(&routes,&ints,s(&packet,"destination"),post_route_id);let Some(route)=post else {return Ok(reason(&mut r,"route","blocked","","no supported connected or static route matches the destination"))};let out_if=iface(&ints,s(&route,"interface"),kind);if out_if.len()!=1||!b(out_if[0],"resolved")||b(out_if[0],"shutdown"){return Ok(reason(&mut r,"route","indeterminate","","selected egress interface is unresolved or disabled"))}let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="route").unwrap();r["stages"][ix]["status"]=json!("matched");r["stages"][ix]["detail"]=json!("selected longest-prefix route for the post-translation destination");r["stages"][ix]["candidate_ids"]=json!([s(&route,"id")]);if let Some(pre)=pre_route.as_ref(){r["stages"][ix]["candidate_ids"].as_array_mut().unwrap().push(json!(s(pre,"id")))}let mut route_refs=refs(&route);append_unique(&mut route_refs,refs(out_if[0]));if let Some(pre)=pre_route.as_ref(){append_unique(&mut route_refs,refs(pre))}r["stages"][ix]["evidence_refs"]=json!(route_refs);add_result_refs(&mut r,refs(&route));add_result_refs(&mut r,refs(out_if[0]));r["selected_route"]=route.clone();r["egress_interface"]=json!(s(out_if[0],"name"));
- let from=if kind=="pan"{s(ingress,"zone")}else{s(&input,"ingress_interface")};let to=if kind=="pan"{s(out_if[0],"zone")}else{s(out_if[0],"name")};if eq_name(kind,s(&input,"ingress_interface"),s(out_if[0],"name")){return Ok(reason(&mut r,"egress","indeterminate","","same-interface hairpin forwarding is outside the vendor path model"))}
- let policy_flow=if kind=="forti"{packet.clone()}else{flow.clone()};let policy=policy_eval(&policies,scope,from,to,&policy_flow,kind)?;if let Some(pr)=policy{r["policy_flow"]=pr["flow"].clone();r["policy"]=pr.clone();let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="ingress_policy").unwrap();r["stages"][ix]["evidence_refs"]=json!(ordered_refs(&pr));add_result_refs(&mut r,refs(&pr));if s(&pr,"disposition")=="deny"{r["stages"][ix]["status"]=json!("blocked");if b(&pr,"used_default"){let mut stage_refs=refs(&pr);append_unique(&mut stage_refs,refs(p));r["stages"][ix]["evidence_refs"]=json!(stage_refs);r["stages"][ix]["detail"]=json!("complete policy has no matching rule; default deny applies");}return Ok(finish(r,"blocked",if b(&pr,"used_default"){"complete vendor policy default denies the flow"}else{"first matching vendor policy denies the policy packet tuple"}))}if s(&pr,"disposition")!="permit"{return Ok(reason(&mut r,"ingress_policy","indeterminate","","vendor policy does not establish a permit"))}r["stages"][ix]["status"]=json!("matched");r["stages"][ix]["detail"]=json!(if kind=="forti"{"ordered interface policy permits the post-DNAT packet tuple and selected VIP dependency"}else{"ordered zone or interface policy permits the original packet tuple"});if let Some(rule)=pr.get("decisive_rule").and_then(Value::as_str){chosen_policy=policies.iter().find(|p|s(p,"id")==rule).cloned()}}else{let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="ingress_policy").unwrap();r["stages"][ix]["evidence_refs"]=json!(refs(p));return Ok(reason(&mut r,"ingress_policy","blocked","complete policy has no matching rule; default deny applies","complete vendor policy default denies the flow"))}
- if kind=="forti"&&dnat.is_some()&&chosen_policy.as_ref().is_none_or(|p|s(p,"vip")!=s(dnat.as_ref().unwrap(),"id")){return Ok(reason(&mut r,"ingress_policy","indeterminate","","a plain or mismatched FortiGate policy cannot authorize the selected VIP"))}
- if snat.is_none()&&!no_nat&&kind=="forti"{if let Some(policy)=chosen_policy.as_ref(){let id=s(policy,"source_nat");if !id.is_empty(){let matching=translations.iter().filter(|t|s(t,"id")==id).collect::<Vec<_>>();if matching.len()!=1||s(matching[0],"kind")!="snat"{return Ok(reason(&mut r,"source_nat","indeterminate","","selected FortiGate policy source NAT reference is missing or inconsistent"))}if translation_match(matching[0],flow,scope)?{snat=Some(matching[0].clone())}else{return Ok(reason(&mut r,"source_nat","indeterminate","","selected FortiGate policy source NAT does not match the original tuple"))}}}}
- if dnat.is_some()&&snat.is_some(){return Ok(reason(&mut r,"source_nat","indeterminate","","composed source and destination translation is unsupported"))}if let Some(t)=snat.as_ref(){let before=packet.clone();packet=apply_translate(&packet,t,false)?;let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="source_nat").unwrap();r["stages"][ix]["status"]=json!("matched");r["stages"][ix]["detail"]=json!("source translated after policy evaluation");r["stages"][ix]["before"]=before;r["stages"][ix]["after"]=packet.clone();r["stages"][ix]["candidate_ids"]=json!([s(t,"id")]);r["stages"][ix]["evidence_refs"]=json!(ordered_refs(t));add_result_refs(&mut r,refs(t));let mut ids=arr(&r,"nat_rule_ids");ids.push(json!(s(t,"id")));r["nat_rule_ids"]=json!(ids)}else{let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="source_nat").unwrap();r["stages"][ix]["status"]=json!("not_applied");r["stages"][ix]["detail"]=json!("no supported source translation matched")}
- let ix=r["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="egress").unwrap();r["stages"][ix]["status"]=json!("matched");r["stages"][ix]["detail"]=json!("packet exits through the selected enabled interface");r["stages"][ix]["before"]=packet.clone();r["stages"][ix]["after"]=packet.clone();r["stages"][ix]["evidence_refs"]=json!(ordered_refs(out_if[0]));r["egress_flow"]=packet;r["egress_flow"]["scope"]=scope.clone();r["disposition"]=json!("modeled_forward");super::omit_empty_fields(&mut r);Ok(r)
+fn s<'a>(v: &'a Value, k: &str) -> &'a str {
+    v.get(k).and_then(Value::as_str).unwrap_or("")
 }
-fn local_addr(ints:&[Value],addr:&str)->bool{ints.iter().any(|i|s(i,"address").split('/').next()==Some(addr))}
+fn flow_json(v: &Value) -> Value {
+    let mut f = v.clone();
+    if let Some(o) = f.as_object_mut() {
+        for k in ["source_port", "destination_port"] {
+            if v.get(k).and_then(Value::as_i64).unwrap_or(0) == 0 {
+                o.remove(k);
+            }
+        }
+    }
+    f
+}
+fn arr(v: &Value, k: &str) -> Vec<Value> {
+    v.get(k)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+fn b(v: &Value, k: &str) -> bool {
+    v.get(k).and_then(Value::as_bool).unwrap_or(false)
+}
+fn i(v: &Value, k: &str) -> i64 {
+    v.get(k).and_then(Value::as_i64).unwrap_or(0)
+}
+fn num_ip(v: &str) -> Option<u32> {
+    v.parse::<Ipv4Addr>().ok().map(u32::from)
+}
+fn prefix(v: &str) -> Option<(u32, u8)> {
+    let (a, b) = v.split_once('/')?;
+    let n = b.parse::<u8>().ok()?;
+    if n > 32 {
+        return None;
+    }
+    let x = num_ip(a)?;
+    let m = if n == 0 { 0 } else { u32::MAX << (32 - n) };
+    Some((x & m, n))
+}
+fn has(n: u32, bits: u8, x: u32) -> bool {
+    let m = if bits == 0 {
+        0
+    } else {
+        u32::MAX << (32 - bits)
+    };
+    n & m == x & m
+}
+fn eq_name(kind: &str, a: &str, b: &str) -> bool {
+    if a.eq_ignore_ascii_case("any") || a == "*" || b.eq_ignore_ascii_case("any") || b == "*" {
+        true
+    } else if kind == "pan" {
+        a == b
+    } else {
+        a.eq_ignore_ascii_case(b)
+    }
+}
+fn iface<'a>(all: &'a [Value], name: &str, kind: &str) -> Vec<&'a Value> {
+    all.iter()
+        .filter(|x| {
+            if kind == "pan" {
+                s(x, "name") == name
+            } else {
+                s(x, "name").eq_ignore_ascii_case(name)
+            }
+        })
+        .collect()
+}
+fn stage(n: &str) -> Value {
+    json!({"name":n,"status":"not_evaluated","detail":""})
+}
+fn stages() -> Value {
+    json!([
+        stage("ingress"),
+        stage("destination_nat"),
+        stage("ingress_policy"),
+        stage("route"),
+        stage("source_nat"),
+        stage("egress")
+    ])
+}
+fn reason(r: &mut Value, stage_name: &str, disp: &str, detail: &str, why: &str) -> Value {
+    if !stage_name.is_empty() {
+        let ix = r["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == stage_name)
+            .unwrap();
+        r["stages"][ix]["status"] = json!(if disp == "blocked" {
+            "blocked"
+        } else {
+            "unresolved"
+        });
+        if !detail.is_empty() {
+            r["stages"][ix]["detail"] = json!(detail)
+        }
+    }
+    r["disposition"] = json!(disp);
+    if !why.is_empty() {
+        r["reasons"].as_array_mut().unwrap().push(json!(why))
+    }
+    let mut out = r.clone();
+    super::omit_empty_fields(&mut out);
+    out
+}
+fn refs(v: &Value) -> Vec<String> {
+    let mut out = arr(v, "evidence_refs")
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .filter(|x| !x.is_empty())
+        .collect::<Vec<_>>();
+    out.sort();
+    out.dedup();
+    out
+}
+fn ordered_refs(v: &Value) -> Vec<String> {
+    arr(v, "evidence_refs")
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .filter(|x| !x.is_empty())
+        .collect()
+}
+fn append_unique(to: &mut Vec<String>, from: Vec<String>) {
+    for x in from {
+        if !x.is_empty() && !to.contains(&x) {
+            to.push(x)
+        }
+    }
+    to.sort()
+}
+fn add_result_refs(v: &mut Value, more: Vec<String>) {
+    let mut all = refs(v);
+    append_unique(&mut all, more);
+    if !all.is_empty() {
+        v["evidence_refs"] = json!(all)
+    }
+}
+fn policy_eval(
+    policies: &[Value],
+    scope: &Value,
+    from: &str,
+    to: &str,
+    flow: &Value,
+    kind: &str,
+) -> Result<Option<Value>, String> {
+    let mut rules = Vec::new();
+    let mut refs_all = Vec::new();
+    let mut ids = std::collections::HashSet::new();
+    for (idx, p) in policies.iter().enumerate() {
+        if !eq_name(kind, s(p, "from"), from) || !eq_name(kind, s(p, "to"), to) {
+            continue;
+        }
+        let mut rule = p["match"].clone();
+        if s(&rule, "id").is_empty() || s(p, "id").is_empty() {
+            return Err("vendor policy has a missing identifier".into());
+        }
+        if !ids.insert(s(p, "id").to_owned()) {
+            return Err("vendor policy rule identifiers are duplicated".into());
+        }
+        rule["id"] = json!(s(p, "id"));
+        if rule["position"].as_i64().unwrap_or(0) < 0 {
+            rule["position"] = json!(idx)
+        }
+        let mut er = refs(&rule);
+        append_unique(&mut er, refs(p));
+        rule["evidence_refs"] = json!(er);
+        append_unique(&mut refs_all, refs(p));
+        rules.push(rule)
+    }
+    if rules.is_empty() {
+        return Ok(None);
+    }
+    let mut context = scope.clone();
+    context["context"] = json!(format!("{}/vendor-policy/{from}/{to}", s(scope, "context")));
+    let mut f = flow.clone();
+    f["scope"] = context.clone();
+    let bundle = json!({"scope":context,"complete":true,"default_action":"deny","rules":rules});
+    let mut result = evaluate_policy(json!({"bundle":bundle,"flow":f}))?;
+    let mut er = refs(&result);
+    append_unique(&mut er, refs_all);
+    if er.is_empty() {
+        result.as_object_mut().unwrap().remove("evidence_refs");
+    } else {
+        result["evidence_refs"] = json!(er);
+    }
+    Ok(Some(result))
+}
+fn translation_match(t: &Value, flow: &Value, scope: &Value) -> Result<bool, String> {
+    if s(t, "id").is_empty() || !["snat", "dnat", "none"].contains(&s(t, "kind")) {
+        return Err("translation has invalid identifier or kind".into());
+    }
+    let mut rule = t["match"].clone();
+    if s(&rule, "id").is_empty() {
+        return Err("translation match is incomplete".into());
+    }
+    if !b(&rule, "enabled") {
+        return Ok(false);
+    }
+    rule["action"] = json!("permit");
+    rule["position"] = json!(0);
+    let mut f = flow.clone();
+    f["scope"] = scope.clone();
+    let result = evaluate_policy(
+        json!({"bundle":{"scope":scope,"complete":true,"default_action":"deny","rules":[rule]},"flow":f}),
+    )?;
+    match s(&result, "disposition") {
+        "permit" => Ok(true),
+        "deny" => Ok(false),
+        _ => Err("translation match contains unsupported semantics".into()),
+    }
+}
+fn translated(f: &Value, t: &Value, destination: bool) -> Result<Value, String> {
+    let (from, to) =
+        if (destination && s(t, "kind") == "dnat") || (!destination && s(t, "kind") == "snat") {
+            (s(t, "original_prefix"), s(t, "translated_prefix"))
+        } else {
+            (s(t, "translated_prefix"), s(t, "original_prefix"))
+        };
+    let (Some((n, bits)), Some((m, bits2))) = (prefix(from), prefix(to)) else {
+        return Err("translation is not a supported equal-size IPv4 prefix mapping".into());
+    };
+    if bits != bits2
+        || from != format!("{}/{}", Ipv4Addr::from(n), bits)
+        || to != format!("{}/{}", Ipv4Addr::from(m), bits2)
+    {
+        return Err("translation is not a supported equal-size IPv4 prefix mapping".into());
+    }
+    let key = if destination { "destination" } else { "source" };
+    let Some(addr) = num_ip(s(f, key)) else {
+        return Err("translation address is invalid".into());
+    };
+    if !has(n, bits, addr) {
+        return Err("translation address is outside the configured prefix".into());
+    }
+    let mut out = f.clone();
+    out[key] = json!(Ipv4Addr::from(
+        m | (addr
+            & if bits == 0 {
+                u32::MAX
+            } else {
+                !(u32::MAX << (32 - bits))
+            })
+    )
+    .to_string());
+    Ok(out)
+}
+fn best_route(
+    routes: &[Value],
+    interfaces: &[Value],
+    dest: &str,
+    forced: Option<&str>,
+) -> Option<Value> {
+    let addr = num_ip(dest)?;
+    let mut found = Vec::new();
+    let mut longest = -1i16;
+    for r in routes {
+        let Some((net, bits)) = prefix(s(r, "prefix")) else {
+            continue;
+        };
+        if !["connected", "static"].contains(&s(r, "kind").to_ascii_lowercase().as_str())
+            || s(r, "prefix") != format!("{}/{}", Ipv4Addr::from(net), bits)
+            || !has(net, bits, addr)
+            || s(r, "id").is_empty()
+            || s(r, "interface").is_empty()
+        {
+            continue;
+        }
+        if let Some(id) = forced {
+            if s(r, "id") != id {
+                continue;
+            }
+        }
+        let bits = bits as i16;
+        if bits > longest {
+            found.clear();
+            longest = bits
+        }
+        if bits == longest {
+            found.push(r.clone())
+        }
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let min = found.iter().map(|r| i(r, "distance")).min()?;
+    let best = found
+        .into_iter()
+        .filter(|r| i(r, "distance") == min)
+        .collect::<Vec<_>>();
+    if best.len() != 1 {
+        return None;
+    }
+    let r = best[0].clone();
+    let ifs = iface(interfaces, s(&r, "interface"), "forti");
+    if ifs.len() != 1 || !b(ifs[0], "resolved") || b(ifs[0], "shutdown") {
+        return None;
+    }
+    if s(&r, "kind").eq_ignore_ascii_case("static") {
+        let nh = num_ip(s(&r, "next_hop"))?;
+        let valid = routes.iter().any(|c| {
+            if !s(c, "kind").eq_ignore_ascii_case("connected")
+                || !s(c, "interface").eq_ignore_ascii_case(s(&r, "interface"))
+            {
+                return false;
+            }
+            let Some((n, bits)) = prefix(s(c, "prefix")) else {
+                return false;
+            };
+            has(n, bits, nh) && s(c, "prefix") == format!("{}/{}", Ipv4Addr::from(n), bits)
+        });
+        if !valid {
+            return None;
+        }
+    }
+    Some(r)
+}
+fn apply_translate(f: &Value, t: &Value, destination: bool) -> Result<Value, String> {
+    translated(f, t, destination)
+}
 
-pub fn evaluate_vendor_return(input:Value,forward:Value,route_id:Option<&str>)->Result<Value,String>{
- if s(&forward,"engine_contract_version")!="graphlayer-vendor-path-v1"||s(&forward,"disposition")!="modeled_forward"||forward["policy"].is_null()||s(&forward["policy"],"disposition")!="permit"{return Err("forward result must establish a modeled permitted vendor path".into())}
- let proto=s(&input["flow"],"protocol").trim().to_ascii_lowercase();if !["tcp","udp","6","17"].contains(&proto.as_str()){return Err("established return modeling supports TCP and UDP only".into())}
- let vendor=s(&input["config"],"vendor").to_ascii_lowercase();let kind=if vendor.contains("palo")||vendor.contains("pan"){"pan"}else{"forti"};
- if input["scope"]!=forward["scope"]||!eq_name(kind,s(&input,"ingress_interface"),s(&forward,"egress_interface")){return Err("return scope, ingress, and tuple must exactly reverse the forward path".into())}
- let mut want=forward["egress_flow"].clone();want["scope"]=input["scope"].clone();let from=want["source"].clone();want["source"]=want["destination"].clone();want["destination"]=from;let fp=want["source_port"].clone();want["source_port"]=want["destination_port"].clone();want["destination_port"]=fp;if input["flow"]!=want{return Err("return scope, ingress, and tuple must exactly reverse the forward path".into())}
- let verify=json!({"scope":forward["scope"],"config":input["config"],"ingress_interface":forward["ingress_interface"],"flow":forward["original_flow"]});let verified=evaluate_vendor_path(verify,None)?;if verified!=forward{return Err("forward result does not match supplied configuration evidence".into())}
- let mut packet=input["flow"].clone();let mut reverse_snat=None;let mut reverse_dnat=None;for id in arr(&forward,"nat_rule_ids"){let matches=arr(&input["config"]["path"],"translations").into_iter().filter(|t|s(t,"id")==id.as_str().unwrap_or("")).collect::<Vec<_>>();if matches.len()!=1{return Err("forward translation evidence is missing or ambiguous".into())}let t=matches[0].clone();if s(&t,"kind")=="snat"{packet=translated(&packet,&t,true)?;reverse_snat=Some(t)}else if s(&t,"kind")=="dnat"{reverse_dnat=Some(t)}}
- let mut request=json!({"scope":input["scope"],"config":input["config"],"ingress_interface":s(&input,"ingress_interface"),"flow":packet});request["config"]["path"]["translations"]=json!([]);
- let policy=json!({"id":"return-established","from":"*","to":"*","match":{"id":"return-established","position":0,"enabled":true,"action":"permit","source":"any","destination":"any","protocol":s(&input["flow"],"protocol"),"source_port":"","destination_port":"","evidence_refs":[]},"evidence_refs":[]});request["config"]["path"]["policies"].as_array_mut().unwrap().push(policy);
- let mut result=evaluate_vendor_path(request,route_id)?;result["original_flow"]=input["flow"].clone();result["policy_flow"]=packet.clone();result["policy"]=forward["policy"].clone();result["nat_rule_ids"]=forward["nat_rule_ids"].clone();
- let ix_policy=result["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="ingress_policy").unwrap();result["stages"][ix_policy]["detail"]=json!("reverse packet uses established state from the modeled forward permit");result["stages"][ix_policy]["evidence_refs"]=forward["policy"]["evidence_refs"].clone();
- if let Some(t)=reverse_snat{let ix=result["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="destination_nat").unwrap();result["stages"][ix]["status"]=json!("matched");result["stages"][ix]["detail"]=json!("return destination was restored through the forward source NAT mapping");result["stages"][ix]["before"]=input["flow"].clone();result["stages"][ix]["after"]=packet.clone();result["stages"][ix]["candidate_ids"]=json!([s(&t,"id")]);result["stages"][ix]["evidence_refs"]=t["evidence_refs"].clone();}
- if let Some(t)=reverse_dnat{let before=result["egress_flow"].clone();if s(&result,"disposition")=="modeled_forward"{let after=translated(&before,&t,false)?;let ix=result["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="source_nat").unwrap();result["stages"][ix]["status"]=json!("matched");result["stages"][ix]["detail"]=json!("return source was restored through the forward destination NAT mapping");result["stages"][ix]["before"]=before;result["stages"][ix]["after"]=after.clone();result["stages"][ix]["candidate_ids"]=json!([s(&t,"id")]);result["stages"][ix]["evidence_refs"]=t["evidence_refs"].clone();result["egress_flow"]=after}}
- if s(&result,"disposition")=="modeled_forward"{if !eq_name(kind,s(&result,"egress_interface"),s(&forward,"ingress_interface")){result["disposition"]=json!("indeterminate");if route_id.is_none(){result["egress_flow"]=json!({"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""})}result["reasons"].as_array_mut().unwrap().push(json!("return route does not use the forward ingress interface"));let ix=result["stages"].as_array().unwrap().iter().position(|x|s(x,"name")=="egress").unwrap();result["stages"][ix]["status"]=json!("unresolved");result["stages"][ix]["detail"]=json!("return route is asymmetric with the forward ingress interface");}else{let mut expected=forward["original_flow"].clone();expected["scope"]=input["scope"].clone();let src=expected["source"].clone();expected["source"]=expected["destination"].clone();expected["destination"]=src;let sp=expected["source_port"].clone();expected["source_port"]=expected["destination_port"].clone();expected["destination_port"]=sp;if result["egress_flow"]!=expected{result["disposition"]=json!("indeterminate");if route_id.is_none(){result["egress_flow"]=json!({"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""})}result["reasons"].as_array_mut().unwrap().push(json!("return translation is not an exact inverse of the forward tuple"));}}}
- result["assumptions"].as_array_mut().unwrap().push(json!("reverse policy handling relies on the supplied modeled forward TCP/UDP permit as established session state"));Ok(result)
+pub fn evaluate_vendor_path(input: Value, route_id: Option<&str>) -> Result<Value, String> {
+    let (pre_route_id, post_route_id) = route_id
+        .map(|v| {
+            let mut pre = None;
+            let mut post = None;
+            for part in v.split(';') {
+                if let Some(x) = part.strip_prefix("pre=") {
+                    pre = Some(x)
+                } else if let Some(x) = part.strip_prefix("post=") {
+                    post = Some(x)
+                } else {
+                    post = Some(part)
+                }
+            }
+            (pre, post)
+        })
+        .unwrap_or((None, None));
+    let scope = &input["scope"];
+    let flow_value = flow_json(&input["flow"]);
+    let flow = &flow_value;
+    if ["snapshot_id", "device_id", "context"]
+        .iter()
+        .any(|k| s(scope, k).trim().is_empty())
+    {
+        return Err("scope: snapshot_id, device_id, and context are required".into());
+    }
+    if flow["scope"] != *scope {
+        return Err("flow scope does not match path scope".into());
+    }
+    if s(&input, "ingress_interface").is_empty() {
+        return Err("ingress_interface is required".into());
+    }
+    if num_ip(s(flow, "source")).is_none() || num_ip(s(flow, "destination")).is_none() {
+        return Err("vendor path requires native IPv4 unicast source and destination".into());
+    }
+    let _ = evaluate_policy(
+        json!({"bundle":{"scope":scope,"complete":true,"default_action":"deny","rules":[]},"flow":flow}),
+    )?;
+    let cfg = &input["config"];
+    let p = &cfg["path"];
+    let vendor = s(cfg, "vendor").to_ascii_lowercase();
+    let kind = if [
+        "palo-alto",
+        "palo_alto",
+        "paloalto",
+        "paloalto-panos",
+        "pan-os",
+        "panos",
+    ]
+    .contains(&vendor.as_str())
+    {
+        "pan"
+    } else if ["fortinet", "fortigate", "fortinet-fortigate", "fortios"].contains(&vendor.as_str())
+    {
+        "forti"
+    } else {
+        "unknown"
+    };
+    let contract = "graphlayer-vendor-path-v1";
+    let mut r = json!({"engine_contract_version":contract,"scope":scope,"ingress_interface":s(&input,"ingress_interface"),"original_flow":flow,"policy_flow":flow,"egress_flow":{"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""},"disposition":"indeterminate","stages":stages(),"reasons":[],"assumptions":["configuration-derived PAN-OS or FortiGate single-device path model","configuration evidence completeness is assumed where explicitly asserted","configured interface and route facts do not establish live link, neighbor, or session state","return modeling uses the supplied forward permit as established TCP/UDP state"]});
+    let finish = |mut x: Value, d: &str, why: &str| {
+        x["disposition"] = json!(d);
+        if !why.is_empty() {
+            x["reasons"].as_array_mut().unwrap().push(json!(why))
+        }
+        super::omit_empty_fields(&mut x);
+        x
+    };
+    if s(cfg, "context") != s(scope, "context") || p.is_null() {
+        return Ok(finish(
+            r,
+            "indeterminate",
+            "configuration context or normalized path model is unavailable",
+        ));
+    }
+    if kind == "unknown" {
+        return Ok(finish(
+            r,
+            "indeterminate",
+            "vendor path semantics are unsupported",
+        ));
+    }
+    let version = if kind == "pan" {
+        "panos-path-v1"
+    } else {
+        "fortios-path-v1"
+    };
+    if s(p, "version") != version {
+        return Ok(finish(
+            r,
+            "indeterminate",
+            "vendor path configuration version is unsupported",
+        ));
+    }
+    r["evidence_refs"] = json!(refs(p));
+    let ints = arr(p, "interfaces");
+    let ingmatches = iface(&ints, s(&input, "ingress_interface"), kind);
+    if ingmatches.len() != 1 {
+        return Ok(reason(
+            &mut r,
+            "ingress",
+            "indeterminate",
+            "ingress interface is missing or ambiguous",
+            "explicit ingress interface could not be resolved",
+        ));
+    }
+    let ingress = ingmatches[0];
+    let si = r["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|x| s(x, "name") == "ingress")
+        .unwrap();
+    r["stages"][si]["evidence_refs"] = json!(ordered_refs(ingress));
+    add_result_refs(&mut r, refs(ingress));
+    if !b(ingress, "resolved") || b(ingress, "shutdown") {
+        return Ok(reason(
+            &mut r,
+            "ingress",
+            "indeterminate",
+            "",
+            "ingress interface is not resolved and enabled",
+        ));
+    }
+    r["stages"][si]["status"] = json!("matched");
+    r["stages"][si]["detail"] = json!("explicit ingress interface is resolved and enabled");
+    if !b(p, "routing_complete") || !b(p, "policy_complete") || !b(p, "nat_complete") {
+        for n in ["route", "ingress_policy", "destination_nat"] {
+            let ix = r["stages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|x| s(x, "name") == n)
+                .unwrap();
+            r["stages"][ix]["status"] = json!("unresolved")
+        }
+        return Ok(finish(
+            r,
+            "indeterminate",
+            "vendor routing, policy, or translation evidence is incomplete",
+        ));
+    }
+    let routes = arr(p, "routes");
+    let translations = arr(p, "translations");
+    let policies = arr(p, "policies");
+    let mut translation_ids = std::collections::HashSet::new();
+    for t in &translations {
+        if s(t, "id").is_empty()
+            || !translation_ids.insert(s(t, "id").to_owned())
+            || s(t, "from").trim().is_empty()
+            || s(t, "to").trim().is_empty()
+        {
+            return Ok(reason(
+                &mut r,
+                "destination_nat",
+                "indeterminate",
+                "",
+                "translation identifiers or zone/interface references are missing or duplicated",
+            ));
+        }
+        if s(t, "kind") != "none" {
+            let a = prefix(s(t, "original_prefix"));
+            let b = prefix(s(t, "translated_prefix"));
+            if !["snat", "dnat"].contains(&s(t, "kind"))
+                || a.is_none()
+                || b.is_none()
+                || a.unwrap().1 != b.unwrap().1
+            {
+                return Ok(reason(
+                    &mut r,
+                    "destination_nat",
+                    "indeterminate",
+                    "",
+                    "translation uses unsupported or invalid IPv4 mapping semantics",
+                ));
+            }
+        }
+        let mf = t["match"].clone();
+        if s(&mf, "id").is_empty()
+            || s(&mf, "source").is_empty()
+            || s(&mf, "destination").is_empty()
+            || s(&mf, "protocol").is_empty()
+        {
+            return Ok(reason(
+                &mut r,
+                "destination_nat",
+                "indeterminate",
+                "",
+                "translation match is incomplete",
+            ));
+        }
+    }
+    let mut dnat: Option<Value> = None;
+    let mut snat: Option<Value> = None;
+    let mut no_nat = false;
+    let mut chosen_policy: Option<Value> = None;
+    let mut pre_route: Option<Value> = None;
+    let mut packet = flow.clone();
+    if kind == "pan" {
+        let Some(pr) = best_route(&routes, &ints, s(flow, "destination"), pre_route_id) else {
+            return Ok(reason(
+                &mut r,
+                "route",
+                "blocked",
+                "",
+                "no supported connected or static route matches the destination",
+            ));
+        };
+        pre_route = Some(pr.clone());
+        add_result_refs(&mut r, refs(&pr));
+        let pre_if = iface(&ints, s(&pr, "interface"), kind);
+        if s(ingress, "zone").is_empty() || pre_if.is_empty() || s(pre_if[0], "zone").is_empty() {
+            return Ok(reason(
+                &mut r,
+                "route",
+                "indeterminate",
+                "",
+                "PAN-OS ingress or pre-NAT egress zone is unresolved",
+            ));
+        }
+        let from = s(ingress, "zone");
+        let to = s(pre_if[0], "zone");
+        for t in &translations {
+            if !eq_name(kind, s(t, "from"), from) || !eq_name(kind, s(t, "to"), to) {
+                continue;
+            }
+            if translation_match(t, flow, scope)? {
+                match s(t, "kind") {
+                    "dnat" => dnat = Some(t.clone()),
+                    "snat" => snat = Some(t.clone()),
+                    "none" => {
+                        no_nat = true;
+                        break;
+                    }
+                    _ => {}
+                }
+                break;
+            }
+        }
+    } else {
+        for pol in &policies {
+            if !eq_name(kind, s(pol, "from"), s(&input, "ingress_interface"))
+                || s(pol, "vip").is_empty()
+            {
+                continue;
+            }
+            let tr = translations
+                .iter()
+                .filter(|t| s(t, "id") == s(pol, "vip"))
+                .collect::<Vec<_>>();
+            if tr.len() != 1
+                || s(tr[0], "kind") != "dnat"
+                || !eq_name(kind, s(tr[0], "from"), s(&input, "ingress_interface"))
+            {
+                continue;
+            }
+            if translation_match(tr[0], flow, scope)? {
+                if dnat.as_ref().is_some_and(|d| s(d, "id") != s(tr[0], "id")) {
+                    return Ok(reason(
+                        &mut r,
+                        "destination_nat",
+                        "indeterminate",
+                        "",
+                        "multiple active VIP translations may match",
+                    ));
+                }
+                dnat = Some(tr[0].clone());
+                chosen_policy = Some(pol.clone())
+            }
+        }
+        if dnat.is_none() {
+            for t in &translations {
+                if s(t, "kind") == "dnat" && translation_match(t, flow, scope)? {
+                    let ix = r["stages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .position(|x| s(x, "name") == "destination_nat")
+                        .unwrap();
+                    r["stages"][ix]["status"] = json!("unresolved");
+                    r["stages"][ix]["candidate_ids"] = json!([s(t, "id")]);
+                    return Ok(finish(r,"indeterminate","a matching FortiGate VIP is not authorized by a uniquely selected VIP policy"));
+                }
+            }
+        }
+    }
+    if let Some(t) = dnat.as_ref() {
+        packet = apply_translate(&packet, t, true)?;
+        let ix = r["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == "destination_nat")
+            .unwrap();
+        r["stages"][ix]["status"] = json!("matched");
+        r["stages"][ix]["detail"] = json!("destination translated using the original packet tuple");
+        r["stages"][ix]["before"] = flow.clone();
+        r["stages"][ix]["after"] = packet.clone();
+        r["stages"][ix]["candidate_ids"] = json!([s(t, "id")]);
+        r["stages"][ix]["evidence_refs"] = json!(ordered_refs(t));
+        add_result_refs(&mut r, refs(t));
+        r["nat_rule_ids"] = json!([s(t, "id")]);
+    } else {
+        let ix = r["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == "destination_nat")
+            .unwrap();
+        r["stages"][ix]["status"] = json!("not_applied");
+        r["stages"][ix]["detail"] = json!(if no_nat {
+            "explicit no-NAT rule matched and terminated ordered translation selection"
+        } else {
+            "no supported destination translation matched"
+        });
+        if no_nat {
+            if let Some(t) = translations.iter().find(|t| {
+                s(t, "kind") == "none" && translation_match(t, flow, scope).unwrap_or(false)
+            }) {
+                r["stages"][ix]["candidate_ids"] = json!([s(t, "id")]);
+                r["stages"][ix]["evidence_refs"] = json!(ordered_refs(t));
+                add_result_refs(&mut r, refs(t));
+            }
+        }
+    }
+    r["policy_flow"] = packet.clone();
+    if local_addr(&ints, s(&packet, "destination")) {
+        return Ok(reason(
+            &mut r,
+            "ingress_policy",
+            "indeterminate",
+            "",
+            "translated destination addresses the firewall itself",
+        ));
+    }
+    let post = best_route(&routes, &ints, s(&packet, "destination"), post_route_id);
+    let Some(route) = post else {
+        return Ok(reason(
+            &mut r,
+            "route",
+            "blocked",
+            "",
+            "no supported connected or static route matches the destination",
+        ));
+    };
+    let out_if = iface(&ints, s(&route, "interface"), kind);
+    if out_if.len() != 1 || !b(out_if[0], "resolved") || b(out_if[0], "shutdown") {
+        return Ok(reason(
+            &mut r,
+            "route",
+            "indeterminate",
+            "",
+            "selected egress interface is unresolved or disabled",
+        ));
+    }
+    let ix = r["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|x| s(x, "name") == "route")
+        .unwrap();
+    r["stages"][ix]["status"] = json!("matched");
+    r["stages"][ix]["detail"] =
+        json!("selected longest-prefix route for the post-translation destination");
+    r["stages"][ix]["candidate_ids"] = json!([s(&route, "id")]);
+    if let Some(pre) = pre_route.as_ref() {
+        r["stages"][ix]["candidate_ids"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(s(pre, "id")))
+    }
+    let mut route_refs = refs(&route);
+    append_unique(&mut route_refs, refs(out_if[0]));
+    if let Some(pre) = pre_route.as_ref() {
+        append_unique(&mut route_refs, refs(pre))
+    }
+    r["stages"][ix]["evidence_refs"] = json!(route_refs);
+    add_result_refs(&mut r, refs(&route));
+    add_result_refs(&mut r, refs(out_if[0]));
+    r["selected_route"] = route.clone();
+    r["egress_interface"] = json!(s(out_if[0], "name"));
+    let from = if kind == "pan" {
+        s(ingress, "zone")
+    } else {
+        s(&input, "ingress_interface")
+    };
+    let to = if kind == "pan" {
+        s(out_if[0], "zone")
+    } else {
+        s(out_if[0], "name")
+    };
+    if eq_name(kind, s(&input, "ingress_interface"), s(out_if[0], "name")) {
+        return Ok(reason(
+            &mut r,
+            "egress",
+            "indeterminate",
+            "",
+            "same-interface hairpin forwarding is outside the vendor path model",
+        ));
+    }
+    let policy_flow = if kind == "forti" {
+        packet.clone()
+    } else {
+        flow.clone()
+    };
+    let policy = policy_eval(&policies, scope, from, to, &policy_flow, kind)?;
+    if let Some(pr) = policy {
+        r["policy_flow"] = pr["flow"].clone();
+        r["policy"] = pr.clone();
+        let ix = r["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == "ingress_policy")
+            .unwrap();
+        r["stages"][ix]["evidence_refs"] = json!(ordered_refs(&pr));
+        add_result_refs(&mut r, refs(&pr));
+        if s(&pr, "disposition") == "deny" {
+            r["stages"][ix]["status"] = json!("blocked");
+            if b(&pr, "used_default") {
+                let mut stage_refs = refs(&pr);
+                append_unique(&mut stage_refs, refs(p));
+                r["stages"][ix]["evidence_refs"] = json!(stage_refs);
+                r["stages"][ix]["detail"] =
+                    json!("complete policy has no matching rule; default deny applies");
+            }
+            return Ok(finish(
+                r,
+                "blocked",
+                if b(&pr, "used_default") {
+                    "complete vendor policy default denies the flow"
+                } else {
+                    "first matching vendor policy denies the policy packet tuple"
+                },
+            ));
+        }
+        if s(&pr, "disposition") != "permit" {
+            return Ok(reason(
+                &mut r,
+                "ingress_policy",
+                "indeterminate",
+                "",
+                "vendor policy does not establish a permit",
+            ));
+        }
+        r["stages"][ix]["status"] = json!("matched");
+        r["stages"][ix]["detail"] = json!(if kind == "forti" {
+            "ordered interface policy permits the post-DNAT packet tuple and selected VIP dependency"
+        } else {
+            "ordered zone or interface policy permits the original packet tuple"
+        });
+        if let Some(rule) = pr.get("decisive_rule").and_then(Value::as_str) {
+            chosen_policy = policies.iter().find(|p| s(p, "id") == rule).cloned()
+        }
+    } else {
+        let ix = r["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == "ingress_policy")
+            .unwrap();
+        r["stages"][ix]["evidence_refs"] = json!(refs(p));
+        return Ok(reason(
+            &mut r,
+            "ingress_policy",
+            "blocked",
+            "complete policy has no matching rule; default deny applies",
+            "complete vendor policy default denies the flow",
+        ));
+    }
+    if kind == "forti"
+        && dnat.is_some()
+        && chosen_policy
+            .as_ref()
+            .is_none_or(|p| s(p, "vip") != s(dnat.as_ref().unwrap(), "id"))
+    {
+        return Ok(reason(
+            &mut r,
+            "ingress_policy",
+            "indeterminate",
+            "",
+            "a plain or mismatched FortiGate policy cannot authorize the selected VIP",
+        ));
+    }
+    if snat.is_none() && !no_nat && kind == "forti" {
+        if let Some(policy) = chosen_policy.as_ref() {
+            let id = s(policy, "source_nat");
+            if !id.is_empty() {
+                let matching = translations
+                    .iter()
+                    .filter(|t| s(t, "id") == id)
+                    .collect::<Vec<_>>();
+                if matching.len() != 1 || s(matching[0], "kind") != "snat" {
+                    return Ok(reason(
+                        &mut r,
+                        "source_nat",
+                        "indeterminate",
+                        "",
+                        "selected FortiGate policy source NAT reference is missing or inconsistent",
+                    ));
+                }
+                if translation_match(matching[0], flow, scope)? {
+                    snat = Some(matching[0].clone())
+                } else {
+                    return Ok(reason(
+                        &mut r,
+                        "source_nat",
+                        "indeterminate",
+                        "",
+                        "selected FortiGate policy source NAT does not match the original tuple",
+                    ));
+                }
+            }
+        }
+    }
+    if dnat.is_some() && snat.is_some() {
+        return Ok(reason(
+            &mut r,
+            "source_nat",
+            "indeterminate",
+            "",
+            "composed source and destination translation is unsupported",
+        ));
+    }
+    if let Some(t) = snat.as_ref() {
+        let before = packet.clone();
+        packet = apply_translate(&packet, t, false)?;
+        let ix = r["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == "source_nat")
+            .unwrap();
+        r["stages"][ix]["status"] = json!("matched");
+        r["stages"][ix]["detail"] = json!("source translated after policy evaluation");
+        r["stages"][ix]["before"] = before;
+        r["stages"][ix]["after"] = packet.clone();
+        r["stages"][ix]["candidate_ids"] = json!([s(t, "id")]);
+        r["stages"][ix]["evidence_refs"] = json!(ordered_refs(t));
+        add_result_refs(&mut r, refs(t));
+        let mut ids = arr(&r, "nat_rule_ids");
+        ids.push(json!(s(t, "id")));
+        r["nat_rule_ids"] = json!(ids)
+    } else {
+        let ix = r["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == "source_nat")
+            .unwrap();
+        r["stages"][ix]["status"] = json!("not_applied");
+        r["stages"][ix]["detail"] = json!("no supported source translation matched")
+    }
+    let ix = r["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|x| s(x, "name") == "egress")
+        .unwrap();
+    r["stages"][ix]["status"] = json!("matched");
+    r["stages"][ix]["detail"] = json!("packet exits through the selected enabled interface");
+    r["stages"][ix]["before"] = packet.clone();
+    r["stages"][ix]["after"] = packet.clone();
+    r["stages"][ix]["evidence_refs"] = json!(ordered_refs(out_if[0]));
+    r["egress_flow"] = packet;
+    r["egress_flow"]["scope"] = scope.clone();
+    r["disposition"] = json!("modeled_forward");
+    super::omit_empty_fields(&mut r);
+    Ok(r)
+}
+fn local_addr(ints: &[Value], addr: &str) -> bool {
+    ints.iter()
+        .any(|i| s(i, "address").split('/').next() == Some(addr))
+}
+
+pub fn evaluate_vendor_return(
+    input: Value,
+    forward: Value,
+    route_id: Option<&str>,
+) -> Result<Value, String> {
+    if s(&forward, "engine_contract_version") != "graphlayer-vendor-path-v1"
+        || s(&forward, "disposition") != "modeled_forward"
+        || forward["policy"].is_null()
+        || s(&forward["policy"], "disposition") != "permit"
+    {
+        return Err("forward result must establish a modeled permitted vendor path".into());
+    }
+    let proto = s(&input["flow"], "protocol").trim().to_ascii_lowercase();
+    if !["tcp", "udp", "6", "17"].contains(&proto.as_str()) {
+        return Err("established return modeling supports TCP and UDP only".into());
+    }
+    let vendor = s(&input["config"], "vendor").to_ascii_lowercase();
+    let kind = if vendor.contains("palo") || vendor.contains("pan") {
+        "pan"
+    } else {
+        "forti"
+    };
+    if input["scope"] != forward["scope"]
+        || !eq_name(
+            kind,
+            s(&input, "ingress_interface"),
+            s(&forward, "egress_interface"),
+        )
+    {
+        return Err("return scope, ingress, and tuple must exactly reverse the forward path".into());
+    }
+    let mut want = forward["egress_flow"].clone();
+    want["scope"] = input["scope"].clone();
+    let from = want["source"].clone();
+    want["source"] = want["destination"].clone();
+    want["destination"] = from;
+    let fp = want["source_port"].clone();
+    want["source_port"] = want["destination_port"].clone();
+    want["destination_port"] = fp;
+    if input["flow"] != want {
+        return Err("return scope, ingress, and tuple must exactly reverse the forward path".into());
+    }
+    let verify = json!({"scope":forward["scope"],"config":input["config"],"ingress_interface":forward["ingress_interface"],"flow":forward["original_flow"]});
+    let verified = evaluate_vendor_path(verify, None)?;
+    if verified != forward {
+        return Err("forward result does not match supplied configuration evidence".into());
+    }
+    let mut packet = input["flow"].clone();
+    let mut reverse_snat = None;
+    let mut reverse_dnat = None;
+    for id in arr(&forward, "nat_rule_ids") {
+        let matches = arr(&input["config"]["path"], "translations")
+            .into_iter()
+            .filter(|t| s(t, "id") == id.as_str().unwrap_or(""))
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err("forward translation evidence is missing or ambiguous".into());
+        }
+        let t = matches[0].clone();
+        if s(&t, "kind") == "snat" {
+            packet = translated(&packet, &t, true)?;
+            reverse_snat = Some(t)
+        } else if s(&t, "kind") == "dnat" {
+            reverse_dnat = Some(t)
+        }
+    }
+    let mut request = json!({"scope":input["scope"],"config":input["config"],"ingress_interface":s(&input,"ingress_interface"),"flow":packet});
+    request["config"]["path"]["translations"] = json!([]);
+    let policy = json!({"id":"return-established","from":"*","to":"*","match":{"id":"return-established","position":0,"enabled":true,"action":"permit","source":"any","destination":"any","protocol":s(&input["flow"],"protocol"),"source_port":"","destination_port":"","evidence_refs":[]},"evidence_refs":[]});
+    request["config"]["path"]["policies"]
+        .as_array_mut()
+        .unwrap()
+        .push(policy);
+    let mut result = evaluate_vendor_path(request, route_id)?;
+    result["original_flow"] = input["flow"].clone();
+    result["policy_flow"] = packet.clone();
+    result["policy"] = forward["policy"].clone();
+    result["nat_rule_ids"] = forward["nat_rule_ids"].clone();
+    let ix_policy = result["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|x| s(x, "name") == "ingress_policy")
+        .unwrap();
+    result["stages"][ix_policy]["detail"] =
+        json!("reverse packet uses established state from the modeled forward permit");
+    result["stages"][ix_policy]["evidence_refs"] = forward["policy"]["evidence_refs"].clone();
+    if let Some(t) = reverse_snat {
+        let ix = result["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|x| s(x, "name") == "destination_nat")
+            .unwrap();
+        result["stages"][ix]["status"] = json!("matched");
+        result["stages"][ix]["detail"] =
+            json!("return destination was restored through the forward source NAT mapping");
+        result["stages"][ix]["before"] = input["flow"].clone();
+        result["stages"][ix]["after"] = packet.clone();
+        result["stages"][ix]["candidate_ids"] = json!([s(&t, "id")]);
+        result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
+    }
+    if let Some(t) = reverse_dnat {
+        let before = result["egress_flow"].clone();
+        if s(&result, "disposition") == "modeled_forward" {
+            let after = translated(&before, &t, false)?;
+            let ix = result["stages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|x| s(x, "name") == "source_nat")
+                .unwrap();
+            result["stages"][ix]["status"] = json!("matched");
+            result["stages"][ix]["detail"] =
+                json!("return source was restored through the forward destination NAT mapping");
+            result["stages"][ix]["before"] = before;
+            result["stages"][ix]["after"] = after.clone();
+            result["stages"][ix]["candidate_ids"] = json!([s(&t, "id")]);
+            result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
+            result["egress_flow"] = after
+        }
+    }
+    if s(&result, "disposition") == "modeled_forward" {
+        if !eq_name(
+            kind,
+            s(&result, "egress_interface"),
+            s(&forward, "ingress_interface"),
+        ) {
+            result["disposition"] = json!("indeterminate");
+            if route_id.is_none() {
+                result["egress_flow"] = json!({"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""})
+            }
+            result["reasons"].as_array_mut().unwrap().push(json!(
+                "return route does not use the forward ingress interface"
+            ));
+            let ix = result["stages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|x| s(x, "name") == "egress")
+                .unwrap();
+            result["stages"][ix]["status"] = json!("unresolved");
+            result["stages"][ix]["detail"] =
+                json!("return route is asymmetric with the forward ingress interface");
+        } else {
+            let mut expected = forward["original_flow"].clone();
+            expected["scope"] = input["scope"].clone();
+            let src = expected["source"].clone();
+            expected["source"] = expected["destination"].clone();
+            expected["destination"] = src;
+            let sp = expected["source_port"].clone();
+            expected["source_port"] = expected["destination_port"].clone();
+            expected["destination_port"] = sp;
+            if result["egress_flow"] != expected {
+                result["disposition"] = json!("indeterminate");
+                if route_id.is_none() {
+                    result["egress_flow"] = json!({"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""})
+                }
+                result["reasons"].as_array_mut().unwrap().push(json!(
+                    "return translation is not an exact inverse of the forward tuple"
+                ));
+            }
+        }
+    }
+    result["assumptions"].as_array_mut().unwrap().push(json!("reverse policy handling relies on the supplied modeled forward TCP/UDP permit as established session state"));
+    Ok(result)
 }

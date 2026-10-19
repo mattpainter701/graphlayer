@@ -7,67 +7,592 @@ const SUPPORTED: &[&str] = &[
     "numeric source/destination ports and inclusive ranges", "ordered first-match rules",
     "enabled state", "explicit complete-policy default action", "snapshot/device/context scope",
 ];
-const DIMENSIONS: &[&str] = &["application","user","schedule","nat","route","return_path","stateful","zone_inheritance","negation","object_expansion","vendor_default","device_state"];
-fn s<'a>(v: &'a Value, k: &str) -> &'a str { v.get(k).and_then(Value::as_str).unwrap_or("") }
-fn num(v: &Value, k: &str) -> i64 { v.get(k).and_then(Value::as_i64).unwrap_or(0) }
-fn boolean(v: &Value, k: &str) -> bool { v.get(k).and_then(Value::as_bool).unwrap_or(false) }
-fn strings(v: &Value, k: &str) -> Vec<String> { v.get(k).and_then(Value::as_array).map(|a|a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default() }
-fn scope_valid(v:&Value)->bool { ["snapshot_id","device_id","context"].iter().all(|k|!s(v,k).trim().is_empty()) }
-fn scope_json(v:&Value)->Value {json!({"snapshot_id":s(v,"snapshot_id"),"device_id":s(v,"device_id"),"context":s(v,"context")})}
-fn proto(v:&str)->Option<u8>{match v.trim().to_ascii_lowercase().as_str(){"tcp"=>Some(6),"udp"=>Some(17),"icmp"=>Some(1),"icmpv6"=>Some(58),_=>v.parse::<i32>().ok().filter(|n|(0..=255).contains(n)).map(|n|n as u8)}}
-fn ip(v:&str)->Option<IpAddr>{let a=IpAddr::from_str(v.trim()).ok()?; if v.contains('%')||matches!(a,IpAddr::V6(x) if x.to_ipv4_mapped().is_some()) {None}else{Some(a)}}
-fn flow_addr(v:&str)->Option<(IpAddr,bool)>{if let Some((host,zone))=v.split_once('%'){if zone.is_empty()||zone.contains('%'){return None}let a=host.parse::<IpAddr>().ok()?;if !a.is_ipv6(){return None}Some((a,true))}else{Some((v.parse::<IpAddr>().ok()?,false))}}
-fn prefix(v:&str)->Option<(IpAddr,u8)>{if let Some((a,b))=v.trim().split_once('/') {let a=ip(a)?;let n=b.parse::<u8>().ok()?; if n>if a.is_ipv4(){32}else{128}{None}else{Some((a,n))}}else{let a=ip(v)?;Some((a,if a.is_ipv4(){32}else{128}))}}
-fn contains(net:IpAddr,bits:u8,a:IpAddr)->bool {match(net,a){(IpAddr::V4(n),IpAddr::V4(a))=>{let n=u32::from(n);let a=u32::from(a);let m=if bits==0{0}else{u32::MAX<<(32-bits)}; n&m==a&m},(IpAddr::V6(n),IpAddr::V6(a))=>{let n=u128::from(n);let a=u128::from(a);let m=if bits==0{0}else{u128::MAX<<(128-bits)};n&m==a&m},_=>false}}
-fn addr_match(pred:&str, value:&str)->i8 {let p=pred.trim();if p.eq_ignore_ascii_case("any"){return 1}let a=match ip(value){Some(x)=>x,None=>return 0};let ranges:Vec<&str>=if p.eq_ignore_ascii_case("any4"){vec!["0.0.0.0/0"]}else if p.eq_ignore_ascii_case("any6"){vec!["::/0"]}else{vec![p]};for r in ranges{if let Some((n,b))=prefix(r){if contains(n,b,a){return 1}}else{return -1}}0}
-fn port_range(v:&str)->Option<(i64,i64)>{let parts=v.split('-').collect::<Vec<_>>();if parts.len()>2{return None}let lo=parts[0].parse::<i64>().ok()?;let hi=if parts.len()==2{parts[1].parse::<i64>().ok()?}else{lo};if lo<1||hi<lo||hi>65535{None}else{Some((lo,hi))}}
-fn numeric_like(v:&str)->bool { let t=v.trim(); t.is_empty() || t.parse::<i64>().is_ok() || t.as_bytes().first().is_some_and(u8::is_ascii_digit) }
-fn rejected_address_form(v:&str)->bool {let t=v.trim();if t.contains('%'){return true}let a=t.split('/').next().unwrap_or(t);a.parse::<IpAddr>().ok().is_some_and(|x|matches!(x,IpAddr::V6(y) if y.to_ipv4_mapped().is_some()))}
-fn validate_rule(r:&Value,i:usize,ids:&mut std::collections::HashSet<String>,positions:&mut std::collections::HashSet<i64>)->Result<(),String>{
- let id=s(r,"id"); let pos=num(r,"position");
- if id.trim().is_empty(){return Err(format!("rule {i} has empty id"))}
- if !ids.insert(id.to_owned()){return Err(format!("duplicate rule id {id:?}"))}
- if pos<0||!positions.insert(pos){return Err(format!("invalid or duplicate position {pos}"))}
- if !["permit","deny"].contains(&s(r,"action")){return Err(format!("rule {id:?} action must be permit or deny"))}
- if ["source","destination","protocol"].iter().any(|k|s(r,k).trim().is_empty()){return Err(format!("rule {id:?} must specify source, destination, and protocol"))}
- let rp=s(r,"protocol"); let has_ports=!s(r,"source_port").is_empty()||!s(r,"destination_port").is_empty();
- if ["any","ip"].contains(&rp.trim().to_ascii_lowercase().as_str())&&has_ports{return Err(format!("rule {id:?} cannot combine an IP protocol wildcard with port predicates"))}
- if let Some(p)=proto(rp){if p!=6&&p!=17&&has_ports{return Err(format!("rule {id:?} has port predicates on a non-TCP/UDP protocol"))}}else if numeric_like(rp){return Err(format!("rule {id:?} protocol: protocol must be numeric 0..255 or a supported alias"))}
- for key in ["source","destination"] { let p=s(r,key); let t=p.trim(); let supported=t.eq_ignore_ascii_case("any")||t.eq_ignore_ascii_case("any4")||t.eq_ignore_ascii_case("any6")||prefix(p).is_some(); if !supported&&(!(!t.is_empty()&&!t.eq_ignore_ascii_case("any"))||rejected_address_form(p)){let detail=if rejected_address_form(p){"scoped or IPv4-mapped addresses are unsupported"}else{"unsupported address expression"};return Err(format!("rule {id:?} address predicate: {detail}"))} }
- for key in ["source_port","destination_port"] {let p=s(r,key);if !p.is_empty()&&port_range(p).is_none()&&numeric_like(p){let msg=if p.split('-').count()>2{"port must be a number or range"}else if p.split('-').next().unwrap_or("").parse::<i64>().unwrap_or(0)<1||p.split('-').next().unwrap_or("").parse::<i64>().unwrap_or(0)>65535{"port must be 1..65535"}else{"invalid port range"};return Err(format!("rule {id:?} port predicate: {msg}"))}}
- for x in strings(r,"unsupported") {if x.trim().is_empty(){return Err(format!("rule {id:?} has empty unsupported dimension"))}if !DIMENSIONS.contains(&x.as_str()){return Err(format!("rule {id:?} has an unknown unsupported dimension label"))}}
- Ok(())
+const DIMENSIONS: &[&str] = &[
+    "application",
+    "user",
+    "schedule",
+    "nat",
+    "route",
+    "return_path",
+    "stateful",
+    "zone_inheritance",
+    "negation",
+    "object_expansion",
+    "vendor_default",
+    "device_state",
+];
+fn s<'a>(v: &'a Value, k: &str) -> &'a str {
+    v.get(k).and_then(Value::as_str).unwrap_or("")
 }
-fn dedup_sorted(xs:&mut Vec<String>){xs.sort();xs.dedup()}
-fn flow_json(v:&Value)->Value{let mut f=json!({"scope":scope_json(v.get("scope").unwrap_or(&Value::Null)),"source":s(v,"source"),"destination":s(v,"destination"),"protocol":s(v,"protocol")});for k in ["source_port","destination_port"]{let n=num(v,k);if n!=0{f[k]=json!(n)}}f}
-fn pred_trace(dim:&str,state:i8,reason:&str)->Value{json!({"dimension":dim,"state":match state{0=>"not_match",-1=>"unresolved",_=>"match"},"reason":reason})}
+fn num(v: &Value, k: &str) -> i64 {
+    v.get(k).and_then(Value::as_i64).unwrap_or(0)
+}
+fn boolean(v: &Value, k: &str) -> bool {
+    v.get(k).and_then(Value::as_bool).unwrap_or(false)
+}
+fn strings(v: &Value, k: &str) -> Vec<String> {
+    v.get(k)
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+fn scope_valid(v: &Value) -> bool {
+    ["snapshot_id", "device_id", "context"]
+        .iter()
+        .all(|k| !s(v, k).trim().is_empty())
+}
+fn scope_json(v: &Value) -> Value {
+    json!({"snapshot_id":s(v,"snapshot_id"),"device_id":s(v,"device_id"),"context":s(v,"context")})
+}
+fn proto(v: &str) -> Option<u8> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "tcp" => Some(6),
+        "udp" => Some(17),
+        "icmp" => Some(1),
+        "icmpv6" => Some(58),
+        _ => v
+            .parse::<i32>()
+            .ok()
+            .filter(|n| (0..=255).contains(n))
+            .map(|n| n as u8),
+    }
+}
+fn ip(v: &str) -> Option<IpAddr> {
+    let a = IpAddr::from_str(v.trim()).ok()?;
+    if v.contains('%') || matches!(a,IpAddr::V6(x) if x.to_ipv4_mapped().is_some()) {
+        None
+    } else {
+        Some(a)
+    }
+}
+fn flow_addr(v: &str) -> Option<(IpAddr, bool)> {
+    if let Some((host, zone)) = v.split_once('%') {
+        if zone.is_empty() || zone.contains('%') {
+            return None;
+        }
+        let a = host.parse::<IpAddr>().ok()?;
+        if !a.is_ipv6() {
+            return None;
+        }
+        Some((a, true))
+    } else {
+        Some((v.parse::<IpAddr>().ok()?, false))
+    }
+}
+fn prefix(v: &str) -> Option<(IpAddr, u8)> {
+    if let Some((a, b)) = v.trim().split_once('/') {
+        let a = ip(a)?;
+        let n = b.parse::<u8>().ok()?;
+        if n > if a.is_ipv4() { 32 } else { 128 } {
+            None
+        } else {
+            Some((a, n))
+        }
+    } else {
+        let a = ip(v)?;
+        Some((a, if a.is_ipv4() { 32 } else { 128 }))
+    }
+}
+fn contains(net: IpAddr, bits: u8, a: IpAddr) -> bool {
+    match (net, a) {
+        (IpAddr::V4(n), IpAddr::V4(a)) => {
+            let n = u32::from(n);
+            let a = u32::from(a);
+            let m = if bits == 0 {
+                0
+            } else {
+                u32::MAX << (32 - bits)
+            };
+            n & m == a & m
+        }
+        (IpAddr::V6(n), IpAddr::V6(a)) => {
+            let n = u128::from(n);
+            let a = u128::from(a);
+            let m = if bits == 0 {
+                0
+            } else {
+                u128::MAX << (128 - bits)
+            };
+            n & m == a & m
+        }
+        _ => false,
+    }
+}
+fn addr_match(pred: &str, value: &str) -> i8 {
+    let p = pred.trim();
+    if p.eq_ignore_ascii_case("any") {
+        return 1;
+    }
+    let a = match ip(value) {
+        Some(x) => x,
+        None => return 0,
+    };
+    let ranges: Vec<&str> = if p.eq_ignore_ascii_case("any4") {
+        vec!["0.0.0.0/0"]
+    } else if p.eq_ignore_ascii_case("any6") {
+        vec!["::/0"]
+    } else {
+        vec![p]
+    };
+    for r in ranges {
+        if let Some((n, b)) = prefix(r) {
+            if contains(n, b, a) {
+                return 1;
+            }
+        } else {
+            return -1;
+        }
+    }
+    0
+}
+fn port_range(v: &str) -> Option<(i64, i64)> {
+    let parts = v.split('-').collect::<Vec<_>>();
+    if parts.len() > 2 {
+        return None;
+    }
+    let lo = parts[0].parse::<i64>().ok()?;
+    let hi = if parts.len() == 2 {
+        parts[1].parse::<i64>().ok()?
+    } else {
+        lo
+    };
+    if lo < 1 || hi < lo || hi > 65535 {
+        None
+    } else {
+        Some((lo, hi))
+    }
+}
+fn numeric_like(v: &str) -> bool {
+    let t = v.trim();
+    t.is_empty() || t.parse::<i64>().is_ok() || t.as_bytes().first().is_some_and(u8::is_ascii_digit)
+}
+fn rejected_address_form(v: &str) -> bool {
+    let t = v.trim();
+    if t.contains('%') {
+        return true;
+    }
+    let a = t.split('/').next().unwrap_or(t);
+    a.parse::<IpAddr>()
+        .ok()
+        .is_some_and(|x| matches!(x,IpAddr::V6(y) if y.to_ipv4_mapped().is_some()))
+}
+fn validate_rule(
+    r: &Value,
+    i: usize,
+    ids: &mut std::collections::HashSet<String>,
+    positions: &mut std::collections::HashSet<i64>,
+) -> Result<(), String> {
+    let id = s(r, "id");
+    let pos = num(r, "position");
+    if id.trim().is_empty() {
+        return Err(format!("rule {i} has empty id"));
+    }
+    if !ids.insert(id.to_owned()) {
+        return Err(format!("duplicate rule id {id:?}"));
+    }
+    if pos < 0 || !positions.insert(pos) {
+        return Err(format!("invalid or duplicate position {pos}"));
+    }
+    if !["permit", "deny"].contains(&s(r, "action")) {
+        return Err(format!("rule {id:?} action must be permit or deny"));
+    }
+    if ["source", "destination", "protocol"]
+        .iter()
+        .any(|k| s(r, k).trim().is_empty())
+    {
+        return Err(format!(
+            "rule {id:?} must specify source, destination, and protocol"
+        ));
+    }
+    let rp = s(r, "protocol");
+    let has_ports = !s(r, "source_port").is_empty() || !s(r, "destination_port").is_empty();
+    if ["any", "ip"].contains(&rp.trim().to_ascii_lowercase().as_str()) && has_ports {
+        return Err(format!(
+            "rule {id:?} cannot combine an IP protocol wildcard with port predicates"
+        ));
+    }
+    if let Some(p) = proto(rp) {
+        if p != 6 && p != 17 && has_ports {
+            return Err(format!(
+                "rule {id:?} has port predicates on a non-TCP/UDP protocol"
+            ));
+        }
+    } else if numeric_like(rp) {
+        return Err(format!(
+            "rule {id:?} protocol: protocol must be numeric 0..255 or a supported alias"
+        ));
+    }
+    for key in ["source", "destination"] {
+        let p = s(r, key);
+        let t = p.trim();
+        let supported = t.eq_ignore_ascii_case("any")
+            || t.eq_ignore_ascii_case("any4")
+            || t.eq_ignore_ascii_case("any6")
+            || prefix(p).is_some();
+        if !supported
+            && (!(!t.is_empty() && !t.eq_ignore_ascii_case("any")) || rejected_address_form(p))
+        {
+            let detail = if rejected_address_form(p) {
+                "scoped or IPv4-mapped addresses are unsupported"
+            } else {
+                "unsupported address expression"
+            };
+            return Err(format!("rule {id:?} address predicate: {detail}"));
+        }
+    }
+    for key in ["source_port", "destination_port"] {
+        let p = s(r, key);
+        if !p.is_empty() && port_range(p).is_none() && numeric_like(p) {
+            let msg = if p.split('-').count() > 2 {
+                "port must be a number or range"
+            } else if p
+                .split('-')
+                .next()
+                .unwrap_or("")
+                .parse::<i64>()
+                .unwrap_or(0)
+                < 1
+                || p.split('-')
+                    .next()
+                    .unwrap_or("")
+                    .parse::<i64>()
+                    .unwrap_or(0)
+                    > 65535
+            {
+                "port must be 1..65535"
+            } else {
+                "invalid port range"
+            };
+            return Err(format!("rule {id:?} port predicate: {msg}"));
+        }
+    }
+    for x in strings(r, "unsupported") {
+        if x.trim().is_empty() {
+            return Err(format!("rule {id:?} has empty unsupported dimension"));
+        }
+        if !DIMENSIONS.contains(&x.as_str()) {
+            return Err(format!(
+                "rule {id:?} has an unknown unsupported dimension label"
+            ));
+        }
+    }
+    Ok(())
+}
+fn dedup_sorted(xs: &mut Vec<String>) {
+    xs.sort();
+    xs.dedup()
+}
+fn flow_json(v: &Value) -> Value {
+    let mut f = json!({"scope":scope_json(v.get("scope").unwrap_or(&Value::Null)),"source":s(v,"source"),"destination":s(v,"destination"),"protocol":s(v,"protocol")});
+    for k in ["source_port", "destination_port"] {
+        let n = num(v, k);
+        if n != 0 {
+            f[k] = json!(n)
+        }
+    }
+    f
+}
+fn pred_trace(dim: &str, state: i8, reason: &str) -> Value {
+    json!({"dimension":dim,"state":match state{0=>"not_match",-1=>"unresolved",_=>"match"},"reason":reason})
+}
 
 /// Evaluate a normalized policy bundle and flow. `legacy: true` replays the
 /// policy-v2 persisted contract by omitting the later predicate-level traces.
-pub fn evaluate_policy(input: Value)->Result<Value,String>{
- let b=input.get("bundle").ok_or("bundle is required")?;let f=input.get("flow").ok_or("flow is required")?;
- let bs=b.get("scope").unwrap_or(&Value::Null);let fs=f.get("scope").unwrap_or(&Value::Null);let bs_out=scope_json(bs);let fs_out=scope_json(fs);
- if !scope_valid(bs){return Err("bundle scope: snapshot_id, device_id, and context are required".into())}if !scope_valid(fs){return Err("flow scope: snapshot_id, device_id, and context are required".into())}if bs_out!=fs_out{return Err("flow scope does not match bundle scope".into())}
- let rules=b.get("rules").and_then(Value::as_array).cloned().unwrap_or_default();if rules.len()>10000{return Err("rule count exceeds limit 10000".into())}
- let default=s(b,"default_action");if default!="permit"&&default!="deny"{return Err("default_action must be permit or deny".into())}
- let mut ids=std::collections::HashSet::new();let mut positions=std::collections::HashSet::new();for (i,r) in rules.iter().enumerate(){validate_rule(r,i,&mut ids,&mut positions)?}
- let (src_raw,src_zone)=flow_addr(s(f,"source")).ok_or("invalid flow source address")?;let (dst_raw,dst_zone)=flow_addr(s(f,"destination")).ok_or("invalid flow destination address")?;if src_raw.is_ipv4()!=dst_raw.is_ipv4(){return Err("flow source and destination address families differ".into())}if src_zone||dst_zone||matches!(src_raw,IpAddr::V6(x) if x.to_ipv4_mapped().is_some())||matches!(dst_raw,IpAddr::V6(x) if x.to_ipv4_mapped().is_some()){return Err("flow addresses must be unscoped native IPv4 or IPv6 addresses".into())}let src=src_raw;
- let fp=proto(s(f,"protocol")).ok_or("invalid flow protocol: protocol must be numeric 0..255 or a supported alias")?;let sp=num(f,"source_port");let dp=num(f,"destination_port");if !(0..=65535).contains(&sp)||!(0..=65535).contains(&dp){return Err("flow ports must be between 0 and 65535".into())}if (fp==6||fp==17)&&(sp==0||dp==0){return Err("TCP/UDP flow requires concrete nonzero source_port and destination_port".into())}if fp!=6&&fp!=17&&(sp!=0||dp!=0){return Err("non-TCP/UDP flow cannot carry port values".into())}if fp==1&&!src.is_ipv4(){return Err("ICMP flow requires IPv4 addresses".into())}if fp==58&&!src.is_ipv6(){return Err("ICMPv6 flow requires IPv6 addresses".into())}
- let mut ordered=rules.iter().collect::<Vec<_>>();ordered.sort_by_key(|r|num(r,"position"));
- let flow_out=flow_json(f);let mut out=json!({"engine_contract_version":if boolean(&input,"legacy"){"graphlayer-policy-v2"}else{"graphlayer-policy-v3"},"scope":bs_out,"flow":flow_out,"disposition":"indeterminate","used_default":false,"considered_rules":null,"reasons":[],"supported_semantics":SUPPORTED,"unsupported_dimensions":[],"assumptions":["policy-only; no route, NAT, return-path, application, user, schedule, or device-state conclusion"],"rule_traces":[]});
- let mut unknown=false;for r in ordered{if !boolean(r,"enabled"){continue}let id=s(r,"id").to_owned();if out["considered_rules"].is_null(){out["considered_rules"]=json!([])}out["considered_rules"].as_array_mut().unwrap().push(json!(id));let mut traces=Vec::new();let mut states=Vec::new();for (d,k,val) in [("source","source",s(f,"source")),("destination","destination",s(f,"destination"))]{let st=addr_match(s(r,k),val);let reason=if s(r,k).trim().is_empty(){"no address predicate; dimension is unconstrained"}else if st==0{"address predicate excludes flow address"}else if st<0{"address predicate cannot be resolved by the supported matcher"}else{"address predicate matches flow address"};states.push(st);traces.push(pred_trace(d,st,reason));}
- let rp=s(r,"protocol");let rs=if ["any","ip"].contains(&rp.trim().to_ascii_lowercase().as_str()){1}else if let Some(p)=proto(rp){if p==fp{1}else{0}}else{-1};let rr=if rp.eq_ignore_ascii_case("any")||rp.eq_ignore_ascii_case("ip"){"IP protocol wildcard matches flow protocol"}else if rs<0{"protocol predicate cannot be resolved by the supported matcher"}else if rs==0{"protocol predicate excludes flow protocol"}else{"protocol predicate matches flow protocol"};states.push(rs);traces.push(pred_trace("protocol",rs,rr));
- for (d,k,v) in [("source_port","source_port",sp),("destination_port","destination_port",dp)]{let q=s(r,k);let (st,reason)=if q.is_empty(){(1,"no port predicate; dimension is unconstrained")}else if fp!=6&&fp!=17{(-1,"port predicate has no defined semantics for this flow protocol")}else if let Some((lo,hi))=port_range(q){if v<lo||v>hi{(0,"port predicate excludes flow port")}else{(1,"port predicate matches flow port")}}else{(-1,"port predicate cannot be resolved by the supported matcher")};states.push(st);traces.push(pred_trace(d,st,reason));}
- let uns=strings(r,"unsupported");for d in &uns{states.push(-1);traces.push(pred_trace(d,-1,"rule uses an unsupported policy dimension"));}
- let state=if states.contains(&0){0}else if states.contains(&-1){-1}else{1};let outcome=if state==0{"not_matched"}else if state<0{"unresolved"}else{"matched"};out["rule_traces"].as_array_mut().unwrap().push(json!({"rule_id":id,"position":num(r,"position"),"outcome":outcome,"predicates":traces,"evidence_refs":strings(r,"evidence_refs")}));if state==0{continue}if state<0{unknown=true;out["reasons"].as_array_mut().unwrap().push(json!(format!("rule {id} may match but contains unsupported or unresolved semantics")));let mut er=strings(&out,"evidence_refs");er.extend(strings(r,"evidence_refs"));dedup_sorted(&mut er);out["evidence_refs"]=json!(er);let mut dims=strings(&out,"unsupported_dimensions");dims.extend(uns);for (k,expr) in [("source",s(r,"source")),("destination",s(r,"destination"))]{if addr_match(expr,"192.0.2.1")==-1{dims.push(format!("{k} address expression"))}}if proto(rp).is_none()&&!rp.eq_ignore_ascii_case("any")&&!rp.eq_ignore_ascii_case("ip"){dims.push("protocol expression".into())}for k in ["source_port","destination_port"]{if !s(r,k).is_empty()&&port_range(s(r,k)).is_none(){dims.push(format!("{} port expression",k.replace('_'," ")))}}dedup_sorted(&mut dims);out["unsupported_dimensions"]=json!(dims);continue}if unknown{out["reasons"].as_array_mut().unwrap().push(json!("an earlier candidate rule has unresolved semantics"));break}let mut er=strings(&out,"evidence_refs");er.extend(strings(r,"evidence_refs"));dedup_sorted(&mut er);out["evidence_refs"]=json!(er);if !boolean(b,"complete"){out["candidate_rule"]=json!(id);out["reasons"].as_array_mut().unwrap().push(json!("policy bundle is incomplete; omitted earlier rules may change this candidate result"));break}out["disposition"]=json!(s(r,"action"));out["decisive_rule"]=json!(id);out["reasons"].as_array_mut().unwrap().push(json!("first matching enabled rule"));break;}
- if out["reasons"].as_array().unwrap().is_empty()&&!unknown{if boolean(b,"complete"){out["disposition"]=json!(default);out["used_default"]=json!(true);out["reasons"].as_array_mut().unwrap().push(json!("complete policy bundle explicit default action"));}else{out["reasons"].as_array_mut().unwrap().push(json!("policy bundle is incomplete; default action is not established"));}}
- if boolean(&out,"used_default"){if let Some(default_refs)=input.get("default_evidence").and_then(Value::as_array){out["evidence_refs"]=Value::Array(default_refs.clone());}}
- if boolean(&input,"legacy"){out["engine_contract_version"]=json!("graphlayer-policy-v2");out.as_object_mut().unwrap().remove("rule_traces");}else if out["rule_traces"].as_array().is_some_and(|x|x.is_empty()){out.as_object_mut().unwrap().remove("rule_traces");}else if let Some(traces)=out["rule_traces"].as_array_mut(){for trace in traces{if trace["evidence_refs"].as_array().is_some_and(|x|x.is_empty()){trace.as_object_mut().unwrap().remove("evidence_refs");}}}if out["evidence_refs"].as_array().is_some_and(|x|x.is_empty()){out.as_object_mut().unwrap().remove("evidence_refs");}Ok(out)
+pub fn evaluate_policy(input: Value) -> Result<Value, String> {
+    let b = input.get("bundle").ok_or("bundle is required")?;
+    let f = input.get("flow").ok_or("flow is required")?;
+    let bs = b.get("scope").unwrap_or(&Value::Null);
+    let fs = f.get("scope").unwrap_or(&Value::Null);
+    let bs_out = scope_json(bs);
+    let fs_out = scope_json(fs);
+    if !scope_valid(bs) {
+        return Err("bundle scope: snapshot_id, device_id, and context are required".into());
+    }
+    if !scope_valid(fs) {
+        return Err("flow scope: snapshot_id, device_id, and context are required".into());
+    }
+    if bs_out != fs_out {
+        return Err("flow scope does not match bundle scope".into());
+    }
+    let rules = b
+        .get("rules")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if rules.len() > 10000 {
+        return Err("rule count exceeds limit 10000".into());
+    }
+    let default = s(b, "default_action");
+    if default != "permit" && default != "deny" {
+        return Err("default_action must be permit or deny".into());
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut positions = std::collections::HashSet::new();
+    for (i, r) in rules.iter().enumerate() {
+        validate_rule(r, i, &mut ids, &mut positions)?
+    }
+    let (src_raw, src_zone) = flow_addr(s(f, "source")).ok_or("invalid flow source address")?;
+    let (dst_raw, dst_zone) =
+        flow_addr(s(f, "destination")).ok_or("invalid flow destination address")?;
+    if src_raw.is_ipv4() != dst_raw.is_ipv4() {
+        return Err("flow source and destination address families differ".into());
+    }
+    if src_zone
+        || dst_zone
+        || matches!(src_raw,IpAddr::V6(x) if x.to_ipv4_mapped().is_some())
+        || matches!(dst_raw,IpAddr::V6(x) if x.to_ipv4_mapped().is_some())
+    {
+        return Err("flow addresses must be unscoped native IPv4 or IPv6 addresses".into());
+    }
+    let src = src_raw;
+    let fp = proto(s(f, "protocol"))
+        .ok_or("invalid flow protocol: protocol must be numeric 0..255 or a supported alias")?;
+    let sp = num(f, "source_port");
+    let dp = num(f, "destination_port");
+    if !(0..=65535).contains(&sp) || !(0..=65535).contains(&dp) {
+        return Err("flow ports must be between 0 and 65535".into());
+    }
+    if (fp == 6 || fp == 17) && (sp == 0 || dp == 0) {
+        return Err(
+            "TCP/UDP flow requires concrete nonzero source_port and destination_port".into(),
+        );
+    }
+    if fp != 6 && fp != 17 && (sp != 0 || dp != 0) {
+        return Err("non-TCP/UDP flow cannot carry port values".into());
+    }
+    if fp == 1 && !src.is_ipv4() {
+        return Err("ICMP flow requires IPv4 addresses".into());
+    }
+    if fp == 58 && !src.is_ipv6() {
+        return Err("ICMPv6 flow requires IPv6 addresses".into());
+    }
+    let mut ordered = rules.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|r| num(r, "position"));
+    let flow_out = flow_json(f);
+    let mut out = json!({"engine_contract_version":if boolean(&input,"legacy"){"graphlayer-policy-v2"}else{"graphlayer-policy-v3"},"scope":bs_out,"flow":flow_out,"disposition":"indeterminate","used_default":false,"considered_rules":null,"reasons":[],"supported_semantics":SUPPORTED,"unsupported_dimensions":[],"assumptions":["policy-only; no route, NAT, return-path, application, user, schedule, or device-state conclusion"],"rule_traces":[]});
+    let mut unknown = false;
+    for r in ordered {
+        if !boolean(r, "enabled") {
+            continue;
+        }
+        let id = s(r, "id").to_owned();
+        if out["considered_rules"].is_null() {
+            out["considered_rules"] = json!([])
+        }
+        out["considered_rules"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(id));
+        let mut traces = Vec::new();
+        let mut states = Vec::new();
+        for (d, k, val) in [
+            ("source", "source", s(f, "source")),
+            ("destination", "destination", s(f, "destination")),
+        ] {
+            let st = addr_match(s(r, k), val);
+            let reason = if s(r, k).trim().is_empty() {
+                "no address predicate; dimension is unconstrained"
+            } else if st == 0 {
+                "address predicate excludes flow address"
+            } else if st < 0 {
+                "address predicate cannot be resolved by the supported matcher"
+            } else {
+                "address predicate matches flow address"
+            };
+            states.push(st);
+            traces.push(pred_trace(d, st, reason));
+        }
+        let rp = s(r, "protocol");
+        let rs = if ["any", "ip"].contains(&rp.trim().to_ascii_lowercase().as_str()) {
+            1
+        } else if let Some(p) = proto(rp) {
+            if p == fp {
+                1
+            } else {
+                0
+            }
+        } else {
+            -1
+        };
+        let rr = if rp.eq_ignore_ascii_case("any") || rp.eq_ignore_ascii_case("ip") {
+            "IP protocol wildcard matches flow protocol"
+        } else if rs < 0 {
+            "protocol predicate cannot be resolved by the supported matcher"
+        } else if rs == 0 {
+            "protocol predicate excludes flow protocol"
+        } else {
+            "protocol predicate matches flow protocol"
+        };
+        states.push(rs);
+        traces.push(pred_trace("protocol", rs, rr));
+        for (d, k, v) in [
+            ("source_port", "source_port", sp),
+            ("destination_port", "destination_port", dp),
+        ] {
+            let q = s(r, k);
+            let (st, reason) = if q.is_empty() {
+                (1, "no port predicate; dimension is unconstrained")
+            } else if fp != 6 && fp != 17 {
+                (
+                    -1,
+                    "port predicate has no defined semantics for this flow protocol",
+                )
+            } else if let Some((lo, hi)) = port_range(q) {
+                if v < lo || v > hi {
+                    (0, "port predicate excludes flow port")
+                } else {
+                    (1, "port predicate matches flow port")
+                }
+            } else {
+                (
+                    -1,
+                    "port predicate cannot be resolved by the supported matcher",
+                )
+            };
+            states.push(st);
+            traces.push(pred_trace(d, st, reason));
+        }
+        let uns = strings(r, "unsupported");
+        for d in &uns {
+            states.push(-1);
+            traces.push(pred_trace(
+                d,
+                -1,
+                "rule uses an unsupported policy dimension",
+            ));
+        }
+        let state = if states.contains(&0) {
+            0
+        } else if states.contains(&-1) {
+            -1
+        } else {
+            1
+        };
+        let outcome = if state == 0 {
+            "not_matched"
+        } else if state < 0 {
+            "unresolved"
+        } else {
+            "matched"
+        };
+        out["rule_traces"].as_array_mut().unwrap().push(json!({"rule_id":id,"position":num(r,"position"),"outcome":outcome,"predicates":traces,"evidence_refs":strings(r,"evidence_refs")}));
+        if state == 0 {
+            continue;
+        }
+        if state < 0 {
+            unknown = true;
+            out["reasons"].as_array_mut().unwrap().push(json!(format!(
+                "rule {id} may match but contains unsupported or unresolved semantics"
+            )));
+            let mut er = strings(&out, "evidence_refs");
+            er.extend(strings(r, "evidence_refs"));
+            dedup_sorted(&mut er);
+            out["evidence_refs"] = json!(er);
+            let mut dims = strings(&out, "unsupported_dimensions");
+            dims.extend(uns);
+            for (k, expr) in [
+                ("source", s(r, "source")),
+                ("destination", s(r, "destination")),
+            ] {
+                if addr_match(expr, "192.0.2.1") == -1 {
+                    dims.push(format!("{k} address expression"))
+                }
+            }
+            if proto(rp).is_none()
+                && !rp.eq_ignore_ascii_case("any")
+                && !rp.eq_ignore_ascii_case("ip")
+            {
+                dims.push("protocol expression".into())
+            }
+            for k in ["source_port", "destination_port"] {
+                if !s(r, k).is_empty() && port_range(s(r, k)).is_none() {
+                    dims.push(format!("{} port expression", k.replace('_', " ")))
+                }
+            }
+            dedup_sorted(&mut dims);
+            out["unsupported_dimensions"] = json!(dims);
+            continue;
+        }
+        if unknown {
+            out["reasons"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("an earlier candidate rule has unresolved semantics"));
+            break;
+        }
+        let mut er = strings(&out, "evidence_refs");
+        er.extend(strings(r, "evidence_refs"));
+        dedup_sorted(&mut er);
+        out["evidence_refs"] = json!(er);
+        if !boolean(b, "complete") {
+            out["candidate_rule"] = json!(id);
+            out["reasons"].as_array_mut().unwrap().push(json!("policy bundle is incomplete; omitted earlier rules may change this candidate result"));
+            break;
+        }
+        out["disposition"] = json!(s(r, "action"));
+        out["decisive_rule"] = json!(id);
+        out["reasons"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("first matching enabled rule"));
+        break;
+    }
+    if out["reasons"].as_array().unwrap().is_empty() && !unknown {
+        if boolean(b, "complete") {
+            out["disposition"] = json!(default);
+            out["used_default"] = json!(true);
+            out["reasons"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("complete policy bundle explicit default action"));
+        } else {
+            out["reasons"].as_array_mut().unwrap().push(json!(
+                "policy bundle is incomplete; default action is not established"
+            ));
+        }
+    }
+    if boolean(&out, "used_default") {
+        if let Some(default_refs) = input.get("default_evidence").and_then(Value::as_array) {
+            out["evidence_refs"] = Value::Array(default_refs.clone());
+        }
+    }
+    if boolean(&input, "legacy") {
+        out["engine_contract_version"] = json!("graphlayer-policy-v2");
+        out.as_object_mut().unwrap().remove("rule_traces");
+    } else if out["rule_traces"].as_array().is_some_and(|x| x.is_empty()) {
+        out.as_object_mut().unwrap().remove("rule_traces");
+    } else if let Some(traces) = out["rule_traces"].as_array_mut() {
+        for trace in traces {
+            if trace["evidence_refs"]
+                .as_array()
+                .is_some_and(|x| x.is_empty())
+            {
+                trace.as_object_mut().unwrap().remove("evidence_refs");
+            }
+        }
+    }
+    if out["evidence_refs"]
+        .as_array()
+        .is_some_and(|x| x.is_empty())
+    {
+        out.as_object_mut().unwrap().remove("evidence_refs");
+    }
+    Ok(out)
 }
 
-pub fn validate_scope(input:Value)->Result<Value,String>{
- let sc=input.get("scope").unwrap_or(&input);if !scope_valid(sc){return Err("snapshot_id, device_id, and context are required".into())}Ok(json!({"valid":true}))
+pub fn validate_scope(input: Value) -> Result<Value, String> {
+    let sc = input.get("scope").unwrap_or(&input);
+    if !scope_valid(sc) {
+        return Err("snapshot_id, device_id, and context are required".into());
+    }
+    Ok(json!({"valid":true}))
 }
-pub fn validate_policy(input:Value)->Result<Value,String>{
- let _=evaluate_policy(input)?;Ok(json!({"valid":true}))
+pub fn validate_policy(input: Value) -> Result<Value, String> {
+    let _ = evaluate_policy(input)?;
+    Ok(json!({"valid":true}))
 }

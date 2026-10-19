@@ -32,6 +32,12 @@ fn investigation_policy_known_mismatch_removes_unresolved_candidate() {
     let result = evaluate_policy(input).expect("valid policy input");
     assert_eq!(result["disposition"], "permit");
     assert_eq!(result["decisive_rule"], "permit");
-    assert_eq!(result["rule_traces"][0]["predicates"][0]["state"], "not_match");
-    assert_eq!(result["rule_traces"][0]["predicates"][1]["state"], "unresolved");
+    assert_eq!(
+        result["rule_traces"][0]["predicates"][0]["state"],
+        "not_match"
+    );
+    assert_eq!(
+        result["rule_traces"][0]["predicates"][1]["state"],
+        "unresolved"
+    );
 }

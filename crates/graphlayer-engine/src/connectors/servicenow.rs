@@ -6,52 +6,511 @@ use std::io::Read;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
 
-fn config(i:&Value)->&Value{i.get("connector_data").unwrap_or(&Value::Null)}
-fn payload(i:&Value)->&Value{config(i).get("payload").unwrap_or(&Value::Null)}
-fn setting(i:&Value,k:&str,d:&str)->String{let v=payload(i).get(k).unwrap_or(&Value::Null);if text(v).is_empty(){d.to_string()}else{text(v)}}
-fn base(i:&Value)->Result<url::Url,String>{let d=config(i);normalize_base_url(payload(i).get("instance_url").or_else(||d.get("instance_url")).or_else(||d.get("host")).unwrap_or(&Value::Null),"instance_url or host is required for ServiceNow CMDB")}
-fn client(i:&Value)->Result<Client,String>{let timeout=setting(i,"timeout_seconds","30").parse::<u64>().unwrap_or(30).clamp(1,120);let verify=payload(i).get("verify_ssl").and_then(Value::as_bool).unwrap_or(true);Client::builder().timeout(Duration::from_secs(timeout)).danger_accept_invalid_certs(!verify).redirect(reqwest::redirect::Policy::none()).build().map_err(|_|"http_client_unavailable".into())}
-fn table_prefix(i:&Value)->String{setting(i,"table_prefix","/api/now/table").trim_matches('/').to_string()}
-fn request(i:&Value,table:&str,params:&[(&str,String)])->Result<Value,String>{
-    let mut root=base(i)?;if !root.path().ends_with('/') {let p=format!("{}/",root.path());root.set_path(&p);}
-    let path=format!("{}/{table}",table_prefix(i));let url=root.join(&path).map_err(|_|"invalid_target_url".to_string())?;
-    if url.scheme()!=root.scheme()||url.host_str()!=root.host_str()||url.port_or_known_default()!=root.port_or_known_default(){return Err("invalid_table_path".into());}
-    let d=config(i);let c=d.get("credentials").unwrap_or(&Value::Null);let username=first(&[text(&d["username"]),text(&c["username"])]);let password=first(&[text(&d["password"]),text(&c["password"])]);
-    let mut req=client(i)?.get(url).header(ACCEPT,"application/json");if !username.is_empty()||!password.is_empty(){req=req.basic_auth(username,Some(password));}
-    let response=req.query(params).send().map_err(|_|"ServiceNow API request failed".to_string())?;
-    if !response.status().is_success(){return Err(format!("ServiceNow API returned HTTP {}",response.status().as_u16()));}
-    if response.content_length().is_some_and(|n|n>MAX_BODY_BYTES as u64){return Err("response_too_large".into());}
-    let mut bytes=Vec::new();response.take((MAX_BODY_BYTES+1)as u64).read_to_end(&mut bytes).map_err(|_|"ServiceNow API response read failed".to_string())?;if bytes.len()>MAX_BODY_BYTES{return Err("response_too_large".into());}
-    if bytes.iter().all(u8::is_ascii_whitespace){return Ok(json!({}));}serde_json::from_slice(&bytes).map_err(|_|"ServiceNow API returned invalid JSON".into())
+fn config(i: &Value) -> &Value {
+    i.get("connector_data").unwrap_or(&Value::Null)
 }
-fn fetch_table_rows(i:&Value,table:&str,query:Option<&str>,page_size:usize)->Result<Vec<Value>,String>{
-    if table.is_empty()||table.len()>128||!table.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'){return Err("invalid_table_name".into());}
-    let limit=page_size.clamp(1,MAX_PAGE_SIZE);let mut rows=Vec::new();let mut response_bytes=0usize;let mut complete=false;
-    for page in 0..MAX_PAGES {let mut params=vec![("sysparm_limit",limit.to_string()),("sysparm_offset",(page*limit).to_string()),("sysparm_display_value","all".to_string()),("sysparm_exclude_reference_link","true".to_string())];if let Some(q)=query{if !q.is_empty(){params.push(("sysparm_query",q.to_string()));}}
-        let result=request(i,table,&params)?;let page_rows=result.get("result").and_then(Value::as_array).ok_or_else(||"ServiceNow API returned malformed records".to_string())?;response_bytes=response_bytes.saturating_add(serde_json::to_vec(&result).map_err(|_|"response_serialize_failed".to_string())?.len());if response_bytes>MAX_TOTAL_RESPONSE_BYTES||rows.len().saturating_add(page_rows.len())>MAX_TOTAL_RECORDS{return Err("pagination_limit_exceeded".into())}rows.extend(page_rows.iter().cloned());if page_rows.len()<limit{complete=true;break;}}
-    if !complete{return Err("page_limit_exceeded".into())}
+fn payload(i: &Value) -> &Value {
+    config(i).get("payload").unwrap_or(&Value::Null)
+}
+fn setting(i: &Value, k: &str, d: &str) -> String {
+    let v = payload(i).get(k).unwrap_or(&Value::Null);
+    if text(v).is_empty() {
+        d.to_string()
+    } else {
+        text(v)
+    }
+}
+fn base(i: &Value) -> Result<url::Url, String> {
+    let d = config(i);
+    normalize_base_url(
+        payload(i)
+            .get("instance_url")
+            .or_else(|| d.get("instance_url"))
+            .or_else(|| d.get("host"))
+            .unwrap_or(&Value::Null),
+        "instance_url or host is required for ServiceNow CMDB",
+    )
+}
+fn client(i: &Value) -> Result<Client, String> {
+    let timeout = setting(i, "timeout_seconds", "30")
+        .parse::<u64>()
+        .unwrap_or(30)
+        .clamp(1, 120);
+    let verify = payload(i)
+        .get("verify_ssl")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    Client::builder()
+        .timeout(Duration::from_secs(timeout))
+        .danger_accept_invalid_certs(!verify)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "http_client_unavailable".into())
+}
+fn table_prefix(i: &Value) -> String {
+    setting(i, "table_prefix", "/api/now/table")
+        .trim_matches('/')
+        .to_string()
+}
+fn request(i: &Value, table: &str, params: &[(&str, String)]) -> Result<Value, String> {
+    let mut root = base(i)?;
+    if !root.path().ends_with('/') {
+        let p = format!("{}/", root.path());
+        root.set_path(&p);
+    }
+    let path = format!("{}/{table}", table_prefix(i));
+    let url = root
+        .join(&path)
+        .map_err(|_| "invalid_target_url".to_string())?;
+    if url.scheme() != root.scheme()
+        || url.host_str() != root.host_str()
+        || url.port_or_known_default() != root.port_or_known_default()
+    {
+        return Err("invalid_table_path".into());
+    }
+    let d = config(i);
+    let c = d.get("credentials").unwrap_or(&Value::Null);
+    let username = first(&[text(&d["username"]), text(&c["username"])]);
+    let password = first(&[text(&d["password"]), text(&c["password"])]);
+    let mut req = client(i)?.get(url).header(ACCEPT, "application/json");
+    if !username.is_empty() || !password.is_empty() {
+        req = req.basic_auth(username, Some(password));
+    }
+    let response = req
+        .query(params)
+        .send()
+        .map_err(|_| "ServiceNow API request failed".to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "ServiceNow API returned HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_BODY_BYTES as u64)
+    {
+        return Err("response_too_large".into());
+    }
+    let mut bytes = Vec::new();
+    response
+        .take((MAX_BODY_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "ServiceNow API response read failed".to_string())?;
+    if bytes.len() > MAX_BODY_BYTES {
+        return Err("response_too_large".into());
+    }
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Ok(json!({}));
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "ServiceNow API returned invalid JSON".into())
+}
+fn fetch_table_rows(
+    i: &Value,
+    table: &str,
+    query: Option<&str>,
+    page_size: usize,
+) -> Result<Vec<Value>, String> {
+    if table.is_empty()
+        || table.len() > 128
+        || !table
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return Err("invalid_table_name".into());
+    }
+    let limit = page_size.clamp(1, MAX_PAGE_SIZE);
+    let mut rows = Vec::new();
+    let mut response_bytes = 0usize;
+    let mut complete = false;
+    for page in 0..MAX_PAGES {
+        let mut params = vec![
+            ("sysparm_limit", limit.to_string()),
+            ("sysparm_offset", (page * limit).to_string()),
+            ("sysparm_display_value", "all".to_string()),
+            ("sysparm_exclude_reference_link", "true".to_string()),
+        ];
+        if let Some(q) = query {
+            if !q.is_empty() {
+                params.push(("sysparm_query", q.to_string()));
+            }
+        }
+        let result = request(i, table, &params)?;
+        let page_rows = result
+            .get("result")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "ServiceNow API returned malformed records".to_string())?;
+        response_bytes = response_bytes.saturating_add(
+            serde_json::to_vec(&result)
+                .map_err(|_| "response_serialize_failed".to_string())?
+                .len(),
+        );
+        if response_bytes > MAX_TOTAL_RESPONSE_BYTES
+            || rows.len().saturating_add(page_rows.len()) > MAX_TOTAL_RECORDS
+        {
+            return Err("pagination_limit_exceeded".into());
+        }
+        rows.extend(page_rows.iter().cloned());
+        if page_rows.len() < limit {
+            complete = true;
+            break;
+        }
+    }
+    if !complete {
+        return Err("page_limit_exceeded".into());
+    }
     Ok(rows)
 }
-pub fn fetch_table_page(i:&Value)->Result<Value,String>{let table=text(&i["table"]);let size=i["page_size"].as_u64().unwrap_or(1000).clamp(1,MAX_PAGE_SIZE as u64);let offset=i["offset"].as_u64().unwrap_or(0);let mut params=vec![("sysparm_limit",size.to_string()),("sysparm_offset",offset.to_string()),("sysparm_display_value","all".into()),("sysparm_exclude_reference_link","true".into())];let query=text(&i["query"]);if !query.is_empty(){params.push(("sysparm_query",query));}let fields=i["fields"].as_array().map(|a|a.iter().map(text).collect::<Vec<_>>().join(",")).unwrap_or_default();if !fields.is_empty(){params.push(("sysparm_fields",fields));}request(i,&table,&params)}
-pub fn fetch_table(i:&Value)->Result<Value,String>{let table=text(&i["table"]);let q=text(&i["query"]);let size=i["page_size"].as_u64().unwrap_or(1000).clamp(1,MAX_PAGE_SIZE as u64)as usize;let rows=fetch_table_rows(i,&table,if q.is_empty(){None}else{Some(&q)},size)?;let fields=i["fields"].as_array().cloned().unwrap_or_default();Ok(json!({"table":table,"records":rows,"query":if q.is_empty(){Value::Null}else{json!(q)},"fields":if fields.is_empty(){Value::Null}else{json!(fields)},"page_size":size,"updated_since":i.get("updated_since").cloned().unwrap_or(Value::Null)}))}
-pub fn ping(i:&Value)->Result<Value,String>{let _=request(i,"cmdb_ci",&[("sysparm_limit","1".into()),("sysparm_offset","0".into()),("sysparm_display_value","all".into()),("sysparm_exclude_reference_link","true".into()),("sysparm_fields","sys_id".into())])?;Ok(json!({"connected":true}))}
-pub fn collect(i:&Value)->Result<Value,String>{let _=ping(i)?;let kwargs=i.get("kwargs").unwrap_or(&Value::Null);let state_path=state_path(i);let state=state_path.as_ref().and_then(|p|fs::read(p).ok()).filter(|b|b.len()<=1024*1024).and_then(|b|serde_json::from_slice::<Value>(&b).ok()).unwrap_or_else(||json!({}));let updated=kwargs.get("updated_since").filter(|v|!text(v).is_empty()).or_else(||i.get("updated_since")).or_else(||payload(i).get("updated_since")).filter(|v|!text(v).is_empty()).map(text).or_else(||state.get("last_sync").filter(|v|!text(v).is_empty()).map(text));let query=updated.as_ref().map(|v|format!("sys_updated_on>={v}"));let size=setting(i,"page_size","1000").parse::<usize>().unwrap_or(1000);let tables=payload(i).get("device_tables").and_then(Value::as_array).cloned().unwrap_or_else(||vec![json!("cmdb_ci_server"),json!("cmdb_ci_netgear")]);let mut devices=Vec::new();for t in tables{devices.extend(fetch_table_rows(i,&text(&t),query.as_deref(),size)?);}let rel=fetch_table_rows(i,&setting(i,"relationship_table","cmdb_rel_ci"),query.as_deref(),size)?;let result=normalize_bundle(i,&json!({"updated_since":updated,"devices":devices,"relationships":rel,"source":"servicenow_cmdb"}))?;if let Some(path)=state_path{let next=json!({"last_sync":result["sync"]["last_sync"]});let bytes=serde_json::to_vec_pretty(&next).map_err(|_|"state_serialize_failed".to_string())?;if bytes.len()>1024*1024{return Err("state_too_large".into())}fs::write(path,bytes).map_err(|_|"state_write_failed".to_string())?;}Ok(result)}
-fn state_path(i:&Value)->Option<PathBuf>{i.get("state_file_path").and_then(Value::as_str).filter(|p|!p.is_empty()&&p.len()<4096).map(PathBuf::from)}
-pub fn load_state(i:&Value)->Result<Value,String>{let Some(path)=state_path(i)else{return Ok(json!({}))};let Some(bytes)=fs::read(path).ok().filter(|b|b.len()<=1024*1024)else{return Ok(json!({}))};Ok(serde_json::from_slice::<Value>(&bytes).ok().filter(Value::is_object).unwrap_or_else(||json!({})))}
-pub fn save_state(i:&Value)->Result<Value,String>{let Some(path)=state_path(i)else{return Err("missing_state_file_path".into())};let state=i.get("state").filter(|v|v.is_object()).cloned().unwrap_or_else(||json!({}));let bytes=serde_json::to_vec_pretty(&state).map_err(|_|"state_serialize_failed".to_string())?;if bytes.len()>1024*1024{return Err("state_too_large".into())}fs::write(path,bytes).map_err(|_|"state_write_failed".to_string())?;Ok(json!({"saved":true}))}
-pub fn resolve_updated_since(i:&Value)->Result<Value,String>{let explicit=i.get("updated_since").filter(|v|!text(v).is_empty());if let Some(value)=explicit.or_else(||payload(i).get("updated_since").filter(|v|!text(v).is_empty())){return Ok(value.clone())}Ok(load_state(i)?["last_sync"].clone())}
-pub fn normalize(i:&Value)->Result<Value,String>{normalize_bundle(i,i.get("raw_data").unwrap_or(&Value::Null))}
-fn connector(i:&Value)->String{let v=text(&config(i)["connector_type"]);if v.is_empty(){"servicenow_cmdb".into()}else{v}}
-fn normalize_bundle(i:&Value,raw:&Value)->Result<Value,String>{
-    let mut devices=Vec::new();for r in raw.get("devices").and_then(Value::as_array).into_iter().flatten(){
-        let ci=first(&[service_value(r,"sys_class_name"),service_value(r,"class"),"cmdb_ci".into()]);let model=first(&[service_value(r,"model_id"),service_value(r,"model")]);let hostname=first(&[service_value(r,"name"),service_value(r,"hostname"),service_value(r,"fqdn"),service_value(r,"ip_address"),service_value(r,"asset_tag"),service_value(r,"sys_id")]);let ip=first(&[service_value(r,"ip_address"),service_value(r,"ip")]);let vendor=first(&[service_value(r,"manufacturer"),service_value(r,"vendor"),service_value(r,"manufacturer.display_value")]);let serial=service_value(r,"serial_number");let updated=first(&[service_value(r,"sys_updated_on"),service_value(r,"updated_on")]);let kind=map_type(&ci,&model,&hostname);
-        let evidence=evidence(r,&ci);let mut p=json!({"id":service_value(r,"sys_id"),"hostname":hostname,"ip_address":ip,"device_type":kind,"ci_class":ci,"vendor":vendor,"model":model,"os_version":first(&[service_value(r,"os_version"),service_value(r,"version")]),"serial_number":serial,"last_updated":updated,"source_table":ci,"evidence":evidence});p["correlation_keys"]=correlation(&[("hostname",hostname.clone()),("ip_address",ip),("serial",serial),("ci_class",ci.clone()),("vendor",vendor),("model",model)]);
-        let metadata=json!({"sys_id":service_value(r,"sys_id"),"sys_updated_on":service_value(r,"sys_updated_on"),"source_table":ci,"connector":connector(i)});let confidence=confidence(&ci);devices.push(record("device","servicenow_cmdb",first(&[service_value(r,"sys_id"),hostname]),p,confidence,metadata));}
-    let relation_table=setting(i,"relationship_table","cmdb_rel_ci");let mut relationships=Vec::new();for r in raw.get("relationships").and_then(Value::as_array).into_iter().flatten(){let (source_id,source_name)=reference(r,"parent");let(target_id,target_name)=reference(r,"child");let rel=first(&[service_value(r,"type"),service_value(r,"relationship_type"),"related-to".into()]);let updated=first(&[service_value(r,"sys_updated_on"),service_value(r,"updated_on")]);let ev=evidence(r,&relation_table);let mut p=json!({"id":service_value(r,"sys_id"),"source_id":source_id,"source_name":source_name,"target_id":target_id,"target_name":target_name,"relationship_type":rel,"last_updated":updated,"source_table":relation_table,"evidence":ev});p["correlation_keys"]=correlation(&[("source_id",text(&p["source_id"])),("source_name",text(&p["source_name"])),("target_id",text(&p["target_id"])),("target_name",text(&p["target_name"])),("relationship_type",rel.clone())]);let metadata=json!({"sys_id":service_value(r,"sys_id"),"sys_updated_on":service_value(r,"sys_updated_on"),"source_table":relation_table,"connector":connector(i)});relationships.push(record("link","servicenow_cmdb",first(&[service_value(r,"sys_id"),format!("{}->{}",source_id,target_id)]),p,0.84,metadata));}
-    let mut records=devices.clone();records.extend(relationships.clone());let max=latest_timestamp(records.iter().map(|r|text(&r["payload"]["last_updated"])),raw.get("updated_since").map(text));Ok(json!({"status":"completed","connector":connector(i),"record_type":"topology","count":records.len(),"devices":devices,"relationships":relationships,"records":records,"sync":{"last_sync":max,"source":"servicenow_cmdb"}}))
+pub fn fetch_table_page(i: &Value) -> Result<Value, String> {
+    let table = text(&i["table"]);
+    let size = i["page_size"]
+        .as_u64()
+        .unwrap_or(1000)
+        .clamp(1, MAX_PAGE_SIZE as u64);
+    let offset = i["offset"].as_u64().unwrap_or(0);
+    let mut params = vec![
+        ("sysparm_limit", size.to_string()),
+        ("sysparm_offset", offset.to_string()),
+        ("sysparm_display_value", "all".into()),
+        ("sysparm_exclude_reference_link", "true".into()),
+    ];
+    let query = text(&i["query"]);
+    if !query.is_empty() {
+        params.push(("sysparm_query", query));
+    }
+    let fields = i["fields"]
+        .as_array()
+        .map(|a| a.iter().map(text).collect::<Vec<_>>().join(","))
+        .unwrap_or_default();
+    if !fields.is_empty() {
+        params.push(("sysparm_fields", fields));
+    }
+    request(i, &table, &params)
 }
-fn map_type(ci:&str,model:&str,name:&str)->&'static str{let h=format!("{ci} {model} {name}").to_lowercase();if ci.to_lowercase().contains("server"){"server"}else if ["firewall","asa","palo","forti","checkpoint","srx","firepower"].iter().any(|x|h.contains(x)){"firewall"}else if ["router","wan","edge","gateway"].iter().any(|x|h.contains(x)){"router"}else if ["switch","nexus","catalyst","aruba","access"].iter().any(|x|h.contains(x)){"switch"}else{"network_device"}}
-fn confidence(ci:&str)->f64{match ci.to_lowercase().as_str(){"cmdb_ci_server"=>0.92,"cmdb_ci_netgear"=>0.88,_=>0.80}}
-fn reference(r:&Value,k:&str)->(String,String){let v=r.get(k).unwrap_or(&Value::Null);if v.is_object(){(first(&[text(&v["value"]),text(&v["sys_id"]),text(&v["id"])]),first(&[text(&v["display_value"]),text(&v["displayValue"]),text(&v["name"]),text(&v["value"])]))}else{let direct=service_value(r,k);let display=first(&[text(&r[format!("{k}.display_value")]),text(&r[format!("{k}_display_value")]),direct.clone()]);(direct,display)}}
-fn evidence(r:&Value,table:&str)->Value{let mut m=serde_json::Map::new();for(k,v)in[("source",json!("servicenow_cmdb")),("table",json!(table)),("sys_id",json!(service_value(r,"sys_id"))),("sys_updated_on",json!(service_value(r,"sys_updated_on")))]{if !v.is_null()&&!text(&v).is_empty(){m.insert(k.into(),v);}}Value::Object(m)}
-fn first(v:&[String])->String{v.iter().find(|s|!s.is_empty()).cloned().unwrap_or_default()}
+pub fn fetch_table(i: &Value) -> Result<Value, String> {
+    let table = text(&i["table"]);
+    let q = text(&i["query"]);
+    let size = i["page_size"]
+        .as_u64()
+        .unwrap_or(1000)
+        .clamp(1, MAX_PAGE_SIZE as u64) as usize;
+    let rows = fetch_table_rows(i, &table, if q.is_empty() { None } else { Some(&q) }, size)?;
+    let fields = i["fields"].as_array().cloned().unwrap_or_default();
+    Ok(
+        json!({"table":table,"records":rows,"query":if q.is_empty(){Value::Null}else{json!(q)},"fields":if fields.is_empty(){Value::Null}else{json!(fields)},"page_size":size,"updated_since":i.get("updated_since").cloned().unwrap_or(Value::Null)}),
+    )
+}
+pub fn ping(i: &Value) -> Result<Value, String> {
+    let _ = request(
+        i,
+        "cmdb_ci",
+        &[
+            ("sysparm_limit", "1".into()),
+            ("sysparm_offset", "0".into()),
+            ("sysparm_display_value", "all".into()),
+            ("sysparm_exclude_reference_link", "true".into()),
+            ("sysparm_fields", "sys_id".into()),
+        ],
+    )?;
+    Ok(json!({"connected":true}))
+}
+pub fn collect(i: &Value) -> Result<Value, String> {
+    let _ = ping(i)?;
+    let kwargs = i.get("kwargs").unwrap_or(&Value::Null);
+    let state_path = state_path(i);
+    let state = state_path
+        .as_ref()
+        .and_then(|p| fs::read(p).ok())
+        .filter(|b| b.len() <= 1024 * 1024)
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .unwrap_or_else(|| json!({}));
+    let updated = kwargs
+        .get("updated_since")
+        .filter(|v| !text(v).is_empty())
+        .or_else(|| i.get("updated_since"))
+        .or_else(|| payload(i).get("updated_since"))
+        .filter(|v| !text(v).is_empty())
+        .map(text)
+        .or_else(|| {
+            state
+                .get("last_sync")
+                .filter(|v| !text(v).is_empty())
+                .map(text)
+        });
+    let query = updated.as_ref().map(|v| format!("sys_updated_on>={v}"));
+    let size = setting(i, "page_size", "1000")
+        .parse::<usize>()
+        .unwrap_or(1000);
+    let tables = payload(i)
+        .get("device_tables")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_else(|| vec![json!("cmdb_ci_server"), json!("cmdb_ci_netgear")]);
+    let mut devices = Vec::new();
+    for t in tables {
+        devices.extend(fetch_table_rows(i, &text(&t), query.as_deref(), size)?);
+    }
+    let rel = fetch_table_rows(
+        i,
+        &setting(i, "relationship_table", "cmdb_rel_ci"),
+        query.as_deref(),
+        size,
+    )?;
+    let result = normalize_bundle(
+        i,
+        &json!({"updated_since":updated,"devices":devices,"relationships":rel,"source":"servicenow_cmdb"}),
+    )?;
+    if let Some(path) = state_path {
+        let next = json!({"last_sync":result["sync"]["last_sync"]});
+        let bytes =
+            serde_json::to_vec_pretty(&next).map_err(|_| "state_serialize_failed".to_string())?;
+        if bytes.len() > 1024 * 1024 {
+            return Err("state_too_large".into());
+        }
+        fs::write(path, bytes).map_err(|_| "state_write_failed".to_string())?;
+    }
+    Ok(result)
+}
+fn state_path(i: &Value) -> Option<PathBuf> {
+    i.get("state_file_path")
+        .and_then(Value::as_str)
+        .filter(|p| !p.is_empty() && p.len() < 4096)
+        .map(PathBuf::from)
+}
+pub fn load_state(i: &Value) -> Result<Value, String> {
+    let Some(path) = state_path(i) else {
+        return Ok(json!({}));
+    };
+    let Some(bytes) = fs::read(path).ok().filter(|b| b.len() <= 1024 * 1024) else {
+        return Ok(json!({}));
+    };
+    Ok(serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({})))
+}
+pub fn save_state(i: &Value) -> Result<Value, String> {
+    let Some(path) = state_path(i) else {
+        return Err("missing_state_file_path".into());
+    };
+    let state = i
+        .get("state")
+        .filter(|v| v.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let bytes =
+        serde_json::to_vec_pretty(&state).map_err(|_| "state_serialize_failed".to_string())?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("state_too_large".into());
+    }
+    fs::write(path, bytes).map_err(|_| "state_write_failed".to_string())?;
+    Ok(json!({"saved":true}))
+}
+pub fn resolve_updated_since(i: &Value) -> Result<Value, String> {
+    let explicit = i.get("updated_since").filter(|v| !text(v).is_empty());
+    if let Some(value) = explicit.or_else(|| {
+        payload(i)
+            .get("updated_since")
+            .filter(|v| !text(v).is_empty())
+    }) {
+        return Ok(value.clone());
+    }
+    Ok(load_state(i)?["last_sync"].clone())
+}
+pub fn normalize(i: &Value) -> Result<Value, String> {
+    normalize_bundle(i, i.get("raw_data").unwrap_or(&Value::Null))
+}
+fn connector(i: &Value) -> String {
+    let v = text(&config(i)["connector_type"]);
+    if v.is_empty() {
+        "servicenow_cmdb".into()
+    } else {
+        v
+    }
+}
+fn normalize_bundle(i: &Value, raw: &Value) -> Result<Value, String> {
+    let mut devices = Vec::new();
+    for r in raw
+        .get("devices")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let ci = first(&[
+            service_value(r, "sys_class_name"),
+            service_value(r, "class"),
+            "cmdb_ci".into(),
+        ]);
+        let model = first(&[service_value(r, "model_id"), service_value(r, "model")]);
+        let hostname = first(&[
+            service_value(r, "name"),
+            service_value(r, "hostname"),
+            service_value(r, "fqdn"),
+            service_value(r, "ip_address"),
+            service_value(r, "asset_tag"),
+            service_value(r, "sys_id"),
+        ]);
+        let ip = first(&[service_value(r, "ip_address"), service_value(r, "ip")]);
+        let vendor = first(&[
+            service_value(r, "manufacturer"),
+            service_value(r, "vendor"),
+            service_value(r, "manufacturer.display_value"),
+        ]);
+        let serial = service_value(r, "serial_number");
+        let updated = first(&[
+            service_value(r, "sys_updated_on"),
+            service_value(r, "updated_on"),
+        ]);
+        let kind = map_type(&ci, &model, &hostname);
+        let evidence = evidence(r, &ci);
+        let mut p = json!({"id":service_value(r,"sys_id"),"hostname":hostname,"ip_address":ip,"device_type":kind,"ci_class":ci,"vendor":vendor,"model":model,"os_version":first(&[service_value(r,"os_version"),service_value(r,"version")]),"serial_number":serial,"last_updated":updated,"source_table":ci,"evidence":evidence});
+        p["correlation_keys"] = correlation(&[
+            ("hostname", hostname.clone()),
+            ("ip_address", ip),
+            ("serial", serial),
+            ("ci_class", ci.clone()),
+            ("vendor", vendor),
+            ("model", model),
+        ]);
+        let metadata = json!({"sys_id":service_value(r,"sys_id"),"sys_updated_on":service_value(r,"sys_updated_on"),"source_table":ci,"connector":connector(i)});
+        let confidence = confidence(&ci);
+        devices.push(record(
+            "device",
+            "servicenow_cmdb",
+            first(&[service_value(r, "sys_id"), hostname]),
+            p,
+            confidence,
+            metadata,
+        ));
+    }
+    let relation_table = setting(i, "relationship_table", "cmdb_rel_ci");
+    let mut relationships = Vec::new();
+    for r in raw
+        .get("relationships")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let (source_id, source_name) = reference(r, "parent");
+        let (target_id, target_name) = reference(r, "child");
+        let rel = first(&[
+            service_value(r, "type"),
+            service_value(r, "relationship_type"),
+            "related-to".into(),
+        ]);
+        let updated = first(&[
+            service_value(r, "sys_updated_on"),
+            service_value(r, "updated_on"),
+        ]);
+        let ev = evidence(r, &relation_table);
+        let mut p = json!({"id":service_value(r,"sys_id"),"source_id":source_id,"source_name":source_name,"target_id":target_id,"target_name":target_name,"relationship_type":rel,"last_updated":updated,"source_table":relation_table,"evidence":ev});
+        p["correlation_keys"] = correlation(&[
+            ("source_id", text(&p["source_id"])),
+            ("source_name", text(&p["source_name"])),
+            ("target_id", text(&p["target_id"])),
+            ("target_name", text(&p["target_name"])),
+            ("relationship_type", rel.clone()),
+        ]);
+        let metadata = json!({"sys_id":service_value(r,"sys_id"),"sys_updated_on":service_value(r,"sys_updated_on"),"source_table":relation_table,"connector":connector(i)});
+        relationships.push(record(
+            "link",
+            "servicenow_cmdb",
+            first(&[
+                service_value(r, "sys_id"),
+                format!("{}->{}", source_id, target_id),
+            ]),
+            p,
+            0.84,
+            metadata,
+        ));
+    }
+    let mut records = devices.clone();
+    records.extend(relationships.clone());
+    let max = latest_timestamp(
+        records.iter().map(|r| text(&r["payload"]["last_updated"])),
+        raw.get("updated_since").map(text),
+    );
+    Ok(
+        json!({"status":"completed","connector":connector(i),"record_type":"topology","count":records.len(),"devices":devices,"relationships":relationships,"records":records,"sync":{"last_sync":max,"source":"servicenow_cmdb"}}),
+    )
+}
+fn map_type(ci: &str, model: &str, name: &str) -> &'static str {
+    let h = format!("{ci} {model} {name}").to_lowercase();
+    if ci.to_lowercase().contains("server") {
+        "server"
+    } else if [
+        "firewall",
+        "asa",
+        "palo",
+        "forti",
+        "checkpoint",
+        "srx",
+        "firepower",
+    ]
+    .iter()
+    .any(|x| h.contains(x))
+    {
+        "firewall"
+    } else if ["router", "wan", "edge", "gateway"]
+        .iter()
+        .any(|x| h.contains(x))
+    {
+        "router"
+    } else if ["switch", "nexus", "catalyst", "aruba", "access"]
+        .iter()
+        .any(|x| h.contains(x))
+    {
+        "switch"
+    } else {
+        "network_device"
+    }
+}
+fn confidence(ci: &str) -> f64 {
+    match ci.to_lowercase().as_str() {
+        "cmdb_ci_server" => 0.92,
+        "cmdb_ci_netgear" => 0.88,
+        _ => 0.80,
+    }
+}
+fn reference(r: &Value, k: &str) -> (String, String) {
+    let v = r.get(k).unwrap_or(&Value::Null);
+    if v.is_object() {
+        (
+            first(&[text(&v["value"]), text(&v["sys_id"]), text(&v["id"])]),
+            first(&[
+                text(&v["display_value"]),
+                text(&v["displayValue"]),
+                text(&v["name"]),
+                text(&v["value"]),
+            ]),
+        )
+    } else {
+        let direct = service_value(r, k);
+        let display = first(&[
+            text(&r[format!("{k}.display_value")]),
+            text(&r[format!("{k}_display_value")]),
+            direct.clone(),
+        ]);
+        (direct, display)
+    }
+}
+fn evidence(r: &Value, table: &str) -> Value {
+    let mut m = serde_json::Map::new();
+    for (k, v) in [
+        ("source", json!("servicenow_cmdb")),
+        ("table", json!(table)),
+        ("sys_id", json!(service_value(r, "sys_id"))),
+        ("sys_updated_on", json!(service_value(r, "sys_updated_on"))),
+    ] {
+        if !v.is_null() && !text(&v).is_empty() {
+            m.insert(k.into(), v);
+        }
+    }
+    Value::Object(m)
+}
+fn first(v: &[String]) -> String {
+    v.iter()
+        .find(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_default()
+}

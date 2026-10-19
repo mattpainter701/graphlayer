@@ -3,15 +3,15 @@
 //! The Python compatibility layer forwards complete requests here. All parsing,
 //! filtering, pagination, normalization and correlation decisions live in Rust.
 
-mod common;
-mod netbox;
-mod servicenow;
-mod helpers;
-mod ssh;
-mod solarwinds;
-mod fileshare;
 mod api;
 mod appid;
+mod common;
+mod fileshare;
+mod helpers;
+mod netbox;
+mod servicenow;
+mod solarwinds;
+mod ssh;
 
 #[cfg(test)]
 #[path = "../connectors_netbox.rs"]
@@ -66,15 +66,26 @@ pub struct SessionDispatcher {
 }
 
 impl SessionDispatcher {
-    pub fn new() -> Self { Self { inner: ssh::SessionDispatcher::new(), api: api::SessionDispatcher::new() } }
+    pub fn new() -> Self {
+        Self {
+            inner: ssh::SessionDispatcher::new(),
+            api: api::SessionDispatcher::new(),
+        }
+    }
 
     pub fn dispatch(&mut self, operation: &str, input: Value) -> Result<Value, String> {
-        if operation.starts_with("ssh.") { self.inner.dispatch(operation, input) }
-        else if operation.starts_with("api.") { self.api.dispatch(operation, input) }
-        else { dispatch(operation, input) }
+        if operation.starts_with("ssh.") {
+            self.inner.dispatch(operation, input)
+        } else if operation.starts_with("api.") {
+            self.api.dispatch(operation, input)
+        } else {
+            dispatch(operation, input)
+        }
     }
 }
 
 impl Default for SessionDispatcher {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
