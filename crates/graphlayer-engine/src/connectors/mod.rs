@@ -7,6 +7,8 @@ mod common;
 mod netbox;
 mod servicenow;
 mod helpers;
+mod ssh;
+mod solarwinds;
 
 #[cfg(test)]
 #[path = "../connectors_netbox.rs"]
@@ -19,7 +21,13 @@ mod connectors_servicenow_tests;
 use serde_json::Value;
 
 pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
-    if operation.starts_with("connector.") || operation.starts_with("fileshare.") || operation == "solarwinds.sanitize_filename" {
+    if operation.starts_with("ssh.") {
+        return ssh::dispatch(operation, &input);
+    }
+    if operation.starts_with("solarwinds.") {
+        return solarwinds::dispatch(operation, &input);
+    }
+    if operation.starts_with("connector.") || operation.starts_with("fileshare.") {
         return helpers::dispatch(operation, &input);
     }
     match operation {
@@ -34,5 +42,18 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
         "servicenow.fetch_table_page" => servicenow::fetch_table_page(&input),
         "servicenow.fetch_table" => servicenow::fetch_table(&input),
         _ => Err("unsupported_operation".to_string()),
+    }
+}
+
+pub struct SessionDispatcher {
+    inner: ssh::SessionDispatcher,
+}
+
+impl SessionDispatcher {
+    pub fn new() -> Self { Self { inner: ssh::SessionDispatcher::new() } }
+
+    pub fn dispatch(&mut self, operation: &str, input: Value) -> Result<Value, String> {
+        if operation.starts_with("ssh.") { self.inner.dispatch(operation, input) }
+        else { dispatch(operation, input) }
     }
 }

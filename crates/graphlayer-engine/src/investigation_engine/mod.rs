@@ -3,6 +3,7 @@
 mod policy;
 mod path;
 mod network;
+mod vendor_path;
 
 pub use policy::{evaluate_policy, validate_policy, validate_scope};
 pub use path::{evaluate_path, evaluate_return, explore_path, explore_return};

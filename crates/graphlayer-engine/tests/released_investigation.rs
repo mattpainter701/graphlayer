@@ -15,12 +15,13 @@ fn evaluate(operation: &str, input: Value) -> Result<Value, String> {
         "explore_return" => engine::explore_return(input),
         "evaluate_network" => engine::evaluate_network(input),
         "explore_network" => engine::explore_network(input),
-        "parse_panos" | "parse_fortigate" => {
+        "parse_asa" | "parse_panos" | "parse_fortigate" => {
             use sha2::{Digest, Sha256};
             let bytes = base64::engine::general_purpose::STANDARD.decode(input["config_base64"].as_str().unwrap()).unwrap();
             let hash = format!("{:x}", Sha256::digest(&bytes));
             let text = String::from_utf8_lossy(&bytes);
-            if operation == "parse_panos" { parser::parse_panos_with_hash(&text, &hash) }
+            if operation == "parse_asa" { graphlayer_engine::asa_config::parse_asa_with_hash(&text, &hash) }
+            else if operation == "parse_panos" { parser::parse_panos_with_hash(&text, &hash) }
             else { parser::parse_fortigate_with_hash(&text, &hash) }
         }
         _ => Err("unsupported_operation".into()),
