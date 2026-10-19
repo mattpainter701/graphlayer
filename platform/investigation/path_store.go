@@ -50,7 +50,7 @@ func (s *Store) EvaluatePath(snapshotID, ingress string, flow policy.Flow) (*Pat
 	}
 	result, err := pathanalysis.Evaluate(pathInput(snap, ingress, flow))
 	if err != nil {
-		return nil, ErrInvalidFlow
+		return nil, flowEvaluationError(err)
 	}
 	inv := &PathInvestigation{ID: pathIdentity(snap.ID, result), CreatedAt: time.Now().UTC(), SnapshotID: snap.ID, Result: result}
 	data, err := json.Marshal(inv)

@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/mattpainter701/graphlayer/platform/rustengine"
+
 	asa "github.com/mattpainter701/graphlayer/platform/vendors/cisco/asa"
 )
 
@@ -33,7 +35,7 @@ var (
 	asaEngineTestArgs []string
 	// ErrAnalysisEngine identifies failures to run or validate the required Rust
 	// analysis worker. Callers can distinguish these from invalid ASA input.
-	ErrAnalysisEngine = errors.New("required Rust analysis engine is unavailable")
+	ErrAnalysisEngine = rustengine.ErrUnavailable
 )
 
 //go:embed testdata/asa_path_sample.txt

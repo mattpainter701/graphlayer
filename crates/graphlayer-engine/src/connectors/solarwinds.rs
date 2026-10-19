@@ -6,7 +6,7 @@ use std::{fs, io::Read, path::{Component, Path, PathBuf}, time::Duration};
 const DEVICES: &str = "SELECT N.NodeID, N.Caption, N.DNS, N.IPAddress, N.Vendor, N.MachineType, CN.NodeID AS CirrusNodeID FROM Orion.Nodes N INNER JOIN Cirrus.Nodes CN ON N.NodeID = CN.CoreNodeID WHERE N.ObjectSubType = 'SNMP'";
 
 pub fn dispatch(operation:&str,input:&Value)->Result<Value,String>{match operation{
-    "solarwinds.query"=>query(input),"solarwinds.ping"=>ping(input),"solarwinds.collect"=>collect(input),
+    "solarwinds.query"=>query(input),"solarwinds.ping"=>ping(input),"solarwinds.collect"=>collect(input),"solarwinds.trigger"=>trigger(input),
     "solarwinds.devices"=>devices(input),"solarwinds.config"=>config(input),"solarwinds.save_config"=>save_config(input),
     "solarwinds.sanitize_filename"=>Ok(json!(sanitize(&text(&input["name"])))),_=>Err("unsupported_operation".into())}}
 
@@ -29,6 +29,7 @@ fn query(input:&Value)->Result<Value,String>{
     let mut body=Vec::new();response.take(MAX_BODY_BYTES as u64+1).read_to_end(&mut body).map_err(|_|"response_read_failed".to_string())?;
     if body.len()>MAX_BODY_BYTES{return Err("response_too_large".into())}serde_json::from_slice(&body).map_err(|_|"invalid_json_response".into())
 }
+fn trigger(input:&Value)->Result<Value,String>{let (client,url,user)=client(input)?;let data=input.get("connector_data").unwrap_or(input);let credentials=data.get("credentials").unwrap_or(&Value::Null);let password=if text(&data["password"]).is_empty(){text(&credentials["password"])}else{text(&data["password"])};let endpoint=url.replace("/Json/Query","/Json/Invoke/Cirrus.ConfigArchive/DownloadConfig");let ids=input.get("node_ids").and_then(Value::as_array).cloned().unwrap_or_default();if ids.is_empty()||ids.len()>10000{return Err("invalid_node_ids".into())}let config_type=text(&input["config_type"]);if config_type.is_empty()||config_type.len()>128{return Err("invalid_config_type".into())}let response=client.post(endpoint).basic_auth(user,Some(password)).json(&json!([ids,config_type])).send().map_err(|_|"request_failed".to_string())?;if !response.status().is_success(){return Err(format!("http_status_{}",response.status().as_u16()))}let mut body=Vec::new();response.take(MAX_BODY_BYTES as u64+1).read_to_end(&mut body).map_err(|_|"response_read_failed".to_string())?;if body.len()>MAX_BODY_BYTES{return Err("response_too_large".into())}serde_json::from_slice(&body).map_err(|_|"invalid_json_response".into())}
 fn ping(input:&Value)->Result<Value,String>{
     let response=query(&json!({"connector_data":input.get("connector_data").unwrap_or(input),"query":"SELECT TOP 1 EngineID FROM Orion.Engines"}))?;
     let results=response.get("results").and_then(Value::as_array).cloned().unwrap_or_default();

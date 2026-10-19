@@ -301,11 +301,11 @@ func TestASAPathEngineRejectsNonRegularAndNonExecutableFiles(t *testing.T) {
 }
 
 func TestASAPathEngineAcceptsOneStrictResponse(t *testing.T) {
-	useFakeASAEngine(t, "valid")
 	parsed, err := asa.ParseRunningConfig([]byte("hostname edge\n"))
 	if err != nil {
 		t.Fatal("could not parse ASA input")
 	}
+	useFakeASAEngine(t, "valid")
 	response, err := callASAPathEngine(asaPathEngineRequest{
 		ProtocolVersion: asaEngineProtocolVersion,
 		Operation:       asaEngineOperation,
@@ -324,11 +324,11 @@ func TestASAPathEngineAcceptsOneStrictResponse(t *testing.T) {
 }
 
 func TestASAPathInventoryWrapsWorkerFailuresWithSentinel(t *testing.T) {
-	useFakeASAEngine(t, "malformed")
 	parsed, err := asa.ParseRunningConfig([]byte("hostname edge\n"))
 	if err != nil {
 		t.Fatal("could not parse ASA input")
 	}
+	useFakeASAEngine(t, "malformed")
 	c := &Config{
 		ArtifactSHA256: parsed.ArtifactSHA256,
 		SourceLines:    []SourceLine{{Number: 1, Text: "[OMITTED NON-POLICY CONFIGURATION]"}},

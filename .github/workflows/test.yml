@@ -25,11 +25,11 @@ jobs:
             ./correlation/... ./comparison/... ./graph/... \
             ./intelligence/... ./scoring/... ./vendors/shared/... \
             ./models/... ./reference/iana/... ./policy/... ./cmd/graphlayer-policy/... \
-            ./vendors/cisco/asa/... ./firewall/... ./investigation/... ./cmd/graphlayer-investigate/... ./pathanalysis/... ./networkpath/...
+            ./vendors/cisco/asa/... ./firewall/... ./investigation/... ./cmd/graphlayer-investigate/... ./pathanalysis/... ./networkpath/... ./rustengine/...
 
       - name: Check policy and investigation concurrency
         working-directory: platform
-        run: go test -race ./policy ./firewall ./investigation ./pathanalysis ./networkpath
+        run: go test -race ./policy ./firewall ./investigation ./pathanalysis ./networkpath ./rustengine
 
       - name: Coverage threshold check
         run: |
@@ -55,6 +55,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - uses: ./.github/actions/build-rust-engine
 
       - name: Run Python connector tests
         run: |
@@ -111,7 +113,7 @@ jobs:
 
       - name: Test native vendor parsers and investigation storage
         working-directory: platform
-        run: go test ./vendors/cisco/asa ./firewall ./policy ./investigation ./cmd/graphlayer-investigate ./pathanalysis ./networkpath
+        run: go test ./vendors/cisco/asa ./firewall ./policy ./investigation ./cmd/graphlayer-investigate ./pathanalysis ./networkpath ./rustengine
 
       - name: Package native Windows application and required Rust engine
         shell: pwsh

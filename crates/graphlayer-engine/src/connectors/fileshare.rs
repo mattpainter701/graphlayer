@@ -8,7 +8,7 @@ use tokio::{io::AsyncReadExt, runtime::Runtime};
 const MAX_FILES:usize=5000;
 const MAX_TOTAL:usize=128*1024*1024;
 struct HostKey{host:String,port:u16,path:PathBuf}
-impl client::Handler for HostKey{type Error=russh::Error;async fn check_server_key(&mut self,key:&keys::PublicKeyOrCertificate)->Result<bool,Self::Error>{Ok(keys::check_known_hosts_path(&self.host,self.port,key.public_key(),&self.path).unwrap_or(false))}}
+impl client::Handler for HostKey{type Error=russh::Error;async fn check_server_key(&mut self,key:&keys::PublicKeyOrCertificate)->Result<bool,Self::Error>{Ok(keys::check_known_hosts_path(&self.host,self.port,&key.public_key(),&self.path).unwrap_or(false))}}
 
 pub fn dispatch(op:&str,input:&Value)->Result<Value,String>{match op{
     "fileshare.collect"=>collect(input),"fileshare.ping"|"fileshare.connect"=>ping(input),
@@ -45,14 +45,14 @@ async fn collect_sftp(input:&Value)->Result<Value,String>{
  let mut session=tokio::time::timeout(Duration::from_secs(timeout),client::connect(cfg,(host.as_str(),port),handler)).await.map_err(|_|"ssh_connection_timeout".to_string())?.map_err(|_|"ssh_connection_failed".to_string())?;
  let authenticated=if !pass.is_empty(){session.authenticate_password(user,pass).await.map_err(|_|"ssh_authentication_failed".to_string())?}else{return Err("ssh_password_required_for_fileshare".into())};
  if !authenticated.success(){return Err("ssh_authentication_failed".into())}
- let mut channel=session.channel_open_session().await.map_err(|_|"sftp_channel_failed".to_string())?;channel.request_subsystem(true,"sftp").await.map_err(|_|"sftp_subsystem_failed".to_string())?;let sftp=SftpSession::new(channel.into_stream()).await.map_err(|_|"sftp_initialization_failed".to_string())?;
+ let channel=session.channel_open_session().await.map_err(|_|"sftp_channel_failed".to_string())?;channel.request_subsystem(true,"sftp").await.map_err(|_|"sftp_subsystem_failed".to_string())?;let sftp=SftpSession::new(channel.into_stream()).await.map_err(|_|"sftp_initialization_failed".to_string())?;
  let root=PathBuf::from(strv(input.get("working_folder")));if root.as_os_str().is_empty(){return Err("missing_working_folder".into())}fs::create_dir_all(&root).map_err(|_|"output_directory_error".to_string())?;
  let remote=strv(loc.get("remote_path"));let base=normalize(&remote);let recursive=payload.get("recursive").and_then(Value::as_bool).unwrap_or(true);
  let includes=payload.get("filtering").and_then(|x|x.get("file_patterns")).and_then(Value::as_array).cloned().unwrap_or_else(||vec![json!(r".*\.cfg$"),json!(r".*\.conf$"),json!(r".*\.txt$")]);let excludes=payload.get("filtering").and_then(|x|x.get("exclude_patterns")).and_then(Value::as_array).cloned().unwrap_or_default();
  let mut stack=vec![if base.is_empty(){"/".to_string()}else{base.clone()}];let mut files=Vec::<String>::new();
  while let Some(dir)=stack.pop(){let entries=sftp.read_dir(&dir).await.map_err(|_|"sftp_list_failed".to_string())?;for entry in entries{let name=entry.file_name();if name=="."||name==".."{continue}let path=format!("{}/{}",dir.trim_end_matches('/'),name);let meta=sftp.metadata(&path).await.map_err(|_|"sftp_metadata_failed".to_string())?;if meta.is_dir(){if recursive{stack.push(path)}}else{let matched=helpers::dispatch("fileshare.matches_patterns",&json!({"filename":name,"file_patterns":includes,"exclude_patterns":excludes}))?;if matched==Value::Bool(true){files.push(path);if files.len()>MAX_FILES{return Err("too_many_files".into())}}}}}
  let mut total=0usize;let mut downloaded=0usize;
- for remote_file in &files{let mut f=sftp.open(remote_file).await.map_err(|_|"sftp_open_failed".to_string())?;let mut buf=Vec::new();f.take((MAX_BODY_BYTES+1)as u64).read_to_end(&mut buf).await.map_err(|_|"sftp_read_failed".to_string())?;if buf.len()>MAX_BODY_BYTES{return Err("file_too_large".into())}total=total.saturating_add(buf.len());if total>MAX_TOTAL{return Err("download_limit_exceeded".into())}
+ for remote_file in &files{let f=sftp.open(remote_file).await.map_err(|_|"sftp_open_failed".to_string())?;let mut buf=Vec::new();f.take((MAX_BODY_BYTES+1)as u64).read_to_end(&mut buf).await.map_err(|_|"sftp_read_failed".to_string())?;if buf.len()>MAX_BODY_BYTES{return Err("file_too_large".into())}total=total.saturating_add(buf.len());if total>MAX_TOTAL{return Err("download_limit_exceeded".into())}
   let relative=remote_file.strip_prefix(&base).unwrap_or(remote_file).trim_start_matches('/');let dest=secure_child(&root,relative)?;if let Some(parent)=dest.parent(){fs::create_dir_all(parent).map_err(|_|"output_directory_error".to_string())?}fs::write(dest,buf).map_err(|_|"file_write_failed".to_string())?;downloaded+=1;
  }
  Ok(json!({"status":"completed","files_downloaded":downloaded,"message":format!("Downloaded {downloaded} files via SSH")}))

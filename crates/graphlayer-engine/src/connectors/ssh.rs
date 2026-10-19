@@ -12,7 +12,7 @@ impl client::Handler for KnownHostHandler {
     type Error = russh::Error;
 
     async fn check_server_key(&mut self, key: &keys::PublicKeyOrCertificate) -> Result<bool, Self::Error> {
-        Ok(keys::check_known_hosts_path(&self.host, self.port, key.public_key(), &self.path).unwrap_or(false))
+        Ok(keys::check_known_hosts_path(&self.host, self.port, &key.public_key(), &self.path).unwrap_or(false))
     }
 }
 
@@ -77,7 +77,7 @@ impl SessionDispatcher {
             };
             if !auth.success() { return Err("ssh_authentication_failed".to_string()); }
             let shell=if interactive{
-                let channel=handle.channel_open_session().await.map_err(|_|"ssh_shell_open_failed".to_string())?;
+                let mut channel=handle.channel_open_session().await.map_err(|_|"ssh_shell_open_failed".to_string())?;
                 channel.request_pty(true,"vt100",80,24,0,0,&[]).await.map_err(|_|"ssh_pty_failed".to_string())?;
                 channel.request_shell(true).await.map_err(|_|"ssh_shell_request_failed".to_string())?;
                 let drain=async{loop{if channel.wait().await.is_none(){break}}};
@@ -88,7 +88,7 @@ impl SessionDispatcher {
         });
         let (handle,shell) = result?;
         if let Some(previous) = self.sessions.insert(id.clone(), handle) {
-            self.runtime.block_on(async { let mut old = previous; let _ = old.disconnect(Disconnect::ByApplication, "replaced", "English").await; });
+            self.runtime.block_on(async { let old = previous; let _ = old.disconnect(Disconnect::ByApplication, "replaced", "English").await; });
         }
         if let Some(channel)=shell {self.shells.insert(id.clone(),ShellEntry{channel,pattern:if pattern.is_empty(){r"[>#%$]\s*$".into()}else{pattern}});}
         Ok(json!({"session_id":id,"connected":true}))
@@ -123,7 +123,7 @@ impl SessionDispatcher {
     fn disconnect(&mut self, input: Value) -> Result<Value, String> {
         let id = string(&input, "session_id");
         self.shells.remove(&id);
-        if let Some(mut handle) = self.sessions.remove(&id) {
+        if let Some(handle) = self.sessions.remove(&id) {
             self.runtime.block_on(async { let _ = handle.disconnect(Disconnect::ByApplication, "", "English").await; });
         }
         Ok(json!({"session_id":id,"disconnected":true}))
@@ -149,7 +149,7 @@ impl SessionDispatcher {
 pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
     match operation {
         "ssh.clean_output" => Ok(json!(clean_output(&string(input, "output"), &string(input, "prompt")))),
-        "ssh.config_command" => Ok(json!(config_command(if string(input,"device_type").is_empty(){&string(input,"vendor")}else{&string(input,"device_type")}, &string(input, "config_type")))),
+        "ssh.config_command" => { let device_type=string(input,"device_type");let vendor=string(input,"vendor");let config_type=string(input,"config_type");let selected=if device_type.is_empty(){vendor.as_str()}else{device_type.as_str()};Ok(json!(config_command(selected,&config_type))) },
         "ssh.device_info_command" => Ok(json!(device_info_command(&string(input, "vendor")))),
         "ssh.prompt_pattern" => Ok(json!(prompt_pattern(&string(input,"device_type")))),
         "ssh.parse_output" => Ok(json!(parse_output(&string(input,"output")))),

@@ -471,6 +471,9 @@ func (a *App) evaluate(w http.ResponseWriter, r *http.Request, snapshotID string
 	}
 	flow := policy.Flow{Source: req.Source, Destination: req.Destination, Protocol: req.Protocol, SourcePort: req.SourcePort, DestinationPort: req.DestinationPort}
 	inv, err := a.store.Evaluate(snapshotID, req.ChainID, flow)
+	if analysisUnavailable(w, err) {
+		return
+	}
 	if errors.Is(err, ErrRecordTooLarge) {
 		apiError(w, 413, "investigation_too_large", "The investigation trace exceeds the 8 MiB artifact budget. No partial result was saved.")
 		return
@@ -496,6 +499,14 @@ func (a *App) evaluate(w http.ResponseWriter, r *http.Request, snapshotID string
 
 func methodError(w http.ResponseWriter) {
 	apiError(w, 405, "method_not_allowed", "This method is not supported.")
+}
+
+func analysisUnavailable(w http.ResponseWriter, err error) bool {
+	if !errors.Is(err, firewall.ErrAnalysisEngine) {
+		return false
+	}
+	apiError(w, http.StatusServiceUnavailable, "analysis_engine_unavailable", "The required Rust analysis engine is unavailable. No partial investigation was saved.")
+	return true
 }
 
 func apiError(w http.ResponseWriter, status int, code, message string) {

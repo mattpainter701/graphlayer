@@ -32,6 +32,10 @@ class NetBoxFixtureHandler(http.server.BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        if self.headers.get("Authorization") != "Token token-123":
+            self.send_response(401)
+            self.end_headers()
+            return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         NetBoxFixtureHandler.request_log.append(self.path)

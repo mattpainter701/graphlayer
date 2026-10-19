@@ -24,6 +24,9 @@ const MaxOutput = 8 << 20
 
 var ErrUnavailable = errors.New("required Rust analysis engine is unavailable")
 
+// Set only by same-package protocol tests; never populated from configuration.
+var workerArguments []string
+
 type request struct {
 	ProtocolVersion string `json:"protocol_version"`
 	Operation       string `json:"operation"`
@@ -88,7 +91,7 @@ func Call(ctx context.Context, operation string, input, out any) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, path)
+	cmd := exec.CommandContext(ctx, path, workerArguments...)
 	cmd.Stdin = bytes.NewReader(data)
 	stdout := &outputBuffer{}
 	cmd.Stdout = stdout
@@ -166,7 +169,8 @@ func NewSession() (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(path, "--session")
+	args := append(append([]string{}, workerArguments...), "--session")
+	cmd := exec.Command(path, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, unavailable("cannot open worker input")

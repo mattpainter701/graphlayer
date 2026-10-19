@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import base64
 import json
 import os
 import socket
@@ -33,6 +34,10 @@ class ServiceNowFixtureHandler(http.server.BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        if self.headers.get("Authorization") != "Basic " + base64.b64encode(b"admin:secret").decode("ascii"):
+            self.send_response(401)
+            self.end_headers()
+            return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         ServiceNowFixtureHandler.request_log.append(self.path)

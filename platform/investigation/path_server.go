@@ -23,6 +23,9 @@ func (a *App) evaluatePath(w http.ResponseWriter, r *http.Request, snapshotID st
 	}
 	flow := policy.Flow{Source: req.Flow.Source, Destination: req.Flow.Destination, Protocol: req.Flow.Protocol, SourcePort: req.Flow.SourcePort, DestinationPort: req.Flow.DestinationPort}
 	inv, err := a.store.EvaluatePath(snapshotID, req.IngressInterface, flow)
+	if analysisUnavailable(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, ErrPathUnavailable):
 		apiError(w, 409, "path_unavailable", "Reimport the original configuration to create path metadata; older snapshots are preserved.")
