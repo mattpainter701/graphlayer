@@ -69,6 +69,12 @@ class ConnectorContractTests(unittest.TestCase):
                                        ensure_ascii=False, default=str).encode("utf-8")
                 expected = "sha256:" + hashlib.sha256(canonical).hexdigest()
                 self.assertEqual(BaseConnector.canonical_fingerprint(value), expected)
+        connector = DummyConnector("fingerprint-guid", {"connector_type": "dummy", "host": "example.local"})
+        payload = {"nested": {"unicode": "λ\n", "values": [-0.0, 1e-5, 1e20, 10**100]}}
+        record = connector.build_normalized_record("device", "fingerprint-1", payload)
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                               ensure_ascii=False, default=str).encode("utf-8")
+        self.assertEqual(record.raw_fingerprint, "sha256:" + hashlib.sha256(canonical).hexdigest())
 
     def test_base_connector_contract_aliases(self):
         connector = DummyConnector(

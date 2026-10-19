@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Frozen Go and Python production domain inventory while Rust ports proceed.",
+  "description": "Frozen experimental Go/Python domain inventory and reviewed Rust compatibility adapters. Hash changes require a real Rust port or exact expiring exception.",
   "guarded_roots": [
     {
       "path": "platform/vendors",
@@ -148,16 +148,37 @@
         ".go",
         ".py"
       ]
+    },
+    {
+      "path": "platform/rustengine",
+      "extensions": [
+        ".go",
+        ".py"
+      ]
+    },
+    {
+      "path": "platform/investigation/inventory_validation.go",
+      "extensions": [
+        ".go",
+        ".py"
+      ]
+    },
+    {
+      "path": "platform/investigation/path_validation.go",
+      "extensions": [
+        ".go",
+        ".py"
+      ]
     }
   ],
   "baseline_sha256": {
     "platform/connectors/__init__.py": "2965bf2388ea252506f8ecb87845f1734e8b93a6e4bdc2c33ae6c5cdacaa12ab",
-    "platform/connectors/base_connector.py": "c50fb5d1867d61348e4e069a0de907c4eb8eaeea77f404cd52ea248f1081a85c",
-    "platform/connectors/fileshare_connector.py": "448f51666a5a67ed3077a398c9df4c044e9cacdea2d2be7fd51d638e42366ff5",
-    "platform/connectors/netbox_connector.py": "452a6f3a1c644d2f5b328ef7e8927d56a9c5e82ffa5bdf4348f8a9552496b657",
-    "platform/connectors/registry.py": "9d0fd8936ffb425bc22b61a55304fdd2ba5d7d607079de4bf33364e665fecace",
-    "platform/connectors/servicenow_cmdb_connector.py": "9d9b340690a1798871549b78b90817623ead4f8f8d0144111b73df942bc91742",
-    "platform/connectors/solarwinds_ncm_connector.py": "4dec8337089d796b4a95fd6d2eb4ffd60de9bc84109eda7a976a73cfa646971c",
+    "platform/connectors/base_connector.py": "5d34d42820a4688570daebc45e7aac8c7bb3883cc6d39e27a25ba0ed8c3477cf",
+    "platform/connectors/fileshare_connector.py": "0ccac2d0aac84cf65ed73c310be8ef039c444254e1bd47b271737e59a61fed34",
+    "platform/connectors/netbox_connector.py": "7a86dcb3ecbf4667cdbb0ac227a80ff638c5c860697526ae7b0965480786018e",
+    "platform/connectors/registry.py": "885067ebc440fd7124f4dde5fc3164bb00e2b689212d7b8a3eba34213df659c4",
+    "platform/connectors/servicenow_cmdb_connector.py": "0fcfa62806287eb3974b455469eab1319b44ed703e48df53632065492827e895",
+    "platform/connectors/solarwinds_ncm_connector.py": "f8ea821db35891d3fa1a109b9a790faa4779fa0c4fa13fc878adf0301ef3aaf6",
     "platform/correlation/conflict.go": "800d1cc596e6996946c1f2567891cf7422fcd272712a5a636e341b7b63d99f3f",
     "platform/correlation/dedup.go": "fd54f691d6f464b186f765e7ba22d17e36a461698d36f042f5aaaff3d352d949",
     "platform/correlation/engine.go": "5bd1b94eec343c883d1a4e1af84c2a6e2a03ce7fbd183e6d913ad09beaa2822b",
@@ -165,12 +186,8 @@
     "platform/correlation/report.go": "bc071a0407e6d5de8f82afe8734ae593c4c932711dc38544f8354ae763d8c715",
     "platform/correlation/types.go": "6aedc79d5463cdfb884e9815e76e15e5e819e56a66537be6223f0d71dfbc91d1",
     "platform/export.py": "81f1ad4360b9e4455d0da5424c123ad6096011c7229d1c79ad43d94d6335dc15",
-    "platform/firewall/asa.go": "fa3eff17998a902752b3b051a28ed4c1d5b8d94b35bd5b3c373fa5b4cb224082",
-    "platform/firewall/asa_path_parser.go": "fd848b95a2f6db50c3db7c683cf46f8fe0de00de3e518fdaa6c30d237f0a7707",
-    "platform/firewall/asa_services.go": "e70698742b64243a5eb9626789b13a262ed74e47798e7c9a240f7ab942f4a356",
-    "platform/firewall/dispatch.go": "1f2dc993a3eac6a543267988aa9c0a6d3a8d8b689ce6b855e8cb9e06fecdd931",
-    "platform/firewall/fortigate.go": "1f22cfc421db703443012984c2718b673a8bc7ef9d859afdf04f58ccd9823541",
-    "platform/firewall/panos.go": "570a783591e56653a7481d162103cc960c4eaaa31e1d7671e61fa2a459acfeeb",
+    "platform/firewall/asa_path_parser.go": "11c9ad4b53f9f448886174cbf5f4332a5b4397bb543bd00d6906c52ef386bc7a",
+    "platform/firewall/dispatch.go": "69f0f6edf6871a0cadf0a2379af006e80af6be39f22273f8c64f0a8372f2f89e",
     "platform/firewall/path_types.go": "0a62278f5893512ff4e7603bc188626e35e9d139980de53076a2de397b240cf5",
     "platform/firewall/types.go": "af744e62d3bf3bf81e3c174b6a24979d39439e90caa26c3f35426a9bcce9c4ca",
     "platform/graph.py": "ab74d3b5f7c06061989b65d9f2301fbb8d62c4f0b7c0ec40b20084c39d7b98e1",
@@ -197,16 +214,16 @@
     "platform/intelligence/l3_inference.go": "0ab98b49ee0d2b7029368e792a1a04377760e5f5e1d740a348a1bd4145704adf",
     "platform/intelligence/rule_engine.go": "d19cab696a886267709b5565e1b7bafad8f6e2e5cf107e82fcdb2bf330a9e1d9",
     "platform/intelligence/subnet_discovery.go": "1d12d8b3ed6f2e047f7655a7d4b0359d673d8dd81ff5c0ccbd962f778cb8a028",
-    "platform/networkpath/evaluate.go": "96e39a5a9af245f6539ebf3e4efdb390c705aa18538b699e1be6ea68d5e1c5ea",
-    "platform/networkpath/exploration.go": "8327a4d9425ac9427c33da1a5f0aefbb3ec3d8a92f2bb273c65f2a11d7453c9e",
+    "platform/investigation/inventory_validation.go": "3bd1027e4a16548a7977e30d4c7a0a66e82b4ca894195a6792d1f87e47f04986",
+    "platform/investigation/path_validation.go": "98948981945f84cedbb865071dbfed0562d4a61a74d32dea0bdfaf73d4c51184",
     "platform/networkpath/exploration_types.go": "b5f1c0b96459acd0d46e45f2326cb268bfde5e3cec3b6059545004e10fbdf90d",
     "platform/networkpath/types.go": "ffa618d27bceec13da86449b4ea2382ada47b50c358f4f35a9a58147c5550cb5",
-    "platform/orchestration/connectors/api/api_connector.go": "4f30cf9b6c00a4d06bf92057aecfbeb94afbcfeeadf8ef55388e7887a65f71cd",
-    "platform/orchestration/connectors/api/panos_appid_collector.go": "703dc975aaf04a28a2a45bfa30406988477eb6484e57e8e004c7ca6c057e9766",
-    "platform/orchestration/connectors/base/base_connector.go": "fc0695962888ff53475c1a4ed66f1f7e413edce37ca5e548c8ad3056f21533d6",
-    "platform/orchestration/connectors/base/connector.go": "1d96235ec001b54a39a3d9a34352f4ca36a2f86db48caa5c323e3784747c1f03",
-    "platform/orchestration/connectors/ssh/fortigate_isdb_collector.go": "a77744299f5897677724c7a5ed17b33ce41d5aa7cc2ff0bdefb518e69e040f75",
-    "platform/orchestration/connectors/ssh/ssh_connector.go": "6dcc829ab01ee0d63a6e6578c87253fa318ff303e4a73991247aaebfd1979df8",
+    "platform/orchestration/connectors/api/api_connector.go": "41af0aa086f26be66a6c6f63a1fc693f0a246dc8e55d3027b3b947171d5f893e",
+    "platform/orchestration/connectors/api/panos_appid_collector.go": "e30ba497eeca13b2aa7d76c4a177ba286e77f600d217d918409fede721f613ff",
+    "platform/orchestration/connectors/base/base_connector.go": "28c5d2772b8c8d16925945c8dc325163e717b03fc2425b84bd21bc6ab48e8af1",
+    "platform/orchestration/connectors/base/connector.go": "8da63a1909d1ff25a4d3f854f4bcb0e0660269a84361e3c1bdbe3bfbff270a4d",
+    "platform/orchestration/connectors/ssh/fortigate_isdb_collector.go": "5dabffbce0f710fcc53261b72b1c21998e1cd053b0a98a6465c4ef814b549293",
+    "platform/orchestration/connectors/ssh/ssh_connector.go": "2d249ff361d953f4f828f25ef31a4b931d091d59bdf3123b2d5b0de0a3179380",
     "platform/orchestration/decision/l2_decision_engine.go": "8f3c93a2709e378589b6369a1828a47a1182ba1c51b20e77a84ae528d28ecf40",
     "platform/orchestration/decision/l3_decision_engine.go": "9f890cf91aed8b93bd9a9c3f3263e5ca014568a486b4ebfad8c0e102e3a0f104",
     "platform/orchestration/decision/l4_firewall_decision_engine.go": "3ace963eba7144efd624794699c083369d1bd243dbbbaa81e98fe176df1af14d",
@@ -226,11 +243,8 @@
     "platform/orchestration/topology/graph.go": "41fb196f702e7b22109572adf3c73a589ba735315ce04faf10ee8329bcffce50",
     "platform/orchestration/topology/graph_neighbors.go": "a602810ae7ed115ec94821ce4bc634a0b81b7ae07f435fa29af398ae43e9b3d5",
     "platform/orchestration/topology/graph_utils.go": "f2ab94ab2ab5976099816be67551623caa98c0318de03b5c835626e35c647c62",
-    "platform/pathanalysis/evaluate.go": "2e736ad60898388fa7df9bce50d18cff6ce5d0c518d10d32cc924f42eba4271f",
-    "platform/pathanalysis/exploration.go": "26fce0e625e64279c2deb424c2777aa00f7bd24f40d4937e0b41d0748ddebca4",
     "platform/pathanalysis/types.go": "bfa824a2a3f277395c81eb7a9464c4c8eaa6f9cc895c143f1faf7a153acc5f59",
-    "platform/pathanalysis/vendor.go": "1ace69fc4e5d0007259cd1c3beb189f4b1b077bf0ce67cba976210e5ea7172eb",
-    "platform/policy/evaluate.go": "9a81ea546ef44b36e874cb9bf6b57c664bf9a99fcd1f4a834837639c7dc78898",
+    "platform/policy/evaluate.go": "3a7eefb7981c5e85910fea15faced93f239382492ea3a1900c6437750cf6b7fd",
     "platform/policy/types.go": "20f24b03d0623ab96d13507bb8c6121602dd675a2602a13c557ef194453c954e",
     "platform/query_dsl.py": "d2e32879220677bb6af6cfc430fa1a00e71042f30686e6e2611b3069b6643365",
     "platform/reference/appid/cache_manager.go": "d6ad10e8d157684888d94d5a4340cb5bf1a9e83af6ae43144f7c41734fe38c3b",
@@ -260,8 +274,8 @@
     "platform/vendors/cisco/asa/cisco_asa_parsers.go": "8297b019ebe26fa2a6cc9c4e6ac8e320b38c85aba09b27e6e3b0190190b94ab1",
     "platform/vendors/cisco/asa/cisco_asa_routing_mappers.go": "40fd80442d3b9e5087170f545dfd2fe7fb7fa4aadcdfe404a4026b66bc4d05d7",
     "platform/vendors/cisco/asa/cisco_asa_routing_parsers.go": "8ec9eca1a9b224052341b67114db8e1121ad27aa2c6850666e795b4d665b1de1",
-    "platform/vendors/cisco/asa/config_parser.go": "0d3e4000bdfa5a8ee55b11c155920ec760678fb1e16c2dec3c91b94670cacc93",
-    "platform/vendors/cisco/asa/service_parser.go": "4361916672a4922709729cc031251ad02579ee857c1fa6ce837364b1c68b7c38",
+    "platform/vendors/cisco/asa/config_parser.go": "4161f2a0f883ef14540ef527e481d81002a39dfb2c92c91fae7898e1ca65b393",
+    "platform/vendors/cisco/asa/service_parser.go": "a58f3755e5015346506b033ad28aff349e7d6ed48a2bf016c601ea9bc044bf88",
     "platform/vendors/cisco/cisco_models.go": "5099c82e6a3021574d161f29364164dfc087e5f2df2a6ffb2a9b231336d412c1",
     "platform/vendors/cisco/ios/cisco_ios_config_parsers.go": "01c1f1cf60b83a09411f0c001cc0d423b6151ffa06ee8f2eec265f79c844b373",
     "platform/vendors/cisco/ios/cisco_ios_l2security_parsers.go": "6e88a1e31ed398609fa533759ab204372d83b56ca0dbb6e9f60016ca81aebd48",
@@ -299,7 +313,48 @@
     "platform/vendors/shared/evidence_hashing.go": "4b46dbc9b9ceaea3132c8ef3a6a29785536d0a9569ba258be8120f6d80b732a7",
     "platform/vendors/shared/suggestions_parsers.go": "5614ffc3de3cfa5385ff0189c3b69891951bc80a4091cb2856226adbb2d1d849"
   },
-  "exceptions": [],
+  "exceptions": [
+    {
+      "path": "platform/rustengine/client.go",
+      "category": "transport_adapter",
+      "owner": "GraphLayer Rust migration maintainers (PR #21)",
+      "reason": "Bounded process/session transport and strict JSON framing only; native Rust owns every domain operation.",
+      "sha256": "4d77999d6f7228741a689f0dc8e07ebe58a837cacbc18e5cf4be0849ccfe9a12",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/rust_worker.py",
+      "category": "transport_adapter",
+      "owner": "GraphLayer Rust migration maintainers (PR #21)",
+      "reason": "Bounded Python process transport only; connector acquisition, normalization and decisions execute in Rust.",
+      "sha256": "3ddd0cb59a6c5361aec62a6791487ef5bb3afe1f8395261f17448a9cf256c899",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/firewall/parsers.go",
+      "category": "transport_adapter",
+      "owner": "GraphLayer Rust migration maintainers (PR #21)",
+      "reason": "Preserve exported parser signatures and public sample assets while delegating all canonical parsing to Rust.",
+      "sha256": "b520325a92d77be02bb61ba0e4cc16589ee429fbdf57f8a11d9fd3b758cec877",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/pathanalysis/engine.go",
+      "category": "transport_adapter",
+      "owner": "GraphLayer Rust migration maintainers (PR #21)",
+      "reason": "Preserve Go path DTO signatures and dispatch policy, routing, NAT, return and exploration to Rust.",
+      "sha256": "90e6a63a936059c00a99a8882cc941c044ea3089e74ecfc371eaf04b849379c2",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/networkpath/engine.go",
+      "category": "transport_adapter",
+      "owner": "GraphLayer Rust migration maintainers (PR #21)",
+      "reason": "Preserve Go network DTO signatures and dispatch multi-firewall path and exploration to Rust.",
+      "sha256": "d1f09374bb99e909a4ab15f0c9b3705b154467f19d74bbfd48cbfacd99990b29",
+      "expires": "2027-01-15"
+    }
+  ],
   "new_file_roots": [
     {
       "path": "platform",
@@ -339,12 +394,8 @@
     "platform/correlation/report.go",
     "platform/correlation/types.go",
     "platform/export.py",
-    "platform/firewall/asa.go",
     "platform/firewall/asa_path_parser.go",
-    "platform/firewall/asa_services.go",
     "platform/firewall/dispatch.go",
-    "platform/firewall/fortigate.go",
-    "platform/firewall/panos.go",
     "platform/firewall/path_types.go",
     "platform/firewall/types.go",
     "platform/graph.py",
@@ -397,8 +448,6 @@
     "platform/models/network_topology_models.go",
     "platform/models/supplemental_types.go",
     "platform/models/topology.go",
-    "platform/networkpath/evaluate.go",
-    "platform/networkpath/exploration.go",
     "platform/networkpath/exploration_types.go",
     "platform/networkpath/types.go",
     "platform/orchestration/cmd/diff/main.go",
@@ -470,10 +519,7 @@
     "platform/orchestration/topology/graph_neighbors.go",
     "platform/orchestration/topology/graph_utils.go",
     "platform/orchestration/types/device_types.go",
-    "platform/pathanalysis/evaluate.go",
-    "platform/pathanalysis/exploration.go",
     "platform/pathanalysis/types.go",
-    "platform/pathanalysis/vendor.go",
     "platform/policy/evaluate.go",
     "platform/policy/types.go",
     "platform/query_dsl.py",
@@ -543,5 +589,5 @@
     "platform/vendors/shared/evidence_hashing.go",
     "platform/vendors/shared/suggestions_parsers.go"
   ],
-  "baseline_commit": "54f52dc27a8e06a6cc9392668666d7276788c37a"
+  "baseline_commit": "418e550f173938bad7dc7d86995d4a12945f9f23"
 }

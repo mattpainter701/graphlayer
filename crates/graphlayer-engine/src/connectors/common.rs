@@ -8,11 +8,11 @@ pub const MAX_PAGE_SIZE: usize = 1000;
 pub const MAX_TOTAL_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_TOTAL_RECORDS: usize = 100_000;
 
-pub fn canonical_fingerprint(value:&Value)->String{let bytes=python_json(value).unwrap_or_default();let hash=Sha256::digest(bytes);format!("sha256:{hash:x}")}
+pub fn canonical_fingerprint(value:&Value)->String{let bytes=python_json(value).expect("valid serde_json values always have canonical JSON");let hash=Sha256::digest(bytes);format!("sha256:{hash:x}")}
 fn python_json(value:&Value)->Result<Vec<u8>,String>{let mut out=String::new();write_python_json(value,&mut out)?;Ok(out.into_bytes())}
 fn write_python_json(value:&Value,out:&mut String)->Result<(),String>{match value{
  Value::Null=>out.push_str("null"),Value::Bool(v)=>out.push_str(if *v{"true"}else{"false"}),
- Value::Number(v)=>{if v.is_f64(){out.push_str(&python_float(v.as_f64().ok_or_else(||"invalid_number".to_string())?));}else{out.push_str(&v.to_string());}},
+ Value::Number(v)=>{let lexeme=v.to_string();if lexeme.contains('.')||lexeme.contains('e')||lexeme.contains('E'){out.push_str(&python_float(v.as_f64().ok_or_else(||"invalid_number".to_string())?));}else{out.push_str(&lexeme);}},
  Value::String(v)=>out.push_str(&serde_json::to_string(v).map_err(|_|"invalid_string".to_string())?),
  Value::Array(items)=>{out.push('[');for(i,item)in items.iter().enumerate(){if i>0{out.push(',')}write_python_json(item,out)?}out.push(']')},
  Value::Object(items)=>{out.push('{');let mut keys=items.keys().collect::<Vec<_>>();keys.sort();for(i,key)in keys.into_iter().enumerate(){if i>0{out.push(',')}out.push_str(&serde_json::to_string(key).map_err(|_|"invalid_string".to_string())?);out.push(':');write_python_json(&items[key],out)?}out.push('}')},
@@ -120,6 +120,28 @@ fn now_rfc3339() -> String {
 pub fn latest_timestamp(values: impl IntoIterator<Item = String>, fallback: Option<String>) -> String {
     let parsed = values.into_iter().filter_map(|s| parse_timestamp(&s)).max();
     parsed.or_else(|| fallback.as_deref().and_then(parse_timestamp)).map(|dt| dt.to_rfc3339_opts(SecondsFormat::AutoSi, false)).unwrap_or_else(now_rfc3339)
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+    use super::*;
+
+    #[test]
+    fn python_float_spellings_match_json_encoder() {
+        for (value, expected) in [(-0.0, "-0.0"), (1e-5, "1e-05"), (1e-4, "0.0001"),
+            (1e15, "1000000000000000.0"), (1e16, "1e+16"), (1e20, "1e+20"), (1.25e-5, "1.25e-05")] {
+            assert_eq!(python_float(value), expected);
+        }
+    }
+
+    #[test]
+    fn canonical_json_sorts_keys_and_preserves_unicode_and_controls() {
+        let value = serde_json::json!({"z":"line\n\u{0001}","é":-0.0,"a":[1e-5,1e20]});
+        assert_eq!(String::from_utf8(python_json(&value).unwrap()).unwrap(),
+            "{\"a\":[1e-05,1e+20],\"z\":\"line\\n\\u0001\",\"é\":-0.0}");
+        let expected = canonical_fingerprint(&value);
+        assert_eq!(record("device", "test", "1".into(), value.clone(), 1.0, Value::Null)["raw_fingerprint"].as_str(), Some(expected.as_str()));
+    }
 }
 
 fn parse_timestamp(value: &str) -> Option<DateTime<Utc>> {
