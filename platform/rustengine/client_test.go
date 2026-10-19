@@ -20,8 +20,11 @@ func TestWorkerProcess(t *testing.T) {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
-	if mode == "overflow" {
+	if mode == "overflow" || mode == "overflow_hang" {
 		_, _ = io.Copy(os.Stdout, strings.NewReader(strings.Repeat("x", MaxOutput+1)))
+		if mode == "overflow_hang" {
+			time.Sleep(time.Minute)
+		}
 		os.Exit(0)
 	}
 	if mode == "failed" {
@@ -118,6 +121,38 @@ func TestDomainErrorsRemainDistinctFromWorkerFailures(t *testing.T) {
 	err := Call(context.Background(), "probe", map[string]any{}, &output)
 	if err == nil || errors.Is(err, ErrUnavailable) || err.Error() != "invalid flow source address" {
 		t.Fatalf("domain error was not preserved: %v", err)
+	}
+}
+
+func TestStdoutOverflowKillsWorkerWithoutCallerDeadline(t *testing.T) {
+	fakeWorker(t, "overflow_hang")
+	started := time.Now()
+	err := Call(context.Background(), "probe", nil, nil)
+	if !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "output exceeds protocol bounds") {
+		t.Fatalf("wrong overflow failure: %v", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatal("overflow left the worker running until its deadline")
+	}
+}
+
+func TestEnvelopeKeysAreExactAndResultErrorAreExclusive(t *testing.T) {
+	for _, fields := range []string{
+		`"error":"bad","Error":"","result":{}`,
+		`"result":null,"Result":{}`,
+		`"Result":{}`,
+		`"result":{},"error":""`,
+		`"result":{},"error_kind":""`,
+		`"error":""`,
+	} {
+		data := []byte(`{"protocol_version":"graphlayer-engine-v1","operation":"probe",` + fields + `}`)
+		if err := decode(data, "probe", nil); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("ambiguous envelope was accepted: %s", fields)
+		}
+	}
+	var result map[string]any
+	if err := decode([]byte(`{"protocol_version":"graphlayer-engine-v1","operation":"probe","result":{"Case":1,"case":2}}`), "probe", &result); err != nil {
+		t.Fatalf("case-sensitive data map was changed: %v", err)
 	}
 }
 func TestSessionProcessesMultipleFramesAndCloses(t *testing.T) {

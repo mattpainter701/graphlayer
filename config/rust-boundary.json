@@ -319,7 +319,7 @@
       "category": "transport_adapter",
       "owner": "GraphLayer Rust migration maintainers (PR #21)",
       "reason": "Bounded process/session transport and strict JSON framing only; native Rust owns every domain operation.",
-      "sha256": "4d77999d6f7228741a689f0dc8e07ebe58a837cacbc18e5cf4be0849ccfe9a12",
+      "sha256": "83802531243af726ac793bf56aa95a74894a8012578ed52d53023be5af90a3f9",
       "expires": "2027-01-15"
     },
     {

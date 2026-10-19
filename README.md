@@ -34,6 +34,10 @@ experimental vendor and graph libraries remain frozen outside this runtime.
 See the
 [Rust worker and packaging guide](docs/RUST_WORKER.md) for builds and tests.
 
+Private configuration collections can be inventoried and checked with the
+[local corpus runner](docs/PRIVATE_CORPUS.md). Keep customer files outside the
+checkout; public CI uses synthetic and sanitized released fixtures.
+
 ```powershell
 cargo build --locked --release -p graphlayer-engine
 $env:GRAPHLAYER_ENGINE = (Resolve-Path target/release/graphlayer-engine.exe).Path

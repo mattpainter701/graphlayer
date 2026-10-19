@@ -120,10 +120,7 @@ fn python_float(value: f64) -> String {
         result.push_str(&digits);
     } else if point as usize >= digits.len() {
         result.push_str(&digits);
-        result.extend(std::iter::repeat_n(
-            '0',
-            (point as usize) - digits.len(),
-        ));
+        result.extend(std::iter::repeat_n('0', (point as usize) - digits.len()));
         result.push_str(".0");
     } else {
         let split = point as usize;

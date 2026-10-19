@@ -701,7 +701,6 @@ pub fn evaluate_vendor_path(input: Value, route_id: Option<&str>) -> Result<Valu
     add_result_refs(&mut r, refs(&route));
     add_result_refs(&mut r, refs(out_if[0]));
     r["selected_route"] = route.clone();
-    r["egress_interface"] = json!(s(out_if[0], "name"));
     let from = if kind == "pan" {
         s(ingress, "zone")
     } else {
@@ -884,6 +883,7 @@ pub fn evaluate_vendor_path(input: Value, route_id: Option<&str>) -> Result<Valu
     r["stages"][ix]["before"] = packet.clone();
     r["stages"][ix]["after"] = packet.clone();
     r["stages"][ix]["evidence_refs"] = json!(ordered_refs(out_if[0]));
+    r["egress_interface"] = json!(s(out_if[0], "name"));
     r["egress_flow"] = packet;
     r["egress_flow"]["scope"] = scope.clone();
     r["disposition"] = json!("modeled_forward");
@@ -972,6 +972,7 @@ pub fn evaluate_vendor_return(
         .unwrap()
         .push(policy);
     let mut result = evaluate_vendor_path(request, route_id)?;
+    add_result_refs(&mut result, refs(&forward));
     result["original_flow"] = input["flow"].clone();
     result["policy_flow"] = packet.clone();
     result["policy"] = forward["policy"].clone();

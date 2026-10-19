@@ -71,3 +71,6 @@
 - Do not update legacy hashes to accept a change until the implementation has
   moved to Rust or the change has a documented, time-limited exception.
 - Do not commit credentials, raw device configurations, or unredacted logs.
+- Keep customer configuration corpora and their reports outside the checkout
+  and hosted CI. Use `scripts/check-private-corpus.py` for local inventory and
+  Rust validation; publish only explicitly reviewed synthetic fixtures.

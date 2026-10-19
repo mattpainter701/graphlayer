@@ -98,6 +98,8 @@ func encode(operation string, input any) ([]byte, error) {
 }
 
 func Call(ctx context.Context, operation string, input, out any) error {
+	ctx, cancel := boundedContext(ctx)
+	defer cancel()
 	path, err := Path()
 	if err != nil {
 		return err
@@ -109,7 +111,7 @@ func Call(ctx context.Context, operation string, input, out any) error {
 	cmd := exec.CommandContext(ctx, path, workerArguments...)
 	cmd.WaitDelay = time.Second
 	cmd.Stdin = bytes.NewReader(data)
-	stdout := &outputBuffer{}
+	stdout := &outputBuffer{cancel: cancel}
 	cmd.Stdout = stdout
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
@@ -128,6 +130,23 @@ func Call(ctx context.Context, operation string, input, out any) error {
 }
 
 func decode(data []byte, operation string, out any) error {
+	var fields map[string]json.RawMessage
+	if err := DecodeStrict(data, &fields); err != nil || fields == nil {
+		return unavailable("worker returned malformed output")
+	}
+	for key := range fields {
+		switch key {
+		case "protocol_version", "operation", "result", "error", "error_kind":
+		default:
+			return unavailable("worker returned malformed output")
+		}
+	}
+	_, hasResult := fields["result"]
+	_, hasError := fields["error"]
+	_, hasErrorKind := fields["error_kind"]
+	if hasResult == hasError || (!hasError && hasErrorKind) {
+		return unavailable("worker returned malformed output")
+	}
 	var result response
 	if err := DecodeStrict(data, &result); err != nil {
 		return unavailable("worker returned malformed output")
@@ -135,8 +154,8 @@ func decode(data []byte, operation string, out any) error {
 	if result.ProtocolVersion != Protocol || result.Operation != operation {
 		return unavailable("worker protocol mismatch")
 	}
-	if result.Error != "" {
-		if len(result.Result) != 0 || len(result.Error) > 4096 {
+	if hasError {
+		if result.Error == "" || len(result.Error) > 4096 {
 			return unavailable("worker returned an invalid error")
 		}
 		if result.ErrorKind == "domain" {
@@ -144,7 +163,7 @@ func decode(data []byte, operation string, out any) error {
 		}
 		return unavailable("worker rejected the request")
 	}
-	if result.ErrorKind != "" || len(result.Result) == 0 || bytes.Equal(result.Result, []byte("null")) {
+	if result.ErrorKind != "" || len(result.Result) == 0 || bytes.Equal(bytes.TrimSpace(result.Result), []byte("null")) {
 		return unavailable("worker returned an incomplete result")
 	}
 	if out != nil {
@@ -158,6 +177,7 @@ func decode(data []byte, operation string, out any) error {
 type outputBuffer struct {
 	buffer   bytes.Buffer
 	overflow bool
+	cancel   context.CancelFunc
 }
 
 func (b *outputBuffer) Write(p []byte) (int, error) {
@@ -165,6 +185,9 @@ func (b *outputBuffer) Write(p []byte) (int, error) {
 	if len(p) > remaining {
 		_, _ = b.buffer.Write(p[:remaining])
 		b.overflow = true
+		if b.cancel != nil {
+			b.cancel()
+		}
 		return remaining, errors.New("output limit")
 	}
 	return b.buffer.Write(p)
@@ -208,6 +231,8 @@ func NewSession() (*Session, error) {
 }
 
 func (s *Session) Call(ctx context.Context, operation string, input, out any) error {
+	ctx, cancel := boundedContext(ctx)
+	defer cancel()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -251,6 +276,13 @@ func (s *Session) closeLocked() {
 	_ = s.cmd.Wait()
 }
 func (s *Session) Close() error { s.mu.Lock(); defer s.mu.Unlock(); s.closeLocked(); return nil }
+
+func boundedContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, 30*time.Second)
+}
 
 // DecodeStrict rejects ambiguous envelopes, duplicate fields and trailing data.
 // It deliberately accepts scalar/array results as well as objects.
