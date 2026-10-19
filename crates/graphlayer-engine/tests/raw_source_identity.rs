@@ -24,6 +24,6 @@ fn raw_upload_identity_survives_crlf_and_invalid_utf8() {
 
 #[test]
 fn oversized_auto_detection_is_rejected_before_decoding() {
-    let oversized = "A".repeat(((2 << 20) + 2) / 3 * 4 + 4);
+    let oversized = "A".repeat((2_usize << 20).div_ceil(3) * 4 + 4);
     assert_eq!(dispatch("parse_config", json!({"vendor":"auto","config_base64":oversized})).unwrap_err(), "configuration exceeds input budget");
 }

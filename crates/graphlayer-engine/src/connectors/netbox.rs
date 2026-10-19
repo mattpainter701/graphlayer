@@ -44,7 +44,7 @@ fn request_json(input: &Value, path: &str, params: &[(&str, String)]) -> Result<
     let mut req = client.get(url).header(ACCEPT, "application/json");
     let secret = token(input);
     if !secret.is_empty() { req = req.header(AUTHORIZATION, format!("Token {secret}")); }
-    let mut response = req.send().map_err(|_| "NetBox API request failed".to_string())?;
+    let response = req.send().map_err(|_| "NetBox API request failed".to_string())?;
     if !response.status().is_success() { return Err(format!("NetBox API returned HTTP {}", response.status().as_u16())); }
     if response.content_length().is_some_and(|length| length > MAX_BODY_BYTES as u64) { return Err("response_too_large".into()); }
     let mut bytes = Vec::new();
@@ -164,7 +164,7 @@ fn normalize_bundle(input: &Value, raw: &Value) -> Result<Value, String> {
     }
     let mut subnets=Vec::new();
     for r in &prefixes_raw {
-        let mut p=json!({"id":value(r,"id"),"prefix":value(r,"prefix"),"status":value(r,"status"),"role":first(&[nested(r,&["role","slug"]),nested(r,&["role","name"])]),"site":first(&[nested(r,&["site","slug"]),nested(r,&["site","name"])]),"tenant":first(&[nested(r,&["tenant","slug"]),nested(r,&["tenant","name"])]),"vlan":first(&[nested(r,&["vlan","vid"]),nested(r,&["vlan","name"])]),"description":value(r,"description"),"family":value(r,"family"),"is_pool":bool_value(r,"is_pool"),"last_updated":value(r,"last_updated"),"custom_fields":raw_value(r,"custom_fields")});
+        let p=json!({"id":value(r,"id"),"prefix":value(r,"prefix"),"status":value(r,"status"),"role":first(&[nested(r,&["role","slug"]),nested(r,&["role","name"])]),"site":first(&[nested(r,&["site","slug"]),nested(r,&["site","name"])]),"tenant":first(&[nested(r,&["tenant","slug"]),nested(r,&["tenant","name"])]),"vlan":first(&[nested(r,&["vlan","vid"]),nested(r,&["vlan","name"])]),"description":value(r,"description"),"family":value(r,"family"),"is_pool":bool_value(r,"is_pool"),"last_updated":value(r,"last_updated"),"custom_fields":raw_value(r,"custom_fields")});
         let meta=json!({"netbox_id":value(r,"id"),"endpoint":"ipam/prefixes","connector":connector_name(input,"netbox")});
         subnets.push(record("subnet","netbox",first(&[value(r,"id"),value(r,"prefix")]),p,0.88,meta));
     }

@@ -6,34 +6,6 @@ on:
     branches: [main]
 
 jobs:
-  released-v7-workspace:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          ref: 418e550f173938bad7dc7d86995d4a12945f9f23
-          path: .released
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: .released/platform/go.mod
-      - name: Build exact released worker
-        working-directory: .released
-        run: |
-          cargo build --locked --release --package graphlayer-engine
-          echo "GRAPHLAYER_ENGINE=$PWD/target/release/graphlayer-engine" >> "$GITHUB_ENV"
-      - name: Capture released workspace with every investigation kind
-        env:
-          RELEASE_WORKSPACE_OUTPUT: ${{ github.workspace }}/released-workspace-v7
-        run: |
-          cp e2e/capture-release/workspace_v7.go.txt .released/platform/investigation/rust_migration_capture_test.go
-          cd .released/platform
-          go test ./investigation -run '^TestCaptureReleasedV7Workspace$' -count=1
-      - uses: actions/upload-artifact@v4
-        with:
-          name: released-workspace-v7
-          path: released-workspace-v7/*.json
-
   rust-tooling-bootstrap:
     runs-on: ubuntu-latest
     steps:

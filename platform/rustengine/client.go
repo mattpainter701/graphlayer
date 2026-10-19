@@ -107,6 +107,7 @@ func Call(ctx context.Context, operation string, input, out any) error {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, path, workerArguments...)
+	cmd.WaitDelay = time.Second
 	cmd.Stdin = bytes.NewReader(data)
 	stdout := &outputBuffer{}
 	cmd.Stdout = stdout
@@ -186,6 +187,7 @@ func NewSession() (*Session, error) {
 	}
 	args := append(append([]string{}, workerArguments...), "--session")
 	cmd := exec.Command(path, args...)
+	cmd.WaitDelay = time.Second
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, unavailable("cannot open worker input")

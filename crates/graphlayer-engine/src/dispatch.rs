@@ -32,7 +32,7 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
     match operation {
         "parse_config" => {
             let encoded = input["config_base64"].as_str().ok_or("invalid_request")?;
-            if encoded.len() > ((2 << 20) + 2) / 3 * 4 {
+            if encoded.len() > (2_usize << 20).div_ceil(3) * 4 {
                 return Err("configuration exceeds input budget".into());
             }
             let bytes = base64::engine::general_purpose::STANDARD
@@ -82,7 +82,7 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
                 .get("config_base64")
                 .and_then(Value::as_str)
                 .ok_or("invalid_request")?;
-            if encoded.len() > ((2 << 20) + 2) / 3 * 4 {
+            if encoded.len() > (2_usize << 20).div_ceil(3) * 4 {
                 return Err(format!(
                     "{} config exceeds 2097152 bytes",
                     if operation.starts_with("parse_asa") {

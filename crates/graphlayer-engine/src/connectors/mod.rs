@@ -74,3 +74,7 @@ impl SessionDispatcher {
         else { dispatch(operation, input) }
     }
 }
+
+impl Default for SessionDispatcher {
+    fn default() -> Self { Self::new() }
+}

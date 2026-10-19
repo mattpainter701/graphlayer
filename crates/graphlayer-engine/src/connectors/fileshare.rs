@@ -52,13 +52,13 @@ async fn collect_sftp(input:&Value)->Result<Value,String>{
  let mut stack=vec![if base.is_empty(){"/".to_string()}else{base.clone()}];let mut files=Vec::<String>::new();
  while let Some(dir)=stack.pop(){let Ok(entries)=sftp.read_dir(&dir).await else{continue};for entry in entries{let name=entry.file_name();if name=="."||name==".."{continue}let path=format!("{}/{}",dir.trim_end_matches('/'),name);let Ok(meta)=sftp.metadata(&path).await else{continue};if meta.is_dir(){if recursive{stack.push(path)}}else{let matched=helpers::dispatch("fileshare.matches_patterns",&json!({"filename":name,"file_patterns":includes,"exclude_patterns":excludes}))?;if matched==Value::Bool(true){files.push(path);if files.len()>MAX_FILES{return Err("too_many_files".into())}}}}}
  let mut total=0usize;let mut downloaded=0usize;let mut failed=0usize;
- for remote_file in &files{let Ok(mut f)=sftp.open(remote_file).await else{failed+=1;continue};let mut buf=Vec::new();if f.take((MAX_BODY_BYTES+1)as u64).read_to_end(&mut buf).await.is_err(){failed+=1;continue}if buf.len()>MAX_BODY_BYTES{return Err("file_too_large".into())}total=total.saturating_add(buf.len());if total>MAX_TOTAL{return Err("download_limit_exceeded".into())}
+ for remote_file in &files{let Ok(f)=sftp.open(remote_file).await else{failed+=1;continue};let mut buf=Vec::new();if f.take((MAX_BODY_BYTES+1)as u64).read_to_end(&mut buf).await.is_err(){failed+=1;continue}if buf.len()>MAX_BODY_BYTES{return Err("file_too_large".into())}total=total.saturating_add(buf.len());if total>MAX_TOTAL{return Err("download_limit_exceeded".into())}
   let relative=remote_file.strip_prefix(&base).unwrap_or(remote_file).trim_start_matches('/');let dest=secure_child(&root,relative)?;if let Some(parent)=dest.parent(){fs::create_dir_all(parent).map_err(|_|"output_directory_error".to_string())?}if fs::write(dest,buf).is_err(){failed+=1;continue}downloaded+=1;
  }
  Ok(json!({"status":"completed","files_downloaded":downloaded,"files_failed":failed,"message":format!("Downloaded {downloaded} files via SSH")}))
 }
-fn normalize(raw:&str)->String{let s=raw.trim();if s.is_empty()||s=="/"{String::new()}else if s.ends_with('/'){s[..s.len()-1].to_string()}else if s.starts_with('/'){s.to_string()}else{format!("/{s}")}}
+fn normalize(raw:&str)->String{let s=raw.trim();if s.is_empty()||s=="/"{String::new()}else if let Some(stripped)=s.strip_suffix('/'){stripped.to_string()}else if s.starts_with('/'){s.to_string()}else{format!("/{s}")}}
 fn secure_child(root:&Path,rel:&str)->Result<PathBuf,String>{let path=Path::new(rel);if path.components().any(|c|!matches!(c,std::path::Component::Normal(_))){return Err("invalid_remote_path".into())}Ok(root.join(path))}
-fn field<'a>(v:&'a Value,a:&str,b:&str,c:&str)->String{v.get(a).and_then(|x|x.get(b)).and_then(|x|x.get(c)).map(|v| strv(Some(v))).unwrap_or_default()}
+fn field(v:&Value,a:&str,b:&str,c:&str)->String{v.get(a).and_then(|x|x.get(b)).and_then(|x|x.get(c)).map(|v| strv(Some(v))).unwrap_or_default()}
 fn strv(v:Option<&Value>)->String{match v{Some(Value::String(s))=>s.clone(),Some(Value::Number(n))=>n.to_string(),Some(Value::Bool(b))=>b.to_string(),_=>String::new()}}
 fn coalesce(a:Option<&Value>,b:Option<&Value>)->String{let value=strv(a);if value.is_empty(){strv(b)}else{value}}

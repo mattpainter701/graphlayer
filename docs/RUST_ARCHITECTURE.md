@@ -70,6 +70,13 @@ from the replacement implementation to make a port pass. Genuine released
 workspace fixtures cover versions 1 through 7; replay must leave every file
 unchanged, including after an unavailable-worker failure.
 
+PAN-OS top-level evidence, interface inventory and connected routes were
+appended during Go map iteration. Corpus pairs 867/869 and
+873/874 have identical inputs and evidence objects in different orders. The
+parity comparator sorts only these map projections, retaining duplicates and exact
+objects. Static route order, all references, source lines, rules, stages and other arrays remain
+strict. The captured fixture bytes remain unchanged.
+
 Hosted CI exercises the real Rust binary through Go, Python, the browser and
 the two-executable Windows package. Connector acquisition tests use isolated
 HTTP, SSH, SFTP and SMB services with ephemeral credentials. Host-key failures,

@@ -2,7 +2,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 pub fn sha256(data: &[u8]) -> String { format!("{:x}", Sha256::digest(data)) }
-pub fn rule(id: &str, position: usize, enabled: bool, action: &str, src: &str, dst: &str, proto: &str, port: &str, refs: &[String]) -> Value {
+pub fn rule(id: &str, position: usize, enabled: bool, action: &str, matched: (&str, &str, &str, &str), refs: &[String]) -> Value {
+    let (src, dst, proto, port) = matched;
     json!({"id":id,"position":position,"enabled":enabled,"action":action,"source":src,"destination":dst,"protocol":proto,"source_port":"","destination_port":port,"evidence_refs":refs})
 }
 pub fn warning(code: &str, message: &str, line: usize) -> Value {

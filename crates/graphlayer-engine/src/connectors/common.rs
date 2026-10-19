@@ -21,7 +21,7 @@ pub fn value(record: &Value, key: &str) -> String {
     if direct.is_object() {
         for candidate in ["display", "display_value", "displayValue", "name", "slug", "value", "address", "id", "sys_id"] {
             let item = direct.get(candidate).unwrap_or(&Value::Null);
-            if !item.is_null() && text(item) != "" { return text(item); }
+            if !item.is_null() && !text(item).is_empty() { return text(item); }
         }
         String::new()
     } else if !direct.is_null() {
@@ -43,7 +43,7 @@ pub fn nested(record: &Value, keys: &[&str]) -> String {
     if at.is_object() {
         for key in ["display", "display_value", "displayValue", "name", "slug", "value", "address", "id", "sys_id"] {
             let item = at.get(key).unwrap_or(&Value::Null);
-            if !item.is_null() && text(item) != "" { return text(item); }
+            if !item.is_null() && !text(item).is_empty() { return text(item); }
         }
         String::new()
     } else { text(at) }
@@ -54,7 +54,7 @@ pub fn service_value(record: &Value, key: &str) -> String {
     if direct.is_object() {
         for candidate in ["display_value", "displayValue", "value", "sys_id", "id"] {
             let item = direct.get(candidate).unwrap_or(&Value::Null);
-            if !item.is_null() && text(item) != "" { return text(item); }
+            if !item.is_null() && !text(item).is_empty() { return text(item); }
         }
         String::new()
     } else if !direct.is_null() {
@@ -62,7 +62,7 @@ pub fn service_value(record: &Value, key: &str) -> String {
     } else {
         for candidate in [format!("{key}.display_value"), format!("{key}_display_value")] {
             let found = record.get(candidate).unwrap_or(&Value::Null);
-            if !found.is_null() && text(found) != "" { return text(found); }
+            if !found.is_null() && !text(found).is_empty() { return text(found); }
         }
         String::new()
     }

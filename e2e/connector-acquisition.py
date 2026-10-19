@@ -125,7 +125,7 @@ def acquire(protocol: str, *, smb: bool = False) -> Path:
     connector.disconnect()
     assert result["status"] == "completed"
     assert result["files_downloaded"] >= 3
-    for filename in ("enterprise.asa.txt", "panos_sample.txt", "fortigate_sample.txt"):
+    for filename in ("enterprise.asa.txt", "asa_path_sample.txt", "panos_sample.txt", "fortigate_sample.txt"):
         assert (folder / filename).is_file(), f"{protocol} missed {filename}"
         expected = (ROOT / "platform" / "firewall" / "testdata" / filename).read_bytes()
         assert (folder / filename).read_bytes() == expected, f"{protocol} changed {filename} bytes"
@@ -190,6 +190,7 @@ ssh.close()
 # Rust parsers inspect the exact acquired bytes before the same files enter the app.
 samples = [
     ("enterprise.asa.txt", "parse_asa", "cisco-asa"),
+    ("asa_path_sample.txt", "parse_asa", "cisco-asa"),
     ("panos_sample.txt", "parse_panos", "paloalto-panos"),
     ("fortigate_sample.txt", "parse_fortigate", "fortinet-fortigate"),
 ]
@@ -207,6 +208,7 @@ for filename, operation, vendor in samples:
     assert snapshot["source_lines"]
     assert snapshot["evidence"]
     assert snapshot["path"]["version"]
-    assert snapshot["path"]["evidence_refs"]
+    if filename == "asa_path_sample.txt":
+        assert snapshot["path"]["evidence_refs"]
 
 print("SFTP, SMB and persistent SSH acquired fixture configs; Rust parsers and the live app retained source evidence.")

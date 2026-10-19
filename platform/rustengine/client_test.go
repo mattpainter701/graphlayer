@@ -84,12 +84,30 @@ func TestOneShotRejectsBrokenOrAmbiguousWorkerOutput(t *testing.T) {
 	for _, mode := range []string{"timeout", "overflow", "failed", "duplicate", "trailing", "wrong_operation"} {
 		t.Run(mode, func(t *testing.T) {
 			fakeWorker(t, mode)
-			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+			deadline := 10 * time.Second
+			if mode == "timeout" {
+				deadline = 150 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), deadline)
 			defer cancel()
 			var output map[string]any
 			err := Call(ctx, "probe", map[string]any{"credential": "never-log-this"}, &output)
 			if !errors.Is(err, ErrUnavailable) || strings.Contains(err.Error(), "canary") || strings.Contains(err.Error(), "never-log-this") {
 				t.Fatalf("worker failure escaped its boundary: %v", err)
+			}
+			expected := "malformed output"
+			switch mode {
+			case "timeout":
+				expected = "deadline exceeded"
+			case "overflow":
+				expected = "output exceeds protocol bounds"
+			case "failed":
+				expected = "process failed"
+			case "wrong_operation":
+				expected = "protocol mismatch"
+			}
+			if !strings.Contains(err.Error(), expected) {
+				t.Fatalf("wrong failure for %s: %v", mode, err)
 			}
 		})
 	}
