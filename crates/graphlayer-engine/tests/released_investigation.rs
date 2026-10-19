@@ -126,6 +126,6 @@ fn all_released_parser_and_investigation_contracts_are_preserved() {
         failures.is_empty(),
         "{} released contracts differ; first failures: {}",
         failures.len(),
-        serde_json::to_string(&failures.iter().take(25).collect::<Vec<_>>()).unwrap()
+        serde_json::to_string(&failures.iter().take(25).map(|failure| json!({"index":failure["index"],"operation":failure["operation"],"difference":failure["difference"]})).collect::<Vec<_>>()).unwrap()
     );
 }

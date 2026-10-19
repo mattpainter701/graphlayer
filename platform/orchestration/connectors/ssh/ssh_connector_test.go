@@ -41,6 +41,7 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 	}()
 	defer func() {
 		cancel()
+		_ = listener.Close()
 		wg.Wait()
 	}()
 
@@ -56,7 +57,9 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 
 	knownHosts := filepath.Join(t.TempDir(), "known_hosts")
 	knownHostLine := fmt.Sprintf("[%s]:%d %s", host, port, gossh.MarshalAuthorizedKey(hostKey))
-	if err := os.WriteFile(knownHosts, []byte(knownHostLine), 0600); err != nil { t.Fatalf("failed to write fixture known_hosts: %v", err) }
+	if err := os.WriteFile(knownHosts, []byte(knownHostLine), 0600); err != nil {
+		t.Fatalf("failed to write fixture known_hosts: %v", err)
+	}
 
 	config := &base.ConnectionConfig{
 		Host:       host,
@@ -66,7 +69,7 @@ func TestSSHConnectorConnectSetsConnectedState(t *testing.T) {
 		Timeout:    5 * time.Second,
 		RetryCount: 1,
 		RetryDelay: 100 * time.Millisecond,
-		Options: map[string]interface{}{"known_hosts_path": knownHosts},
+		Options:    map[string]interface{}{"known_hosts_path": knownHosts},
 	}
 
 	connector, err := NewSSHConnector(config, types.DeviceTypeGenericSSH)

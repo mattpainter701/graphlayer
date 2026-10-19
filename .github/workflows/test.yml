@@ -102,6 +102,7 @@ jobs:
 
   connector-go:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -110,7 +111,7 @@ jobs:
       - uses: ./.github/actions/build-rust-engine
       - name: Test Rust-backed Go connector compatibility
         working-directory: platform/orchestration
-        run: go test -race ./connectors/...
+        run: go test -race -timeout 3m ./connectors/...
 
   connector-e2e:
     runs-on: ubuntu-latest

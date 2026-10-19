@@ -31,6 +31,9 @@ jobs:
       - name: Collect strict compiler diagnostics
         if: always()
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Exercise all Rust contracts and process tests
+        if: always()
+        run: cargo test --locked --workspace
       - uses: actions/upload-artifact@v4
         if: always()
         with:

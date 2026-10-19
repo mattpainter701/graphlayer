@@ -13,7 +13,7 @@ import (
 // BaseConnector provides common functionality for all connector implementations
 type BaseConnector struct {
 	// Config is retained for compatibility with existing connector callers.
-	Config         *ConnectionConfig
+	Config        *ConnectionConfig
 	config        *ConnectionConfig
 	state         ConnectionState
 	stateMux      sync.RWMutex
