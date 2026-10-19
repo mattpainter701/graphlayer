@@ -70,9 +70,10 @@ class RustWorkerTransportTests(unittest.TestCase):
             self._call("connector.test", {})
 
     def test_bounds_output_and_does_not_expose_worker_output(self) -> None:
-        self._worker("import sys\nsys.stdin.read()\nsys.stdout.write('X' * (9 * 1024 * 1024))\n")
-        with self.assertRaisesRegex(RustWorkerError, "invalid response") as caught:
-            self._call("connector.test", {}, timeout=10)
+        self._worker(f"import sys\nsys.stdin.read()\nsys.stdout.write('X' * {rust_worker.MAX_RESPONSE_BYTES + 1})\n")
+        with patch.object(rust_worker.json, "loads", side_effect=AssertionError("oversized output reached the JSON decoder")):
+            with self.assertRaisesRegex(RustWorkerError, "invalid response") as caught:
+                self._call("connector.test", {}, timeout=10)
         self.assertNotIn("X", str(caught.exception))
 
     def test_sanitizes_engine_errors_and_stderr(self) -> None:

@@ -4,11 +4,7 @@ use super::{
 };
 use reqwest::blocking::Client;
 use serde_json::{json, Value};
-use std::{
-    io::Read,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{io::Read, path::PathBuf, time::Duration};
 
 const DEVICES: &str = "SELECT N.NodeID, N.Caption, N.DNS, N.IPAddress, N.Vendor, N.MachineType, CN.NodeID AS CirrusNodeID FROM Orion.Nodes N INNER JOIN Cirrus.Nodes CN ON N.NodeID = CN.CoreNodeID WHERE N.ObjectSubType = 'SNMP'";
 

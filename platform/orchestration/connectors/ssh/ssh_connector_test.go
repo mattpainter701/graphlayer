@@ -130,12 +130,14 @@ func assertSSHConnectorConnectsWithHostKey(t *testing.T, hostKeyAlgorithm string
 		t.Fatalf("unexpected connection state: %s", state)
 	}
 
-	result, err := connector.ExecuteCommand(ctx, "show version", 2*time.Second)
-	if err != nil {
-		t.Fatalf("ExecuteCommand returned error: %v", err)
-	}
-	if result == nil || !strings.Contains(result.Output, "fixture output") {
-		t.Fatalf("expected parsed SSH fixture output, got %#v", result)
+	for _, command := range []string{"show version", "show interfaces"} {
+		result, err := connector.ExecuteCommand(ctx, command, 2*time.Second)
+		if err != nil {
+			t.Fatalf("ExecuteCommand(%q) returned error: %v", command, err)
+		}
+		if result == nil || !strings.Contains(result.Output, "fixture output") {
+			t.Fatalf("expected parsed SSH fixture output for %q, got %#v", command, result)
+		}
 	}
 }
 
@@ -214,31 +216,29 @@ func acceptTestSSHConnections(listener net.Listener, config *gossh.ServerConfig,
 				}
 			}()
 
-			go func() {
-				for ch := range chans {
-					if ch.ChannelType() != "session" {
-						ch.Reject(gossh.UnknownChannelType, "channel not supported")
-						continue
-					}
-					channel, requests, err := ch.Accept()
-					if err != nil {
-						continue
-					}
-					go func() {
-						defer channel.Close()
-						for request := range requests {
-							if request.Type != "exec" {
-								request.Reply(false, nil)
-								continue
-							}
-							request.Reply(true, nil)
-							_, _ = channel.Write([]byte("fixture output\n"))
-							_, _ = channel.SendRequest("exit-status", false, []byte{0, 0, 0, 0})
-							return
-						}
-					}()
+			for ch := range chans {
+				if ch.ChannelType() != "session" {
+					ch.Reject(gossh.UnknownChannelType, "channel not supported")
+					continue
 				}
-			}()
+				channel, requests, err := ch.Accept()
+				if err != nil {
+					continue
+				}
+				go func() {
+					defer channel.Close()
+					for request := range requests {
+						if request.Type != "exec" {
+							request.Reply(false, nil)
+							continue
+						}
+						request.Reply(true, nil)
+						_, _ = channel.Write([]byte("fixture output\n"))
+						_, _ = channel.SendRequest("exit-status", false, []byte{0, 0, 0, 0})
+						return
+					}
+				}()
+			}
 		}(conn)
 	}
 }

@@ -9,7 +9,7 @@ mod strict_json;
 
 const PROTOCOL: &str = "graphlayer-engine-v1";
 const MAX_INPUT: usize = 160 * 1024 * 1024;
-const MAX_OUTPUT: usize = 8 * 1024 * 1024;
+const MAX_OUTPUT: usize = 24 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -204,6 +204,8 @@ fn known_operation(operation: &str) -> Option<&'static str> {
         "connector.stale",
         "connector.delta",
         "connector.fingerprint",
+        "connector.write_config",
+        "connector.prepare_output_directory",
         "connector.build_record",
         "connector.deduplicate",
         "connector.correlation_report",

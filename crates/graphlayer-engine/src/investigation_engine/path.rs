@@ -1197,11 +1197,10 @@ pub fn explore_return(input: Value) -> Result<Value, String> {
     } else {
         s(&base["policy_flow"], "destination")
     };
-    let choices = if is_asa(s(&input["config"], "vendor"))
-        && !a(&base, "stages")
-            .iter()
-            .any(|x| s(x, "name") == "destination_nat" && s(x, "status") == "matched")
-    {
+    let destination_nat_applied = a(&base, "stages")
+        .iter()
+        .any(|x| s(x, "name") == "destination_nat" && s(x, "status") == "matched");
+    let choices = if !is_asa(s(&input["config"], "vendor")) || !destination_nat_applied {
         best_routes(&input["config"]["path"], target)
     } else {
         vec![]

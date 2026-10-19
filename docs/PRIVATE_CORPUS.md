@@ -23,11 +23,16 @@ The inventory includes regular files and directories without following
 symlinks. Candidate files have `.txt`, `.conf`, `.cfg`, `.xml`, or `.cli`
 extensions, or no extension. Archives, other extensions, binary content, and
 files larger than 2 MiB are counted as skips. The worker is called using its
-JSON stdin protocol with a 30 second timeout and an 8 MiB response limit. For
+JSON stdin protocol with a 30 second timeout and a 24 MiB response limit. For
 each parsed result, the checker verifies the exact input-byte SHA-256, source
 line and evidence ranges, and evidence references. It then asks Rust to run
 `validate_inventory` and `validate_path_config` when parser metadata is
 available.
+
+Candidate selection does not imply syntax support. The shipped parsers support
+ASA running configurations, PAN-OS set-format and FortiOS CLI configurations.
+Other formats are reported as parsing failures; archives are not extracted.
+Inventory-only mode records no parsing or vendor-coverage result.
 
 To inspect file and extension counts without reading configuration contents or
 requiring the Rust engine, use:

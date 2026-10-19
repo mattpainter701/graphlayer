@@ -1,7 +1,13 @@
 use super::common::{canonical_fingerprint, record, text};
+use super::fileshare::{prepare_private_output_directory, secure_write};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Component, Path},
+};
+
+const MAX_CONFIG_FILE_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
     match operation {
@@ -44,6 +50,8 @@ pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
         }
         "connector.validate_required_fields" => validate_fields(input),
         "connector.normalize_path" => Ok(json!(normalize_path(&text(&input["path"])))),
+        "connector.prepare_output_directory" => prepare_output_directory(input),
+        "connector.write_config" => write_config(input),
         "fileshare.normalize_path" => Ok(json!(normalize_path(&text(&input["path"])))),
         "fileshare.create_local_filename" => Ok(json!(local_filename(
             &text(&input["remote_path"]),
@@ -54,6 +62,46 @@ pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
         "connector.normalize_type" => Ok(json!(normalize_type(&text(&input["connector_type"])))),
         _ => Err("unsupported_operation".into()),
     }
+}
+
+fn prepare_output_directory(input: &Value) -> Result<Value, String> {
+    let path = text(&input["path"]);
+    if path.len() > 4096 {
+        return Err("invalid_output_directory".into());
+    }
+    let canonical = prepare_private_output_directory(Path::new(&path))?;
+    Ok(json!({"path":canonical.to_string_lossy()}))
+}
+
+fn write_config(input: &Value) -> Result<Value, String> {
+    let root = text(&input["working_folder"]);
+    let file_name = text(&input["file_name"]);
+    let content = input
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "invalid_config_content".to_string())?;
+    let path = Path::new(&file_name);
+    if root.is_empty()
+        || root.len() > 4096
+        || file_name.is_empty()
+        || file_name.len() > 255
+        || path.components().count() != 1
+        || !matches!(path.components().next(), Some(Component::Normal(_)))
+        || file_name.ends_with(' ')
+        || file_name.ends_with('.')
+        || file_name
+            .chars()
+            .any(|ch| ch.is_control() || "<>:\"/\\|?*".contains(ch))
+    {
+        return Err("invalid_output_path".into());
+    }
+    let bytes = content.as_bytes();
+    if bytes.len() > MAX_CONFIG_FILE_BYTES {
+        return Err("config_file_too_large".into());
+    }
+    let canonical_root = prepare_private_output_directory(Path::new(&root))?;
+    secure_write(&canonical_root, &file_name, bytes).map_err(|_| "config_file_write_failed".to_string())?;
+    Ok(json!({"path":canonical_root.join(file_name).to_string_lossy()}))
 }
 
 fn normalize_type(v: &str) -> String {
@@ -390,4 +438,121 @@ fn sanitize_filename(name: &str) -> String {
         .filter(|c| !"<>:\"/\\|?*".contains(*c))
         .take(200)
         .collect()
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    use std::fs;
+
+    fn temp_dir(label: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "graphlayer-config-output-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn output_operations_create_private_directory_and_write_content() {
+        let parent = temp_dir("private");
+        let requested = parent.join("new/nested");
+        let prepared = dispatch(
+            "connector.prepare_output_directory",
+            &json!({"path":requested.to_string_lossy()}),
+        )
+        .unwrap();
+        let root = Path::new(prepared["path"].as_str().unwrap());
+        let result = dispatch(
+            "connector.write_config",
+            &json!({"working_folder":root.to_string_lossy(),"file_name":"router_running.txt","content":"sensitive config"}),
+        )
+        .unwrap();
+        assert_eq!(fs::read(result["path"].as_str().unwrap()).unwrap(), b"sensitive config");
+        let replaced = dispatch(
+            "connector.write_config",
+            &json!({"working_folder":root.to_string_lossy(),"file_name":"router_running.txt","content":"updated config"}),
+        )
+        .unwrap();
+        assert_eq!(fs::read(replaced["path"].as_str().unwrap()).unwrap(), b"updated config");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(root).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(fs::metadata(result["path"].as_str().unwrap()).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        let _ = fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn config_writer_rejects_traversal_and_oversized_content() {
+        let root = temp_dir("validation");
+        let traversal = dispatch(
+            "connector.write_config",
+            &json!({"working_folder":root.to_string_lossy(),"file_name":"../escape.txt","content":"x"}),
+        );
+        assert_eq!(traversal.unwrap_err(), "invalid_output_path");
+        let too_large = "x".repeat(MAX_CONFIG_FILE_BYTES + 1);
+        let oversized = dispatch(
+            "connector.write_config",
+            &json!({"working_folder":root.to_string_lossy(),"file_name":"large.txt","content":too_large}),
+        );
+        assert_eq!(oversized.unwrap_err(), "config_file_too_large");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_output_root_may_use_parent_components() {
+        let parent = temp_dir("parent-root");
+        let selected_name = format!("{}-selected", parent.file_name().unwrap().to_string_lossy());
+        let selected = parent.join("..").join(selected_name);
+        let result = dispatch(
+            "connector.prepare_output_directory",
+            &json!({"path":selected.to_string_lossy()}),
+        )
+        .unwrap();
+        let canonical = Path::new(result["path"].as_str().unwrap());
+        assert!(canonical.is_dir());
+        let _ = fs::remove_dir_all(canonical);
+        let _ = fs::remove_dir_all(parent);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_writer_rejects_symlink_target_without_clobbering_it() {
+        use std::os::unix::fs::symlink;
+        let root = temp_dir("symlink");
+        let outside = root.join("outside.txt");
+        let link = root.join("config.txt");
+        fs::write(&outside, b"original").unwrap();
+        symlink(&outside, &link).unwrap();
+        let result = dispatch(
+            "connector.write_config",
+            &json!({"working_folder":root.to_string_lossy(),"file_name":"config.txt","content":"replacement"}),
+        );
+        assert_eq!(result.unwrap_err(), "config_file_write_failed");
+        assert_eq!(fs::read(outside).unwrap(), b"original");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_directory_rejects_symlink_components() {
+        use std::os::unix::fs::symlink;
+        let root = temp_dir("directory-link");
+        let outside = temp_dir("directory-outside");
+        symlink(&outside, root.join("link")).unwrap();
+        let result = dispatch(
+            "connector.prepare_output_directory",
+            &json!({"path":root.join("link/child").to_string_lossy()}),
+        );
+        assert_eq!(result.unwrap_err(), "invalid_output_directory");
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(outside);
+    }
 }

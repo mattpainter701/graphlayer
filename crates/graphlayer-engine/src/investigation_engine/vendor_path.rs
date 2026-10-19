@@ -1011,8 +1011,9 @@ pub fn evaluate_vendor_return(
         result["stages"][ix]["before"] = input["flow"].clone();
         result["stages"][ix]["after"] = packet.clone();
         result["stages"][ix]["candidate_ids"] = json!([s(&t, "id")]);
-        if t["evidence_refs"].is_array() {
-            result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
+        let translation_refs = refs(&t);
+        if !translation_refs.is_empty() {
+            result["stages"][ix]["evidence_refs"] = json!(translation_refs);
         } else if let Some(object) = result["stages"][ix].as_object_mut() {
             object.remove("evidence_refs");
         }
@@ -1034,8 +1035,9 @@ pub fn evaluate_vendor_return(
             result["stages"][ix]["before"] = before;
             result["stages"][ix]["after"] = after.clone();
             result["stages"][ix]["candidate_ids"] = json!([s(&t, "id")]);
-            if t["evidence_refs"].is_array() {
-                result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
+            let translation_refs = refs(&t);
+            if !translation_refs.is_empty() {
+                result["stages"][ix]["evidence_refs"] = json!(translation_refs);
             } else if let Some(object) = result["stages"][ix].as_object_mut() {
                 object.remove("evidence_refs");
             }

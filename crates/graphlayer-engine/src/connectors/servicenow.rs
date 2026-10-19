@@ -5,7 +5,10 @@ use reqwest::header::ACCEPT;
 use serde_json::{json, Value};
 use std::io::Read;
 use std::time::Duration;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 fn config(i: &Value) -> &Value {
     i.get("connector_data").unwrap_or(&Value::Null)
@@ -570,8 +573,18 @@ mod state_file_tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(fs::metadata(dir.join("private")).unwrap().permissions().mode() & 0o777, 0o700);
-            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(
+                fs::metadata(dir.join("private"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
         }
         let _ = fs::remove_dir_all(dir);
     }

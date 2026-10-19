@@ -20,7 +20,7 @@ import (
 
 const Protocol = "graphlayer-engine-v1"
 const MaxInput = 160 << 20
-const MaxOutput = 8 << 20
+const MaxOutput = 24 << 20
 
 var ErrUnavailable = errors.New("required Rust analysis engine is unavailable")
 

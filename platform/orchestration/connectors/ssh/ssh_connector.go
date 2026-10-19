@@ -310,7 +310,8 @@ func (sc *SSHConnector) WriteConfigToFile(ctx context.Context, configType, fileP
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filePath, []byte(c.ConfigData), 0600)
+	_, err = writeConfigFile(ctx, filepath.Dir(filePath), filepath.Base(filePath), c.ConfigData)
+	return err
 }
 func (sc *SSHConnector) GetConfigFilePath(configType string) string {
 	folder := sc.GetWorkingFolder()
@@ -340,25 +341,40 @@ func (sc *SSHConnector) CollectDeviceConfigs(ctx context.Context, deviceIDs []st
 	if err != nil {
 		return map[string][]string{}, fmt.Errorf("failed to get running config: %w", err)
 	}
-	folder := workingFolder
-	if folder == "" {
-		folder = sc.GetWorkingFolder()
-	}
+	folder := sc.GetWorkingFolder()
 	if folder == "" {
 		return nil, fmt.Errorf("working folder is required")
 	}
-	runPath := filepath.Join(folder, device.Hostname+"_running_config.txt")
-	if err := os.WriteFile(runPath, []byte(running.ConfigData), 0600); err != nil {
+	runPath, err := writeConfigFile(ctx, folder, device.Hostname+"_running_config.txt", running.ConfigData)
+	if err != nil {
 		return nil, err
 	}
 	out := map[string][]string{device.ID: {runPath}}
 	if startup, e := sc.GetStartupConfig(ctx, 60*time.Second); e == nil {
-		path := filepath.Join(folder, device.Hostname+"_startup_config.txt")
-		if os.WriteFile(path, []byte(startup.ConfigData), 0600) == nil {
+		path, writeErr := writeConfigFile(ctx, folder, device.Hostname+"_startup_config.txt", startup.ConfigData)
+		if writeErr == nil {
 			out[device.ID] = append(out[device.ID], path)
 		}
 	}
 	return out, nil
+}
+
+func writeConfigFile(ctx context.Context, folder, fileName, content string) (string, error) {
+	var result struct {
+		Path string `json:"path"`
+	}
+	err := rustengine.Call(ctx, "connector.write_config", map[string]any{
+		"working_folder": folder,
+		"file_name":      fileName,
+		"content":        content,
+	}, &result)
+	if err != nil {
+		return "", err
+	}
+	if result.Path == "" {
+		return "", rustengine.ErrUnavailable
+	}
+	return result.Path, nil
 }
 
 func (sc *SSHConnector) generateDeviceID() string {

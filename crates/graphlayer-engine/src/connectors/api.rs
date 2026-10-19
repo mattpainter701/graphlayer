@@ -1,4 +1,5 @@
 use super::common::{normalize_base_url, MAX_BODY_BYTES};
+use base64::Engine as _;
 use reqwest::{
     blocking::{Client, Response},
     header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE},
@@ -124,11 +125,11 @@ fn authenticate(cfg: &mut Value, kind: &str) -> Result<(), String> {
             if result["status"].as_u64() != Some(204) {
                 return Err("api_authentication_failed".into());
             }
-            let token = result["headers"]["x-auth-access-token"].clone();
-            if token.is_null() {
+            let token = first_header_value(&result["headers"], "x-auth-access-token");
+            let Some(token) = token else {
                 return Err("api_authentication_failed".into());
-            }
-            cfg["auth_token"] = token;
+            };
+            cfg["auth_token"] = json!(token);
             Ok(())
         }
         "palo_alto_panorama" => {
@@ -150,6 +151,14 @@ fn authenticate(cfg: &mut Value, kind: &str) -> Result<(), String> {
         }
         _ => Ok(()),
     }
+}
+
+fn first_header_value<'a>(headers: &'a Value, name: &str) -> Option<&'a str> {
+    headers
+        .get(name)?
+        .as_array()?
+        .iter()
+        .find_map(Value::as_str)
 }
 
 pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
@@ -313,6 +322,10 @@ fn request(input: &Value) -> Result<Value, String> {
         request = request.header(CONTENT_TYPE, "application/json").json(body)
     }
     let retries = config["retry_count"].as_u64().unwrap_or(3).clamp(1, 8);
+    let raw_response = input
+        .get("raw_response")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let delay = config["retry_delay_ms"]
         .as_u64()
         .unwrap_or(250)
@@ -325,7 +338,9 @@ fn request(input: &Value) -> Result<Value, String> {
             .ok_or_else(|| "request_not_replayable".to_string())?
             .send();
         match result {
-            Ok(response) if response.status().as_u16() < 500 => return response_value(response),
+            Ok(response) if response.status().as_u16() < 500 => {
+                return response_value(response, raw_response)
+            }
             Ok(response) => {
                 last_error = format!("http_status_{}", response.status().as_u16());
                 if attempt + 1 < retries {
@@ -342,12 +357,17 @@ fn request(input: &Value) -> Result<Value, String> {
     }
     Err(last_error)
 }
-fn response_value(response: Response) -> Result<Value, String> {
+fn response_value(response: Response, raw_response: bool) -> Result<Value, String> {
     let status = response.status().as_u16();
     let mut headers = serde_json::Map::new();
     for (k, v) in response.headers() {
         if let Ok(s) = v.to_str() {
-            headers.insert(k.to_string(), json!(s));
+            let values = headers
+                .entry(k.to_string())
+                .or_insert_with(|| json!([]));
+            if let Some(values) = values.as_array_mut() {
+                values.push(json!(s));
+            }
         }
     }
     if response
@@ -363,6 +383,9 @@ fn response_value(response: Response) -> Result<Value, String> {
         .map_err(|_| "response_read_failed".to_string())?;
     if bytes.len() > MAX_BODY_BYTES {
         return Err("response_too_large".into());
+    }
+    if raw_response {
+        return Ok(json!({"status":status,"headers":headers,"body_base64":base64::engine::general_purpose::STANDARD.encode(bytes)}));
     }
     let body = serde_json::from_slice::<Value>(&bytes)
         .unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes).to_string()));
@@ -461,6 +484,7 @@ fn capabilities(kind: &str) -> Value {
     }
     json!(c)
 }
+
 fn vendor_operation(i: &Value) -> Result<Value, String> {
     let c = i.get("config").unwrap_or(i);
     let kind = text(&i["device_type"]).to_lowercase();
@@ -657,5 +681,20 @@ fn text(v: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_header_value;
+    use serde_json::json;
+
+    #[test]
+    fn auth_token_uses_the_first_preserved_header_value() {
+        let headers = json!({"x-auth-access-token":["first-token","second-token"]});
+        assert_eq!(
+            first_header_value(&headers, "x-auth-access-token"),
+            Some("first-token")
+        );
     }
 }

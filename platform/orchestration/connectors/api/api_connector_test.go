@@ -92,7 +92,10 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 			return
 		}
 
+		w.Header().Add("Set-Cookie", "first=1")
+		w.Header().Add("Set-Cookie", "second=2")
 		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, " { \"ok\" : true } \n")
 	})
 
 	config, cleanup := newTLSConfigForHandler(t, handler, 2)
@@ -119,6 +122,13 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status code: %d", resp.StatusCode)
 	}
+	if cookies := resp.Header.Values("Set-Cookie"); len(cookies) != 2 || cookies[0] != "first=1" || cookies[1] != "second=2" {
+		t.Fatalf("duplicate response headers were not preserved: %v", cookies)
+	}
+	responseBytes, err := io.ReadAll(resp.Body)
+	if err != nil || !bytes.Equal(responseBytes, []byte(" { \"ok\" : true } \n")) {
+		t.Fatalf("response body bytes changed: %q, err %v", responseBytes, err)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -131,6 +141,19 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 		if body != "payload-data" {
 			t.Fatalf("attempt %d body mismatch: %q", i+1, body)
 		}
+	}
+}
+
+func TestWriteConfigFileHonorsCanceledContext(t *testing.T) {
+	folder := t.TempDir()
+	path := filepath.Join(folder, "cancelled.txt")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := writeConfigFile(ctx, folder, filepath.Base(path), "sensitive config"); err == nil {
+		t.Fatal("expected cancelled config write to fail")
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("cancelled config write created target: %v", err)
 	}
 }
 

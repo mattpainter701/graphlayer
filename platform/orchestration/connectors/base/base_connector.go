@@ -5,9 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"sync"
 	"time"
+
+	"github.com/mattpainter701/graphlayer/platform/rustengine"
 )
 
 // BaseConnector provides common functionality for all connector implementations
@@ -262,8 +263,17 @@ func (bc *BaseConnector) GetConfigFilePath(configType string) string {
 
 // SetWorkingFolder sets the working folder for file operations
 func (bc *BaseConnector) SetWorkingFolder(folder string) error {
+	var result struct {
+		Path string `json:"path"`
+	}
+	if err := rustengine.Evaluate("connector.prepare_output_directory", map[string]any{"path": folder}, &result); err != nil {
+		return err
+	}
+	if result.Path == "" {
+		return fmt.Errorf("working folder setup failed")
+	}
 	bc.workingFolder = folder
-	return os.MkdirAll(folder, 0755)
+	return nil
 }
 
 // GetWorkingFolder returns the current working folder

@@ -218,12 +218,12 @@
     "platform/investigation/path_validation.go": "98948981945f84cedbb865071dbfed0562d4a61a74d32dea0bdfaf73d4c51184",
     "platform/networkpath/exploration_types.go": "b5f1c0b96459acd0d46e45f2326cb268bfde5e3cec3b6059545004e10fbdf90d",
     "platform/networkpath/types.go": "ffa618d27bceec13da86449b4ea2382ada47b50c358f4f35a9a58147c5550cb5",
-    "platform/orchestration/connectors/api/api_connector.go": "41af0aa086f26be66a6c6f63a1fc693f0a246dc8e55d3027b3b947171d5f893e",
+    "platform/orchestration/connectors/api/api_connector.go": "059e9503f6a7f09dc140c4ff350cd3eb1feb4912a5f07c45354a628d5f2be2bb",
     "platform/orchestration/connectors/api/panos_appid_collector.go": "e30ba497eeca13b2aa7d76c4a177ba286e77f600d217d918409fede721f613ff",
-    "platform/orchestration/connectors/base/base_connector.go": "28c5d2772b8c8d16925945c8dc325163e717b03fc2425b84bd21bc6ab48e8af1",
+    "platform/orchestration/connectors/base/base_connector.go": "bc8a2d4bc20a5841b2b27f39e4fb2fa28dfd75ffae9f57b211a77a5368a16d42",
     "platform/orchestration/connectors/base/connector.go": "8da63a1909d1ff25a4d3f854f4bcb0e0660269a84361e3c1bdbe3bfbff270a4d",
     "platform/orchestration/connectors/ssh/fortigate_isdb_collector.go": "5dabffbce0f710fcc53261b72b1c21998e1cd053b0a98a6465c4ef814b549293",
-    "platform/orchestration/connectors/ssh/ssh_connector.go": "2d249ff361d953f4f828f25ef31a4b931d091d59bdf3123b2d5b0de0a3179380",
+    "platform/orchestration/connectors/ssh/ssh_connector.go": "3c082e641642ef866a76e147b57c60a34cd87054820a091d86cab21d1ba4c5d7",
     "platform/orchestration/decision/l2_decision_engine.go": "8f3c93a2709e378589b6369a1828a47a1182ba1c51b20e77a84ae528d28ecf40",
     "platform/orchestration/decision/l3_decision_engine.go": "9f890cf91aed8b93bd9a9c3f3263e5ca014568a486b4ebfad8c0e102e3a0f104",
     "platform/orchestration/decision/l4_firewall_decision_engine.go": "3ace963eba7144efd624794699c083369d1bd243dbbbaa81e98fe176df1af14d",
@@ -319,7 +319,7 @@
       "category": "transport_adapter",
       "owner": "GraphLayer Rust migration maintainers (PR #21)",
       "reason": "Bounded process/session transport and strict JSON framing only; native Rust owns every domain operation.",
-      "sha256": "83802531243af726ac793bf56aa95a74894a8012578ed52d53023be5af90a3f9",
+      "sha256": "618bc080bad1e154b5bbe9c4283f5ef1a90026d510157df92d002fb8200f8f74",
       "expires": "2027-01-15"
     },
     {
@@ -327,7 +327,7 @@
       "category": "transport_adapter",
       "owner": "GraphLayer Rust migration maintainers (PR #21)",
       "reason": "Bounded Python process transport only; connector acquisition, normalization and decisions execute in Rust.",
-      "sha256": "3ddd0cb59a6c5361aec62a6791487ef5bb3afe1f8395261f17448a9cf256c899",
+      "sha256": "a4fbcacfbb996fa582eaa26b998842c5c10464f38b225d9bc1d3a409632797ad",
       "expires": "2027-01-15"
     },
     {

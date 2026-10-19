@@ -95,7 +95,9 @@ lines, objects, rule expansion, interfaces and forwarding entries. The earlier
 `parse_asa_path` operation retains its 12 MiB envelope limit, 50,000 contiguous
 source lines and 8,192-byte line limit. Recursive network exploration retains
 its 16-hop, 32-branch and 128-evaluation limits and reports truncation explicitly.
-Each response is limited to 8 MiB. Duplicate nested keys, unknown envelope
+Each response is limited to 24 MiB, including base64 transport for HTTP bodies
+bounded at 16 MiB. The earlier ASA forwarding adapter retains its 8 MiB response
+cap, and saved workspace artifacts retain their existing quotas. Duplicate nested keys, unknown envelope
 fields and malformed/trailing JSON are rejected. Panic details and process
 stderr are not exposed to the operator.
 

@@ -3,12 +3,12 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -299,8 +299,8 @@ func (ac *APIConnector) CollectDeviceConfigs(ctx context.Context, deviceIDs []st
 		if err != nil {
 			return out, fmt.Errorf("failed to get config for %s: %w", id, err)
 		}
-		path := ac.GetConfigFilePath(filepath.Base(id) + "_running_config.txt")
-		if err := os.WriteFile(path, []byte(c.ConfigData), 0600); err != nil {
+		path, err := writeConfigFile(ctx, ac.GetWorkingFolder(), filepath.Base(id)+"_running_config.txt", c.ConfigData)
+		if err != nil {
 			return out, err
 		}
 		out[id] = []string{path}
@@ -308,7 +308,25 @@ func (ac *APIConnector) CollectDeviceConfigs(ctx context.Context, deviceIDs []st
 	return out, nil
 }
 func (ac *APIConnector) WriteConfigToFile(ctx context.Context, configData, filePath string) error {
-	return os.WriteFile(filePath, []byte(configData), 0600)
+	_, err := writeConfigFile(ctx, filepath.Dir(filePath), filepath.Base(filePath), configData)
+	return err
+}
+func writeConfigFile(ctx context.Context, folder, fileName, content string) (string, error) {
+	var result struct {
+		Path string `json:"path"`
+	}
+	err := rustengine.Call(ctx, "connector.write_config", map[string]any{
+		"working_folder": folder,
+		"file_name":      fileName,
+		"content":        content,
+	}, &result)
+	if err != nil {
+		return "", err
+	}
+	if result.Path == "" {
+		return "", rustengine.ErrUnavailable
+	}
+	return result.Path, nil
 }
 func (ac *APIConnector) GetConfigFilePath(fileName string) string {
 	folder := ac.GetWorkingFolder()
@@ -352,30 +370,27 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 		payload = string(b)
 	}
 	var result struct {
-		Status  int                 `json:"status"`
-		Headers map[string][]string `json:"headers"`
-		Body    json.RawMessage     `json:"body"`
+		Status     int                 `json:"status"`
+		Headers    map[string][]string `json:"headers"`
+		BodyBase64 *string             `json:"body_base64"`
 	}
 	ac.requestMutex.Lock()
 	ac.requestCount++
 	ac.requestMutex.Unlock()
-	if err := ac.call(ctx, "api.request", map[string]any{"method": method, "path": parsed.EscapedPath(), "query": query, "body": payload}, &result); err != nil {
+	if err := ac.call(ctx, "api.request", map[string]any{"method": method, "path": parsed.EscapedPath(), "query": query, "body": payload, "raw_response": true}, &result); err != nil {
 		return nil, err
 	}
-	responseBody := []byte(result.Body)
-	if len(responseBody) == 0 {
-		responseBody = []byte("null")
+	if result.Status < 100 || result.Status > 599 || result.BodyBase64 == nil {
+		return nil, rustengine.ErrUnavailable
 	}
-	if responseBody[0] == '"' {
-		var s string
-		if json.Unmarshal(responseBody, &s) == nil {
-			responseBody = []byte(s)
-		}
+	responseBody, err := base64.StdEncoding.DecodeString(*result.BodyBase64)
+	if err != nil || int64(len(responseBody)) > maxAPIRequestBodyBytes {
+		return nil, rustengine.ErrUnavailable
 	}
 	header := make(http.Header)
 	for k, values := range result.Headers {
-		for _, v := range values {
-			header.Add(k, v)
+		for _, value := range values {
+			header.Add(k, value)
 		}
 	}
 	return &http.Response{StatusCode: result.Status, Header: header, Body: io.NopCloser(bytes.NewReader(responseBody))}, nil

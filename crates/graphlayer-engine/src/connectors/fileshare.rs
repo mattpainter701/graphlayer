@@ -589,6 +589,39 @@ pub(crate) fn create_private_dir_all(path: &Path) -> std::io::Result<()> {
     }
     builder.recursive(true).create(path)
 }
+pub(crate) fn prepare_private_output_directory(path: &Path) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty() {
+        return Err("invalid_output_directory".into());
+    }
+    let mut current = if path.is_absolute() {
+        PathBuf::new()
+    } else {
+        PathBuf::from(".")
+    };
+    for component in path.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            std::path::Component::RootDir => current.push(component.as_os_str()),
+            std::path::Component::CurDir => continue,
+            std::path::Component::ParentDir => current.push(".."),
+            std::path::Component::Normal(name) => current.push(name),
+        }
+        if matches!(component, std::path::Component::Prefix(_)) {
+            continue;
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+                return Err("invalid_output_directory".into())
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                create_private_dir(&current).map_err(|_| "output_directory_error".to_string())?;
+            }
+            Err(_) => return Err("output_directory_error".into()),
+        }
+    }
+    fs::canonicalize(&current).map_err(|_| "output_directory_error".to_string())
+}
 fn field(v: &Value, a: &str, b: &str, c: &str) -> String {
     v.get(a)
         .and_then(|x| x.get(b))
