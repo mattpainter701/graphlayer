@@ -119,12 +119,7 @@ fn refs(v: &Value) -> Vec<String> {
     out
 }
 fn ordered_refs(v: &Value) -> Vec<String> {
-    arr(v, "evidence_refs")
-        .iter()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .filter(|x| !x.is_empty())
-        .collect()
+    refs(v)
 }
 fn append_unique(to: &mut Vec<String>, from: Vec<String>) {
     for x in from {
@@ -688,13 +683,15 @@ pub fn evaluate_vendor_path(input: Value, route_id: Option<&str>) -> Result<Valu
     r["stages"][ix]["status"] = json!("matched");
     r["stages"][ix]["detail"] =
         json!("selected longest-prefix route for the post-translation destination");
-    r["stages"][ix]["candidate_ids"] = json!([s(&route, "id")]);
+    let mut route_candidates = Vec::new();
     if let Some(pre) = pre_route.as_ref() {
-        r["stages"][ix]["candidate_ids"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!(s(pre, "id")))
+        route_candidates.push(s(pre, "id").to_owned());
     }
+    let selected_id = s(&route, "id").to_owned();
+    if !route_candidates.contains(&selected_id) {
+        route_candidates.push(selected_id);
+    }
+    r["stages"][ix]["candidate_ids"] = json!(route_candidates);
     let mut route_refs = refs(&route);
     append_unique(&mut route_refs, refs(out_if[0]));
     if let Some(pre) = pre_route.as_ref() {
@@ -724,14 +721,10 @@ pub fn evaluate_vendor_path(input: Value, route_id: Option<&str>) -> Result<Valu
             "same-interface hairpin forwarding is outside the vendor path model",
         ));
     }
-    let policy_flow = if kind == "forti" {
-        packet.clone()
-    } else {
-        flow.clone()
-    };
+    let policy_flow = packet.clone();
     let policy = policy_eval(&policies, scope, from, to, &policy_flow, kind)?;
     if let Some(pr) = policy {
-        r["policy_flow"] = pr["flow"].clone();
+        r["policy_flow"] = packet.clone();
         r["policy"] = pr.clone();
         let ix = r["stages"]
             .as_array()
@@ -976,7 +969,11 @@ pub fn evaluate_vendor_return(
     result["original_flow"] = input["flow"].clone();
     result["policy_flow"] = packet.clone();
     result["policy"] = forward["policy"].clone();
-    result["nat_rule_ids"] = forward["nat_rule_ids"].clone();
+    if forward["nat_rule_ids"].is_array() {
+        result["nat_rule_ids"] = forward["nat_rule_ids"].clone();
+    } else if let Some(object) = result.as_object_mut() {
+        object.remove("nat_rule_ids");
+    }
     let ix_policy = result["stages"]
         .as_array()
         .unwrap()
@@ -985,7 +982,11 @@ pub fn evaluate_vendor_return(
         .unwrap();
     result["stages"][ix_policy]["detail"] =
         json!("reverse packet uses established state from the modeled forward permit");
-    result["stages"][ix_policy]["evidence_refs"] = forward["policy"]["evidence_refs"].clone();
+    if forward["policy"]["evidence_refs"].is_array() {
+        result["stages"][ix_policy]["evidence_refs"] = forward["policy"]["evidence_refs"].clone();
+    } else if let Some(object) = result["stages"][ix_policy].as_object_mut() {
+        object.remove("evidence_refs");
+    }
     if let Some(t) = reverse_snat {
         let ix = result["stages"]
             .as_array()
@@ -999,7 +1000,11 @@ pub fn evaluate_vendor_return(
         result["stages"][ix]["before"] = input["flow"].clone();
         result["stages"][ix]["after"] = packet.clone();
         result["stages"][ix]["candidate_ids"] = json!([s(&t, "id")]);
-        result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
+        if t["evidence_refs"].is_array() {
+            result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
+        } else if let Some(object) = result["stages"][ix].as_object_mut() {
+            object.remove("evidence_refs");
+        }
     }
     if let Some(t) = reverse_dnat {
         let before = result["egress_flow"].clone();
@@ -1017,8 +1022,19 @@ pub fn evaluate_vendor_return(
             result["stages"][ix]["before"] = before;
             result["stages"][ix]["after"] = after.clone();
             result["stages"][ix]["candidate_ids"] = json!([s(&t, "id")]);
-            result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
-            result["egress_flow"] = after
+            if t["evidence_refs"].is_array() {
+                result["stages"][ix]["evidence_refs"] = t["evidence_refs"].clone();
+            } else if let Some(object) = result["stages"][ix].as_object_mut() {
+                object.remove("evidence_refs");
+            }
+            result["egress_flow"] = after;
+            let ix_egress = result["stages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|x| s(x, "name") == "egress")
+                .unwrap();
+            result["stages"][ix_egress]["after"] = result["egress_flow"].clone();
         }
     }
     if s(&result, "disposition") == "modeled_forward" {

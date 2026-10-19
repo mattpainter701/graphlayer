@@ -560,6 +560,8 @@ pub(crate) fn evaluate_path_inner(
         stage_mut(&mut r, "ingress_policy")["detail"] =
             json!("reverse packet uses established state from the modeled forward permit");
         policy_evidence = arr(&fwd["policy"], "evidence_refs");
+        stage_mut(&mut r, "ingress_policy")["before"] = policy_flow.clone();
+        stage_mut(&mut r, "ingress_policy")["after"] = policy_flow.clone();
     } else {
         let warnings = a(cfg, "warnings");
         if warnings
@@ -617,6 +619,8 @@ pub(crate) fn evaluate_path_inner(
         ctx["context"] = json!(format!("{}/{}", s(scope, "context"), s(ch, "id")));
         policy_flow["scope"] = ctx.clone();
         r["policy_flow"] = policy_flow.clone();
+        stage_mut(&mut r, "ingress_policy")["before"] = policy_flow.clone();
+        stage_mut(&mut r, "ingress_policy")["after"] = policy_flow.clone();
         let bundle =
             json!({"scope":ctx,"complete":true,"default_action":"deny","rules":ch["rules"]});
         let pr = evaluate_policy(json!({"bundle":bundle,"flow":policy_flow}))?;
@@ -651,8 +655,6 @@ pub(crate) fn evaluate_path_inner(
         stage_mut(&mut r, "ingress_policy")["detail"] =
             json!("ingress ACL permits the real-address tuple");
     }
-    stage_mut(&mut r, "ingress_policy")["before"] = policy_flow.clone();
-    stage_mut(&mut r, "ingress_policy")["after"] = policy_flow.clone();
     stage_mut(&mut r, "ingress_policy")["evidence_refs"] = json!(policy_evidence.clone());
     append_refs(&mut r, policy_evidence);
     if !b(path, "routing_complete") {
@@ -1176,18 +1178,20 @@ pub fn explore_return(input: Value) -> Result<Value, String> {
     }
     let mut base_input = input.clone();
     base_input["forward"] = forward.clone();
-    let base = evaluate_return_with_forward(base_input.clone(), forward.clone())?;
-    if s(&base, "disposition") == "modeled_forward" {
-        let rid = s(&base["selected_route"], "id");
-        let id = if rid.is_empty() {
-            "candidate:unresolved".to_owned()
-        } else {
-            format!("candidate:{rid}")
-        };
-        return Ok(
-            json!({"candidates":[{"id":id,"result":base,"resolved":true,"session_status":"established"}],"truncated":false}),
-        );
+    if let Ok(base) = evaluate_return(base_input.clone()) {
+        if s(&base, "disposition") == "modeled_forward" {
+            let rid = s(&base["selected_route"], "id");
+            let id = if rid.is_empty() {
+                "candidate:unresolved".to_owned()
+            } else {
+                format!("candidate:{rid}")
+            };
+            return Ok(
+                json!({"candidates":[{"id":id,"result":base,"resolved":true,"session_status":"established"}],"truncated":false}),
+            );
+        }
     }
+    let base = evaluate_return_with_forward(base_input.clone(), forward.clone())?;
     let target = if s(&base["policy_flow"], "destination").is_empty() {
         s(&input["flow"], "destination")
     } else {
