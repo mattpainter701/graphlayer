@@ -40,6 +40,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Resolve new Rust dependencies on hosted runner
         run: cargo generate-lockfile
+      - uses: actions/cache/restore@v4
+        id: rust-debug-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-debug-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
       - name: Format in hosted workspace
         run: cargo fmt --all
       - name: Compile ports for diagnostics
@@ -57,3 +65,11 @@ jobs:
             crates/graphlayer-engine/src/
             crates/graphlayer-engine/tests/
             crates/graphlayer-engine/released-parity-failures.json
+      - uses: actions/cache/save@v4
+        if: always() && steps.rust-debug-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-debug-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}

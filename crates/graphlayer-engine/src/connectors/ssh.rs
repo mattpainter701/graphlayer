@@ -36,10 +36,12 @@ impl SessionDispatcher {
             "ssh.execute" => self.execute(input),
             "ssh.disconnect" => self.disconnect(input),
             "ssh.close_all" => { self.sessions.clear(); Ok(json!({"closed":true})) },
+            "ssh.close_shell" => { let id=string(&input,"session_id"); self.shells.remove(&id); Ok(json!({"session_id":id,"closed":true})) },
             "ssh.shell_execute" => self.shell_execute(input),
             "ssh.open_shell" => self.open_shell(input),
             "ssh.device_info" => self.device_info(input),
             "ssh.get_config" => self.get_config(input),
+            "ssh.collect_isdb" => self.collect_isdb(input),
             _ => dispatch(operation,&input),
         }
     }
@@ -144,6 +146,43 @@ impl SessionDispatcher {
     }
     fn device_info(&mut self,input:Value)->Result<Value,String>{let id=string(&input,"session_id");let output=self.execute(json!({"session_id":id,"command":"show version","timeout_seconds":10}))?;let mut details=input.clone();details["output"]=output["stdout"].clone();parse_device_info(&details)}
     fn get_config(&mut self,input:Value)->Result<Value,String>{let command=config_command(&string(&input,"device_type"),&string(&input,"config_type"));if command.is_empty(){return Err("config_command_unsupported".into())}let output=self.execute(json!({"session_id":input["session_id"],"command":command,"timeout_seconds":input["timeout_seconds"].as_u64().unwrap_or(60)}))?;Ok(json!({"config":output["stdout"],"exit_status":output["exit_status"]}))}
+    fn collect_isdb(&mut self,input:Value)->Result<Value,String>{
+        let started=std::time::Instant::now();let start_time=chrono::Utc::now().to_rfc3339();
+        let id=string(&input,"session_id");
+        if string(&input,"device_type").to_lowercase()!="fortinet_fortigate"{return Err("unsupported_isdb_device_type".into())}
+        let device_id=string(&input,"device_id");
+        let firmware_output=self.execute(json!({"session_id":id,"command":"get system status","timeout_seconds":30}))?;
+        let firmware=super::appid::parse_fortios_version(firmware_output["stdout"].as_str().unwrap_or("")).unwrap_or_else(||"unknown".into());
+        let db_output=self.execute(json!({"session_id":id,"command":"diagnose internet-service database info","timeout_seconds":30}));
+        let (db_text,db_failed)=match db_output{Ok(v)=>(v["stdout"].as_str().unwrap_or("").to_string(),false),Err(_)=>(String::new(),true)};
+        let version=super::appid::parse_isdb_version(&db_text).unwrap_or_else(||"unknown".into());
+        let max_id=input["max_id"].as_i64().filter(|v|*v>0).or_else(||super::appid::parse_isdb_range(&db_text)).unwrap_or(10_000).clamp(1,10_000);
+        let start=std::time::Instant::now();let mut services=serde_json::Map::new();let mut by_name=serde_json::Map::new();let mut errors=Vec::<String>::new();
+        if db_failed{errors.push("could_not_read_isdb_database_info_using_default_range".into());}
+        'collection: for chunk_start in (1..=max_id).step_by(1000) {
+            if start.elapsed()>Duration::from_secs(600){break}
+            let chunk_end=(chunk_start+999).min(max_id);let mut chunk_ok=false;
+            for attempt in 0..3 {
+                if attempt>0{std::thread::sleep(Duration::from_secs(attempt as u64));}
+                let chunk_started=std::time::Instant::now();let mut chunk_services=serde_json::Map::new();let mut chunk_by_name=serde_json::Map::new();let mut failed=false;
+                for service_id in chunk_start..=chunk_end {
+                    if start.elapsed()>Duration::from_secs(600)||chunk_started.elapsed()>Duration::from_secs(120){failed=true;break}
+                    let command=format!("diagnose internet-service id {service_id}");
+                    let call_timeout=120u64.min(600u64.saturating_sub(start.elapsed().as_secs())).min(120u64.saturating_sub(chunk_started.elapsed().as_secs())).max(1);
+                    match self.execute(json!({"session_id":id,"command":command,"timeout_seconds":call_timeout})) {
+                        Ok(output)=>{let raw=output["stdout"].as_str().unwrap_or("");if let Some(mut service)=super::appid::parse_isdb_entry(service_id,raw){service["date"]=json!(chrono::Utc::now().to_rfc3339());let name=service["name"].as_str().unwrap_or("").to_lowercase();chunk_by_name.insert(name,service.clone());chunk_services.insert(service_id.to_string(),service);}}
+                        Err(_)=>{failed=true;break;}
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                if !failed{services.extend(chunk_services);by_name.extend(chunk_by_name);chunk_ok=true;break}
+            }
+            if !chunk_ok{errors.push(format!("isdb_chunk_failed_{chunk_start}_{chunk_end}"));break 'collection;}
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let collected=services.len();let completeness=(collected as f64)/(max_id as f64);let status=if start.elapsed()>=Duration::from_secs(600){"partial_timeout"}else if completeness>=0.8&&errors.is_empty(){"full_success"}else if collected==0&& !errors.is_empty(){"failed"}else{"partial_incomplete"};let now=chrono::Utc::now().to_rfc3339();
+        Ok(json!({"status":status,"services_collected":collected,"errors":errors,"start_time":start_time,"end_time":now,"duration_ms":started.elapsed().as_millis()as u64,"cache":{"services":services,"services_by_name":by_name,"version":version,"date":now,"server":device_id},"metadata":{"device_id":device_id,"device_type":"fortios","firmware_version":firmware,"content_version":version,"source":"fortigate-ssh-cli","status":status,"timestamp":now,"expected_total":max_id,"actual_total":collected,"completeness":completeness}}))
+    }
 }
 
 pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
@@ -154,6 +193,7 @@ pub fn dispatch(operation: &str, input: &Value) -> Result<Value, String> {
         "ssh.prompt_pattern" => Ok(json!(prompt_pattern(&string(input,"device_type")))),
         "ssh.parse_output" => Ok(json!(parse_output(&string(input,"output")))),
         "ssh.device_info" => parse_device_info(input),
+        "ssh.collect_isdb" => Err("stateful_ssh_operation_requires_session_mode".into()),
         "ssh.supported_commands" => Ok(supported_commands(&string(input,"device_type"))),
         "ssh.capabilities" => Ok(capabilities(&string(input,"device_type"))),
         _ => Err("stateful_ssh_operation_requires_session_mode".into()),

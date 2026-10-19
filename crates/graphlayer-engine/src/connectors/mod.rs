@@ -11,6 +11,7 @@ mod ssh;
 mod solarwinds;
 mod fileshare;
 mod api;
+mod appid;
 
 #[cfg(test)]
 #[path = "../connectors_netbox.rs"]
@@ -34,6 +35,9 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
     }
     if operation.starts_with("api.") {
         return api::dispatch(operation, &input);
+    }
+    if operation.starts_with("appid.") {
+        return appid::dispatch(operation, &input);
     }
     if operation.starts_with("connector.") {
         return helpers::dispatch(operation, &input);

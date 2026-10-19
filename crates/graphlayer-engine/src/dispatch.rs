@@ -88,7 +88,7 @@ pub fn dispatch(operation:&str,input:Value)->Result<Value,String>{
         "explore_return"=>e::explore_return(input),
         "evaluate_network"=>e::evaluate_network(input),
         "explore_network"=>e::explore_network(input),
-        operation if ["connector.","netbox.","servicenow.","solarwinds.","fileshare.","ssh.","api."].iter().any(|prefix|operation.starts_with(prefix))=>crate::connectors::dispatch(operation,input),
+        operation if ["connector.","netbox.","servicenow.","solarwinds.","fileshare.","ssh.","api.","appid."].iter().any(|prefix|operation.starts_with(prefix))=>crate::connectors::dispatch(operation,input),
         _=>Err("unsupported_operation".into()),
     }
 }

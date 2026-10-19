@@ -28,6 +28,6 @@ func TestCaptureReleasedV7Workspace(t *testing.T) {
     exploration:=importExplorationSample(t,store)
     if _,err=store.ExploreNetwork(exploration);err!=nil{t.Fatal(err)}
     var snapshots []Snapshot
-    for _,summary:=range store.Summaries(){snapshot,err:=store.Snapshot(summary.ID);if err!=nil{t.Fatal(err)};snapshots=append(snapshots,*snapshot)}
+    for _,node:=range exploration.Nodes{snapshot,err:=store.Snapshot(node.SnapshotID);if err!=nil{t.Fatal(err)};snapshots=append(snapshots,*snapshot)}
     if _,_,err=store.PublishSnapshotSet("Released mixed-vendor baseline",site.ID,snapshots,store.WorkspaceInfo().Revision);err!=nil{t.Fatal(err)}
 }

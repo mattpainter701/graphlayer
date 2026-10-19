@@ -1,31 +1,9 @@
-use base64::Engine;
 use flate2::read::GzDecoder;
-use graphlayer_engine::{investigation_engine as engine, vendor_parsers as parser};
 use serde_json::{json, Value};
 use std::io::Read;
 
 fn evaluate(operation: &str, input: Value) -> Result<Value, String> {
-    match operation {
-        "validate_scope" => engine::validate_scope(input),
-        "validate_policy" => engine::validate_policy(input),
-        "evaluate_policy" => engine::evaluate_policy(input),
-        "evaluate_path" => engine::evaluate_path(input),
-        "evaluate_return" => engine::evaluate_return(input),
-        "explore_path" => engine::explore_path(input),
-        "explore_return" => engine::explore_return(input),
-        "evaluate_network" => engine::evaluate_network(input),
-        "explore_network" => engine::explore_network(input),
-        "parse_asa" | "parse_panos" | "parse_fortigate" => {
-            use sha2::{Digest, Sha256};
-            let bytes = base64::engine::general_purpose::STANDARD.decode(input["config_base64"].as_str().unwrap()).unwrap();
-            let hash = format!("{:x}", Sha256::digest(&bytes));
-            let text = String::from_utf8_lossy(&bytes);
-            if operation == "parse_asa" { graphlayer_engine::asa_config::parse_asa_with_hash(&text, &hash) }
-            else if operation == "parse_panos" { parser::parse_panos_with_hash(&text, &hash) }
-            else { parser::parse_fortigate_with_hash(&text, &hash) }
-        }
-        _ => Err("unsupported_operation".into()),
-    }
+    graphlayer_engine::dispatch::dispatch(operation, input)
 }
 
 fn first_difference(expected: &Value, actual: &Value, pointer: &str) -> Option<String> {
@@ -58,7 +36,7 @@ fn all_released_parser_and_investigation_contracts_are_preserved() {
     for (index,line) in decoded.lines().enumerate() {
         let case:Value=serde_json::from_str(line).unwrap();
         let operation=case["operation"].as_str().unwrap();
-        let result=evaluate(operation,case["input"].clone());
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||evaluate(operation,case["input"].clone()))).unwrap_or_else(|_|Err("__panic__".into()));
         let actual=match result {Ok(value)=>json!({"result":value}),Err(error)=>json!({"error":error})};
         let expected=if case.get("error").is_some(){json!({"error":case["error"]})}else{json!({"result":case["result"]})};
         let count=counts.entry(operation.into()).or_default();count.0+=1;

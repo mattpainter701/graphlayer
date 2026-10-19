@@ -98,6 +98,9 @@ fn known_operation(operation:&str)->Option<&'static str>{
         "ssh.prompt_pattern","ssh.parse_output","ssh.supported_commands","ssh.capabilities","ssh.open_shell","ssh.shell_execute","ssh.get_config","path.is_asa_vendor",
         "api.connect","api.authenticate","api.request","api.health","api.collect","api.vendor_operation","api.disconnect",
         "api.device_info","api.supported_commands","api.inventory",
+        "appid.panos.parse","appid.panos.default_service","appid.fortigate.parse_entry","appid.fortigate.parse_range","appid.fortigate.parse_version","appid.fortigate.parse_firmware","api.collect_appid","ssh.collect_isdb",
+        "appid.panos.parse_firmware",
+        "ssh.close_shell",
     ];
     OPERATIONS.iter().copied().find(|candidate|*candidate==operation)
 }
@@ -111,7 +114,7 @@ fn valid_path_input(input:&Input)->bool{
     }true
 }
 fn error(operation:&'static str,message:&str)->Response<'static>{Response{protocol_version:PROTOCOL,operation,result:None,error:Some(message.into()),error_kind:None}}
-fn emit(response:Response<'_>){
+fn emit(response:Response<'static>){
     let operation=response.operation;
     let bytes=match serde_json::to_vec(&response){Ok(bytes)if bytes.len()<MAX_OUTPUT=>bytes,_=>serde_json::to_vec(&error(operation,"output_too_large")).unwrap_or_default()};
     let mut stdout=io::stdout().lock();let _=stdout.write_all(&bytes);let _=stdout.write_all(b"\n");let _=stdout.flush();

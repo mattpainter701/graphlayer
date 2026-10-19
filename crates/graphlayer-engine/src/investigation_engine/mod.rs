@@ -3,6 +3,7 @@
 mod policy;
 mod path;
 mod network;
+mod network_explore;
 mod vendor_path;
 
 pub(crate) fn omit_empty_fields(value: &mut serde_json::Value) {
@@ -23,4 +24,5 @@ pub(crate) fn omit_empty_fields(value: &mut serde_json::Value) {
 
 pub use policy::{evaluate_policy, validate_policy, validate_scope};
 pub use path::{evaluate_path, evaluate_return, explore_path, explore_return};
-pub use network::{evaluate_network, explore_network};
+pub use network::evaluate_network;
+pub use network_explore::explore_network;

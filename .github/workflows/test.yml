@@ -100,6 +100,86 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  connector-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platform/go.mod
+      - uses: ./.github/actions/build-rust-engine
+      - name: Test Rust-backed Go connector compatibility
+        working-directory: platform/orchestration
+        run: go test -race ./connectors/...
+
+  connector-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GRAPHLAYER_TEST_SSH_HOST: 127.0.0.1
+      SSH_PORT: 2222
+      SMB_HOST: 127.0.0.1
+      GRAPHLAYER_TEST_USERNAME: netfixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platform/go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/build-rust-engine
+      - name: Generate ephemeral service credentials
+        run: |
+          python - <<'PY'
+          import os, secrets
+          password = secrets.token_urlsafe(32)
+          print("::add-mask::" + password)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write("GRAPHLAYER_TEST_PASSWORD=" + password + "\n")
+          PY
+      - name: Build and start isolated acquisition services
+        run: |
+          docker build --file e2e/connector-services/Dockerfile --tag graphlayer-connector-fixture .
+          docker run --detach --name graphlayer-connector-fixture --publish 127.0.0.1:2222:22 --publish 127.0.0.1:445:445 --env GRAPHLAYER_TEST_PASSWORD graphlayer-connector-fixture
+          python - <<'PY'
+          import os, pathlib, socket, subprocess, time
+          deadline = time.monotonic() + 60
+          for port in (2222, 445):
+              while True:
+                  try:
+                      with socket.create_connection(("127.0.0.1", port), timeout=1):
+                          break
+                  except OSError:
+                      if time.monotonic() >= deadline:
+                          raise RuntimeError("Connector service did not become ready") from None
+                      time.sleep(0.25)
+          while True:
+              try:
+                  public = subprocess.check_output(["docker", "exec", "graphlayer-connector-fixture", "cat", "/etc/ssh/ssh_host_ed25519_key.pub"], stderr=subprocess.DEVNULL, text=True)
+                  break
+              except subprocess.CalledProcessError:
+                  if time.monotonic() >= deadline:
+                      raise RuntimeError("Fixture host key is unavailable") from None
+                  time.sleep(0.25)
+          known = pathlib.Path(os.environ["RUNNER_TEMP"]) / "connector-known-hosts"
+          known.write_text("[127.0.0.1]:2222 " + " ".join(public.split()[:2]) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write("GRAPHLAYER_TEST_KNOWN_HOSTS=" + str(known) + "\n")
+          PY
+      - name: Start real investigation application
+        run: |
+          go -C platform build -trimpath -o "$RUNNER_TEMP/graphlayer-investigate" ./cmd/graphlayer-investigate
+          "$RUNNER_TEMP/graphlayer-investigate" --listen 127.0.0.1:8091 --data-dir "$RUNNER_TEMP/acquisition-workspace" > "$RUNNER_TEMP/acquisition-app.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/acquisition-app.pid"
+      - name: Acquire SFTP and SMB configurations and investigate with source evidence
+        run: python e2e/connector-acquisition.py
+      - name: Stop fixture processes
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/acquisition-app.pid" ]; then kill "$(cat "$RUNNER_TEMP/acquisition-app.pid")" || true; fi
+          docker rm --force graphlayer-connector-fixture || true
+
   windows-native-go:
     runs-on: windows-latest
     steps:

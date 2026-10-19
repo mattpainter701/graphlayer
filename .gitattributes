@@ -10,3 +10,6 @@
 /pytest.ini -filter !diff -merge text
 /platform/reference/iana/data/*.csv -filter !diff -merge text
 /platform/reference/iana/data/*.txt -filter !diff -merge text
+
+# POSIX fixture entrypoints must retain executable-script line endings on Windows.
+/e2e/connector-services/*.sh text eol=lf

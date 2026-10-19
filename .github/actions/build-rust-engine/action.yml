@@ -3,9 +3,25 @@ description: Build the production Rust worker and expose its absolute path to in
 runs:
   using: composite
   steps:
+    - uses: actions/cache/restore@v4
+      id: rust-cache
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: rust-release-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
     - name: Build Rust engine
       shell: bash
       run: cargo build --locked --release -p graphlayer-engine
+    - uses: actions/cache/save@v4
+      if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: rust-release-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
     - name: Locate Rust engine
       shell: bash
       run: |

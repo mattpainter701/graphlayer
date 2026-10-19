@@ -210,7 +210,8 @@ fn evaluate_return_path(input:&Value,nodes:&HashMap<String,Value>,links:&[Value]
  Ok((hop_results,"indeterminate".into(),vec!["return path did not reach its source".into()],Value::Null))
 }
 
-pub fn explore_network(input:Value)->Result<Value,String>{
+#[allow(dead_code)]
+fn explore_network_legacy(input:Value)->Result<Value,String>{
  let base=evaluate_network(input.clone())?;let mut base_ids=Vec::new();for hop in arr(&base["forward"],"hops"){let node=arr(&input,"nodes").into_iter().find(|n|s(n,"id")==s(&hop,"node_id"));if let Some(node)=node{let pi=path_input(&node,s(&hop["path"],"ingress_interface"),&hop["path"]["original_flow"]);let cs=super::path::explore_path(pi)?;let matched=arr(&cs,"candidates").into_iter().find(|c|c["result"]==hop["path"]);base_ids.push(matched.map(|c|s(&c,"id").to_owned()).unwrap_or_default());}else{base_ids.push(String::new())}}
  let mut branches=vec![exploration_branch(&base,&base_ids)];let mut truncated=false;let mut evaluations=1usize;let mut trunc_reasons=Vec::<Value>::new();
  for hop in arr(&base["forward"],"hops") {
