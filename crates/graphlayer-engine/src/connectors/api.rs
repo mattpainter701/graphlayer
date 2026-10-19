@@ -1,8 +1,12 @@
 use super::common::{normalize_base_url,MAX_BODY_BYTES};
 use reqwest::{blocking::{Client,Response},header::{ACCEPT,CONTENT_TYPE,HeaderMap,HeaderName,HeaderValue}};
 use serde_json::{json,Value};
-use std::{fs,io::Read,thread,time::Duration};
+use std::{fs,io::Read,str::FromStr,thread,time::{Duration,Instant},sync::{Mutex,OnceLock}};
 use std::collections::HashMap;
+use serde::Deserialize;
+
+static REQUEST_CLOCK:OnceLock<Mutex<Instant>>=OnceLock::new();
+fn rate_limit(){let clock=REQUEST_CLOCK.get_or_init(||Mutex::new(Instant::now()-Duration::from_millis(10)));if let Ok(mut last)=clock.lock(){let due=*last+Duration::from_millis(10);let now=Instant::now();if due>now{thread::sleep(due-now)}*last=Instant::now();}}
 
 pub struct SessionDispatcher{sessions:HashMap<String,Value>}
 impl SessionDispatcher{
@@ -46,7 +50,7 @@ fn request(input:&Value)->Result<Value,String>{
  if let Some(query)=input.get("query").and_then(Value::as_object){let pairs=query.iter().map(|(k,v)|(k.as_str(),text(v))).collect::<Vec<_>>();request=request.query(&pairs)}
  let body=input.get("body").filter(|v|!v.is_null());if let Some(body)=body{request=request.header(CONTENT_TYPE,"application/json").json(body)}
  let retries=config["retry_count"].as_u64().unwrap_or(3).clamp(1,8);let delay=config["retry_delay_ms"].as_u64().unwrap_or(250).clamp(0,5000);
- let mut last_error="request_failed".to_string();for attempt in 0..retries{let result=request.try_clone().ok_or_else(||"request_not_replayable".to_string())?.send();match result{Ok(response)if response.status().as_u16()<500=>return response_value(response),Ok(response)=>{last_error=format!("http_status_{}",response.status().as_u16());if attempt+1<retries{thread::sleep(Duration::from_millis(delay.saturating_mul(attempt+1)));}},Err(_)=>{last_error="request_failed".into();if attempt+1<retries{thread::sleep(Duration::from_millis(delay.saturating_mul(attempt+1)));}}}}
+ let mut last_error="request_failed".to_string();for attempt in 0..retries{rate_limit();let result=request.try_clone().ok_or_else(||"request_not_replayable".to_string())?.send();match result{Ok(response)if response.status().as_u16()<500=>return response_value(response),Ok(response)=>{last_error=format!("http_status_{}",response.status().as_u16());if attempt+1<retries{thread::sleep(Duration::from_millis(delay.saturating_mul(attempt+1)));}},Err(_)=>{last_error="request_failed".into();if attempt+1<retries{thread::sleep(Duration::from_millis(delay.saturating_mul(attempt+1)));}}}}
  Err(last_error)
 }
 fn response_value(response:Response)->Result<Value,String>{let status=response.status().as_u16();let mut headers=serde_json::Map::new();for(k,v)in response.headers(){if let Ok(s)=v.to_str(){headers.insert(k.to_string(),json!(s));}}if response.content_length().is_some_and(|n|n>MAX_BODY_BYTES as u64){return Err("response_too_large".into())}let mut response=response;let mut bytes=Vec::new();response.take((MAX_BODY_BYTES+1)as u64).read_to_end(&mut bytes).map_err(|_|"response_read_failed".to_string())?;if bytes.len()>MAX_BODY_BYTES{return Err("response_too_large".into())}let body=serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_|json!(String::from_utf8_lossy(&bytes).to_string()));Ok(json!({"status":status,"headers":headers,"body":body}))}
@@ -64,5 +68,13 @@ fn vendor_operation(i:&Value)->Result<Value,String>{let c=i.get("config").unwrap
  _=>return Err("unsupported_vendor_operation".into())};
  request(&json!({"config":c,"method":method,"path":path,"query":query,"body":body}))
 }
-fn inventory(i:&Value)->Result<Value,String>{let r=vendor_operation(&json!({"config":i.get("config").unwrap_or(i),"device_type":i["device_type"],"operation":"get_device_list"}))?;let b=&r["body"];let kind=text(&i["device_type"]).to_lowercase();let rows=if kind=="cisco_fmc"{b["items"].as_array().cloned().unwrap_or_default().into_iter().map(|v|json!({"id":v["id"],"hostname":v["hostName"],"model":v["model"],"vendor":"Cisco","connection_type":"api"})).collect::<Vec<_>>()}else if kind=="solarwinds_ncm"{b["results"].as_array().cloned().unwrap_or_default().into_iter().map(|v|json!({"id":v["NodeID"].to_string(),"ip_address":v["IPAddress"],"hostname":v["Caption"],"model":v["MachineType"],"vendor":v["Vendor"],"connection_type":"api"})).collect()}else if kind=="fortinet_fortimanager"{b["result"].as_array().and_then(|a|a.first()).and_then(|v|v["data"].as_array()).cloned().unwrap_or_default().into_iter().map(|v|json!({"id":v["name"],"ip_address":v["ip"],"model":v["platform_str"],"vendor":"Fortinet","connection_type":"api"})).collect()}else{return Err("panorama_xml_inventory_requires_xml_parser".into())};Ok(json!(rows))}
+fn inventory(i:&Value)->Result<Value,String>{let r=vendor_operation(&json!({"config":i.get("config").unwrap_or(i),"device_type":i["device_type"],"operation":"get_device_list"}))?;let b=&r["body"];let kind=text(&i["device_type"]).to_lowercase();let rows=if kind=="cisco_fmc"{b["items"].as_array().cloned().unwrap_or_default().into_iter().map(|v|json!({"id":v["id"],"hostname":v["hostName"],"model":v["model"],"vendor":"Cisco","connection_type":"api"})).collect::<Vec<_>>()}else if kind=="solarwinds_ncm"{b["results"].as_array().cloned().unwrap_or_default().into_iter().map(|v|json!({"id":v["NodeID"].to_string(),"ip_address":v["IPAddress"],"hostname":v["Caption"],"model":v["MachineType"],"vendor":v["Vendor"],"connection_type":"api"})).collect()}else if kind=="fortinet_fortimanager"{b["result"].as_array().and_then(|a|a.first()).and_then(|v|v["data"].as_array()).cloned().unwrap_or_default().into_iter().map(|v|json!({"id":v["name"],"ip_address":v["ip"],"model":v["platform_str"],"vendor":"Fortinet","connection_type":"api"})).collect()}else if kind=="palo_alto_panorama"{let xml=b.as_str().ok_or_else(||"invalid_panorama_xml_response".to_string())?;let response:PanoramaResponse=quick_xml::de::from_str(xml).map_err(|_|"invalid_panorama_xml_response".to_string())?;if response.status!="success"{return Err("panorama_inventory_failed".into())}response.result.devices.entry.into_iter().map(|v|json!({"id":v.name,"hostname":v.name,"ip_address":v.ip,"model":v.model,"vendor":"Palo Alto Networks","connection_type":"api"})).collect()}else{return Err("unsupported_vendor_operation".into())};Ok(json!(rows))}
+#[derive(Deserialize)]
+struct PanoramaResponse { #[serde(rename="@status")] status:String, result:PanoramaResult }
+#[derive(Deserialize)]
+struct PanoramaResult { devices:PanoramaDevices }
+#[derive(Deserialize)]
+struct PanoramaDevices { #[serde(rename="entry",default)] entry:Vec<PanoramaDevice> }
+#[derive(Deserialize)]
+struct PanoramaDevice { #[serde(rename="@name",default)] name:String, #[serde(default)] ip:String, #[serde(default)] model:String }
 fn text(v:&Value)->String{match v{Value::String(s)=>s.clone(),Value::Number(n)=>n.to_string(),Value::Bool(b)=>b.to_string(),_=>String::new()}}

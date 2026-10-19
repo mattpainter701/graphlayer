@@ -6,6 +6,12 @@ mod services;
 pub use parser::{expand_address, parse_running_config, ParsedConfig};
 pub use projection::parse_asa_with_hash;
 
+pub fn service_port(protocol:&str,name:&str)->Option<String>{services::service_port_for(protocol,name)}
+pub fn port_alternatives(fields:&[&str],protocol:&str,object:bool)->Option<(Vec<String>,usize)>{
+    if object&&!fields.first().is_some_and(|f|matches!(f.to_ascii_lowercase().as_str(),"eq"|"range")){return None;}
+    services::port_alternatives(fields,protocol)
+}
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

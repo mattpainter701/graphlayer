@@ -63,7 +63,7 @@ fn all_released_parser_and_investigation_contracts_are_preserved() {
         let expected=if case.get("error").is_some(){json!({"error":case["error"]})}else{json!({"result":case["result"]})};
         let count=counts.entry(operation.into()).or_default();count.0+=1;
         if let Some(difference)=first_difference(&expected,&actual,"") {
-            failures.push(json!({"index":index,"operation":operation,"difference":difference}));
+            failures.push(json!({"index":index,"operation":operation,"difference":difference,"actual":actual}));
         } else {count.1+=1;}
     }
     std::fs::write("released-parity-failures.json",serde_json::to_vec_pretty(&failures).unwrap()).unwrap();

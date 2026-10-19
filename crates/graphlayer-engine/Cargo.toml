@@ -13,6 +13,7 @@ chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 url = "2"
 regex = "1"
+quick-xml = { version = "0.39", features = ["serialize"] }
 russh = { version = "0.63", default-features = false, features = ["ring"] }
 russh-sftp = "3.0.1"
 smb2 = "0.27"

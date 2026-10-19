@@ -49,6 +49,9 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
         "servicenow.ping" => servicenow::ping(&input),
         "servicenow.fetch_table_page" => servicenow::fetch_table_page(&input),
         "servicenow.fetch_table" => servicenow::fetch_table(&input),
+        "servicenow.load_state" => servicenow::load_state(&input),
+        "servicenow.save_state" => servicenow::save_state(&input),
+        "servicenow.resolve_updated_since" => servicenow::resolve_updated_since(&input),
         _ => Err("unsupported_operation".to_string()),
     }
 }

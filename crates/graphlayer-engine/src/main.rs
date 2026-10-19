@@ -83,10 +83,11 @@ fn handle(bytes:&[u8],session:Option<&mut graphlayer_engine::connectors::Session
 }
 fn known_operation(operation:&str)->Option<&'static str>{
     const OPERATIONS:&[&str]=&[
-        "parse_asa_path","parse_asa","parse_asa_raw","parse_panos","parse_fortigate","asa.expand_address","asa.sanitize_line",
+        "parse_asa_path","parse_config","parse_asa","parse_asa_raw","parse_panos","parse_fortigate","asa.expand_address","asa.sanitize_line","asa.evidence_id","asa.service_port","asa.port_alternatives","validate_inventory","validate_path_config",
         "validate_scope","validate_policy","evaluate_policy","evaluate_path","evaluate_return","explore_path","explore_return","evaluate_network","explore_network",
         "netbox.normalize","netbox.collect","netbox.ping","netbox.fetch_endpoint_page","netbox.fetch_endpoint",
         "servicenow.normalize","servicenow.collect","servicenow.ping","servicenow.fetch_table_page","servicenow.fetch_table",
+        "servicenow.load_state","servicenow.save_state","servicenow.resolve_updated_since","api.config","solarwinds.trigger",
         "connector.make_record","connector.record_fingerprint","connector.correlation_keys","connector.dedupe_records","connector.collection_report","connector.filter_devices","connector.stale","connector.delta",
         "connector.fingerprint","connector.build_record","connector.deduplicate","connector.correlation_report","connector.filter_confidence","connector.staleness_decay","connector.build_payload","connector.delta_sync","connector.dedup_key","connector.normalize_hostname","connector.normalize_correlation_value","connector.validate_required_fields","connector.normalize_path","connector.normalize_type",
         "fileshare.normalize_path","fileshare.matches_patterns","fileshare.create_local_filename","fileshare.connect","fileshare.collect","fileshare.ping",
@@ -94,6 +95,7 @@ fn known_operation(operation:&str)->Option<&'static str>{
         "fileshare.disconnect","solarwinds.query","solarwinds.devices","solarwinds.config","solarwinds.save_config",
         "ssh.connect","ssh.execute","ssh.disconnect","ssh.device_info","ssh.config_command",
         "ssh.close_all","ssh.clean_output","ssh.device_info_command",
+        "ssh.prompt_pattern","ssh.parse_output","ssh.supported_commands","ssh.capabilities","ssh.open_shell","ssh.shell_execute","ssh.get_config","path.is_asa_vendor",
         "api.connect","api.authenticate","api.request","api.health","api.collect","api.vendor_operation","api.disconnect",
         "api.device_info","api.supported_commands","api.inventory",
     ];

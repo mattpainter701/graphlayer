@@ -17,11 +17,13 @@ fn client(input:&Value)->Result<(Client,String,String),String>{
     let mut url=normalize_base_url(&json!(target),"missing_host")?;url.set_path("/SolarWinds/InformationService/v3/Json/Query");url.set_query(None);
     let verify=payload.get("verify_ssl").and_then(Value::as_bool).unwrap_or(true);
     let c=Client::builder().timeout(Duration::from_secs(30)).danger_accept_invalid_certs(!verify).redirect(reqwest::redirect::Policy::none()).build().map_err(|_|"http_client_error".to_string())?;
-    Ok((c,url.to_string(),text(&data["username"])))
+    let credentials=data.get("credentials").unwrap_or(&Value::Null);
+    let username=if text(&data["username"]).is_empty(){text(&credentials["username"])}else{text(&data["username"])};
+    Ok((c,url.to_string(),username))
 }
 fn query(input:&Value)->Result<Value,String>{
     let (client,url,user)=client(input)?;let data=input.get("connector_data").unwrap_or(input);
-    let password=text(&data["password"]);let q=text(&input["query"]);if q.is_empty()||q.len()>256*1024{return Err("invalid_query".into())}
+    let credentials=data.get("credentials").unwrap_or(&Value::Null);let password=if text(&data["password"]).is_empty(){text(&credentials["password"])}else{text(&data["password"])};let q=text(&input["query"]);if q.is_empty()||q.len()>256*1024{return Err("invalid_query".into())}
     let response=client.post(url).basic_auth(user,Some(password)).json(&json!({"query":q})).send().map_err(|_|"request_failed".to_string())?;
     let status=response.status();if !status.is_success(){return Err(format!("http_status_{}",status.as_u16()))}
     let mut body=Vec::new();response.take(MAX_BODY_BYTES as u64+1).read_to_end(&mut body).map_err(|_|"response_read_failed".to_string())?;
