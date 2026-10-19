@@ -58,7 +58,7 @@ pub fn panos_cache(xml: &str, device_id: &str, firmware: &str) -> Result<Value, 
 
 pub fn default_service(ident: &str, port_field: &str) -> (String, Vec<String>) {
     let protocol=match ident.to_ascii_lowercase().as_str(){"udp"=>"udp","icmp"=>"icmp","icmp6"=>"icmp6",_=>"tcp"}.to_string();
-    let ports=port_field.split(',').filter_map(|raw|{let part=raw.trim().rsplit('/').next().unwrap_or("").trim();if part.is_empty()||part=="0"{None}else{Some(part.to_string())}}).collect();
+    let ports=port_field.split(',').filter_map(|raw|{let value=raw.trim();let part=value.split_once('/').map(|(_,suffix)|suffix).unwrap_or(value).trim();if part.is_empty()||part=="0"{None}else{Some(part.to_string())}}).collect();
     (protocol,ports)
 }
 
@@ -71,7 +71,7 @@ pub fn parse_isdb_entry(id: i64, output: &str) -> Option<Value> {
     Some(json!({"id":id.to_string(),"name":name,"protocols":protocols,"ports":ports,"categories":categories,"content":output,"date":Utc::now().to_rfc3339(),"version":"collected"}))
 }
 
-pub fn parse_isdb_range(output: &str) -> Option<i64> { capture(r"(?i)total.*?(\d+)",output)?.parse::<i64>().ok().filter(|n|*n>0&&*n<=10_000) }
+pub fn parse_isdb_range(output: &str) -> Option<i64> { capture(r"(?i)total.*?(\d+)",output)?.parse::<i64>().ok().filter(|n|*n>0&&*n<=1_000_000_000) }
 pub fn parse_isdb_version(output: &str) -> Option<String> { capture(r"(?i)(?:version|database):\s*([\d.]+)",output) }
 pub fn parse_fortios_version(output: &str) -> Option<String> { capture(r"Version:.*?v?([\d.]+)",output) }
 pub fn parse_panos_firmware(xml:&str)->Option<String>{
@@ -113,6 +113,7 @@ mod tests {
         assert_eq!(entry["protocols"],json!(["TCP","UDP"]));
         assert!(parse_isdb_entry(13,"Service not found").is_none());
         assert_eq!(parse_isdb_range("Total entries: 9876"),Some(9876));
+        assert_eq!(parse_isdb_range("Total entries: 12000"),Some(12000));
         assert_eq!(parse_isdb_version("Database: 12.00365").as_deref(),Some("12.00365"));
     }
 }

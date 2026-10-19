@@ -4,7 +4,10 @@ use super::path::{evaluate_path_inner, evaluate_return_with_forward};
 use sha2::{Digest, Sha256};
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str { v.get(k).and_then(Value::as_str).unwrap_or("") }
-fn flow_json(v:&Value)->Value{let mut f=v.clone();if let Some(o)=f.as_object_mut(){for k in ["source_port","destination_port"]{if o.get(k).and_then(Value::as_i64).unwrap_or(0)==0{o.remove(k);}}}f}
+fn scope_json(v:&Value)->Value{json!({"snapshot_id":s(v,"snapshot_id"),"device_id":s(v,"device_id"),"context":s(v,"context")})}
+fn flow_json(v:&Value)->Value{let mut f=json!({"scope":scope_json(&v["scope"]),"source":s(v,"source"),"destination":s(v,"destination"),"protocol":s(v,"protocol")});for k in ["source_port","destination_port"]{if let Some(n)=v.get(k).and_then(Value::as_i64).filter(|n|*n!=0){f[k]=json!(n)}}f}
+fn endpoint_json(v:&Value)->Value{json!({"node_id":s(v,"node_id"),"interface":s(v,"interface")})}
+fn link_json(v:&Value)->Value{json!({"a":endpoint_json(&v["a"]),"b":endpoint_json(&v["b"])})}
 fn zero_flow()->Value{json!({"scope":{"snapshot_id":"","device_id":"","context":""},"source":"","destination":"","protocol":""})}
 fn arr(v: &Value, k: &str) -> Vec<Value> { v.get(k).and_then(Value::as_array).cloned().unwrap_or_default() }
 fn b(v: &Value, k: &str) -> bool { v.get(k).and_then(Value::as_bool).unwrap_or(false) }
@@ -61,7 +64,7 @@ fn link_refs(nodes: &HashMap<String, Value>, link: &Value) -> Vec<Value> {
     out
 }
 fn path_input(node: &Value, ingress: &str, flow: &Value) -> Value {
-    json!({"scope": node["scope"], "config": node["config"], "ingress_interface": ingress, "flow": flow})
+    json!({"scope": scope_json(&node["scope"]), "config": node["config"], "ingress_interface": ingress, "flow": flow_json(flow)})
 }
 fn fresh_result(input: &Value, vendor: bool) -> Value {
     json!({"engine_contract_version":if vendor{"graphlayer-network-path-v2"}else{"graphlayer-network-path-v1"},"original_flow":flow_json(&input["flow"]),"forward":{"disposition":"indeterminate","hops":[],"final_flow":zero_flow(),"reasons":[]},"return":{"disposition":"not_evaluated","hops":[],"final_flow":zero_flow(),"reasons":[]},"disposition":"indeterminate","reasons":[],"assumptions":["configuration and topology are supplied evidence, not live device or link state","only static IPv4 forwarding supported by the single-device path model is evaluated","a modeled return leg assumes the reverse TCP/UDP tuple belongs to the established session represented by the forward permit; live connection state is not queried"]})
@@ -130,14 +133,14 @@ fn evaluate_network_forced(input: Value, forced: &HashMap<String, String>) -> Re
             return Ok(uncertain(result,"link endpoint interfaces are unresolved or do not share one IPv4 subnet"));
         }
     }
-    if input["flow"]["scope"] != start["scope"] { return Err("flow scope must match the source node scope".into()); }
+    if scope_json(&input["flow"]["scope"]) != scope_json(&start["scope"]) { return Err("flow scope must match the source node scope".into()); }
     let mut current=source.clone(); let mut flow=input["flow"].clone(); let mut visited=HashSet::new();
     for hop in 0..16 {
         let id=s(&current,"node_id").to_owned();
         if !visited.insert(id.clone()) { return Ok(uncertain(result,"topology traversal contains a cycle")); }
         let node=by_id.get(&id).unwrap();
         if hop==0 && !connected(node,s(&current,"interface"),s(&flow,"source")) { return Ok(uncertain(result,"source address is not proven on the selected ingress interface subnet")); }
-        flow["scope"]=node["scope"].clone();
+        flow["scope"]=scope_json(&node["scope"]);
         let route_id = forced.get(&id).map(String::as_str);
         let path=match evaluate_path_inner(path_input(node,s(&current,"interface"),&flow),None,route_id) { Ok(x)=>x,Err(e)=>return Ok(uncertain(result,&format!("node path inputs could not be evaluated: {e}"))) };
         let snap=s(&node["scope"],"snapshot_id");
@@ -173,7 +176,7 @@ fn evaluate_network_forced(input: Value, forced: &HashMap<String, String>) -> Re
         if !s(route,"kind").eq_ignore_ascii_case("static") || ip(s(route,"next_hop"))!=peer_addr || peer_prefix!=local_prefix {
             return Ok(uncertain(result,"selected route does not prove the linked peer interface as its next hop"));
         }
-        result["forward"]["hops"][last]["link"]=link.clone();
+        result["forward"]["hops"][last]["link"]=link_json(&link);
         result["forward"]["hops"][last]["evidence"].as_array_mut().unwrap().extend(link_refs(&by_id,&link));
         current=peer;
     }
@@ -184,7 +187,7 @@ fn evaluate_return_path(input:&Value,nodes:&HashMap<String,Value>,links:&[Value]
  let mut hop_results=Vec::new(); let mut carried:Option<Value>=None;
  for index in (0..forward_hops.len()).rev(){
   let h=&forward_hops[index];let node=nodes.get(s(h,"node_id")).unwrap();let mut flow=h["path"]["egress_flow"].clone();
-  let source=flow["source"].clone();flow["source"]=flow["destination"].clone();flow["destination"]=source;let source_port=flow["source_port"].as_i64().unwrap_or(0);let destination_port=flow["destination_port"].as_i64().unwrap_or(0);if destination_port==0{flow.as_object_mut().unwrap().remove("source_port");}else{flow["source_port"]=json!(destination_port)}if source_port==0{flow.as_object_mut().unwrap().remove("destination_port");}else{flow["destination_port"]=json!(source_port)}flow["scope"]=node["scope"].clone();
+  let source=flow["source"].clone();flow["source"]=flow["destination"].clone();flow["destination"]=source;let source_port=flow["source_port"].as_i64().unwrap_or(0);let destination_port=flow["destination_port"].as_i64().unwrap_or(0);if destination_port==0{flow.as_object_mut().unwrap().remove("source_port");}else{flow["source_port"]=json!(destination_port)}if source_port==0{flow.as_object_mut().unwrap().remove("destination_port");}else{flow["destination_port"]=json!(source_port)}flow["scope"]=scope_json(&node["scope"]);
   if let Some(next)=carried.take(){for k in ["source","destination","protocol","source_port","destination_port"]{if next[k]!=flow[k]{return Ok((hop_results,"indeterminate".into(),vec!["return tuple from the next firewall does not match this firewall's expected reverse tuple".into()],Value::Null))}}flow=next;}
   let path=evaluate_return_with_forward(path_input(node,s(&h["path"],"egress_interface"),&flow),h["path"].clone()).map_err(|e|format!("return path is not established on node {}: {e}",s(h,"node_id")))?;
   let snap=s(&node["scope"],"snapshot_id");let ev=refs(snap,arr(&path,"evidence_refs").iter().filter_map(Value::as_str).map(str::to_owned).collect());
@@ -205,7 +208,7 @@ fn evaluate_return_path(input:&Value,nodes:&HashMap<String,Value>,links:&[Value]
   let (Some(local),Some(peer_i))=(iface(node,s(&path,"egress_interface")),iface(peer_node,s(peer,"interface")))else{return Ok((hop_results,"indeterminate".into(),vec!["return route does not prove the linked peer interface as its next hop".into()],Value::Null));};
   let route=&path["selected_route"];let peer_addr=ip(s(&peer_i,"address").split('/').next().unwrap_or(""));
   if !s(route,"kind").eq_ignore_ascii_case("static")||ip(s(route,"next_hop"))!=peer_addr||prefix(s(&local,"address"))!=prefix(s(&peer_i,"address")){return Ok((hop_results,"indeterminate".into(),vec!["return route does not prove the linked peer interface as its next hop".into()],Value::Null));}
-  let last=hop_results.len()-1;hop_results[last]["link"]=link.clone();hop_results[last]["evidence"].as_array_mut().unwrap().extend(link_refs(nodes,&link));carried=Some(path["egress_flow"].clone());
+  let last=hop_results.len()-1;hop_results[last]["link"]=link_json(&link);hop_results[last]["evidence"].as_array_mut().unwrap().extend(link_refs(nodes,&link));carried=Some(path["egress_flow"].clone());
  }
  Ok((hop_results,"indeterminate".into(),vec!["return path did not reach its source".into()],Value::Null))
 }

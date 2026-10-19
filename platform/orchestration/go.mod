@@ -1,11 +1,16 @@
-module github.com/mattpainter701/graphlayer/platform/platform/orchestration
+module github.com/mattpainter701/graphlayer/platform/orchestration
 
 go 1.21
 
 require (
+	github.com/mattpainter701/graphlayer/platform v0.0.0
 	github.com/spf13/cobra v1.8.0
+	golang.org/x/crypto v0.51.0
+	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/mattpainter701/graphlayer/platform => ..
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

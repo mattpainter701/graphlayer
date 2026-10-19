@@ -24,6 +24,7 @@ func TestAPIConnectorConnectSetsConnectedState(t *testing.T) {
 	t.Parallel()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/payload" { w.WriteHeader(http.StatusOK); return }
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -36,7 +37,6 @@ func TestAPIConnectorConnectSetsConnectedState(t *testing.T) {
 	}
 	defer cleanup()
 	defer connector.Disconnect(context.Background())
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -62,6 +62,7 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 	)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/payload" { w.WriteHeader(http.StatusOK); return }
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("failed to read request body: %v", err)
@@ -89,6 +90,9 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 	}
 	defer cleanup()
 	defer connector.Disconnect(context.Background())
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer connectCancel()
+	if err := connector.Connect(connectCtx); err != nil { t.Fatalf("connect returned error: %v", err) }
 
 	resp, err := connector.doRequest(context.Background(), http.MethodPost, "/payload", bytes.NewBufferString("payload-data"))
 	if err != nil {

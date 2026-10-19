@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{self, BufRead, Read, Write};
 use std::panic::{self, AssertUnwindSafe};
+mod strict_json;
 
 const PROTOCOL: &str = "graphlayer-engine-v1";
 const MAX_INPUT: usize = 160 * 1024 * 1024;
@@ -12,7 +13,7 @@ const MAX_OUTPUT: usize = 8 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Request { protocol_version:String, operation:String, input:Value }
+struct Request { protocol_version:String, operation:String, input:strict_json::StrictValue }
 #[derive(Serialize)]
 struct Response<'a>{
     protocol_version:&'a str,
@@ -65,13 +66,13 @@ fn handle(bytes:&[u8],session:Option<&mut graphlayer_engine::connectors::Session
     if request.protocol_version!=PROTOCOL{return error(operation,"unsupported_request");}
     let result=if operation=="parse_asa_path"{
         if bytes.len()>12*1024*1024{return error(operation,"input_too_large");}
-        let input:Input=match serde_json::from_value(request.input){Ok(input)=>input,Err(_)=>return error(operation,"invalid_request")};
+        let input:Input=match serde_json::from_value(request.input.0){Ok(input)=>input,Err(_)=>return error(operation,"invalid_request")};
         if !valid_path_input(&input){return error(operation,"invalid_request");}
         serde_json::to_value(parse_asa_path(input)).map_err(|_|"internal_error".into())
     }else if let Some(session)=session{
-        if operation.starts_with("ssh.")||operation.starts_with("api."){session.dispatch(operation,request.input)}
-        else{graphlayer_engine::dispatch::dispatch(operation,request.input)}
-    }else{graphlayer_engine::dispatch::dispatch(operation,request.input)};
+        if operation.starts_with("ssh.")||operation.starts_with("api."){session.dispatch(operation,request.input.0)}
+        else{graphlayer_engine::dispatch::dispatch(operation,request.input.0)}
+    }else{graphlayer_engine::dispatch::dispatch(operation,request.input.0)};
     match result{
         Ok(result)=>Response{protocol_version:PROTOCOL,operation,result:Some(result),error:None,error_kind:None},
         Err(message)=>{

@@ -11,7 +11,7 @@ import (
 )
 
 func TestRustMigrationReplaysEveryReleasedWorkspaceWithoutRewritingEvidence(t *testing.T) {
-	for version := 1; version <= 6; version++ {
+	for version := 1; version <= 7; version++ {
 		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 			directory, original := copyActualWorkspace(t, fmt.Sprintf("workspace-v%d", version))
 			worker := os.Getenv("GRAPHLAYER_ENGINE")

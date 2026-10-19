@@ -3,8 +3,6 @@ package base
 import (
 	"context"
 	"time"
-
-	"github.com/mattpainter701/graphlayer/platform/models"
 )
 
 // ConnectionState represents the state of a connector connection

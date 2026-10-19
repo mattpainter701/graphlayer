@@ -156,12 +156,12 @@ impl SessionDispatcher {
         let db_output=self.execute(json!({"session_id":id,"command":"diagnose internet-service database info","timeout_seconds":30}));
         let (db_text,db_failed)=match db_output{Ok(v)=>(v["stdout"].as_str().unwrap_or("").to_string(),false),Err(_)=>(String::new(),true)};
         let version=super::appid::parse_isdb_version(&db_text).unwrap_or_else(||"unknown".into());
-        let max_id=input["max_id"].as_i64().filter(|v|*v>0).or_else(||super::appid::parse_isdb_range(&db_text)).unwrap_or(10_000).clamp(1,10_000);
+        let max_id=input["max_id"].as_i64().filter(|v|*v>0).or_else(||super::appid::parse_isdb_range(&db_text)).unwrap_or(10_000).min(1_000_000_000);let collect_max=max_id.min(10_000);
         let start=std::time::Instant::now();let mut services=serde_json::Map::new();let mut by_name=serde_json::Map::new();let mut errors=Vec::<String>::new();
         if db_failed{errors.push("could_not_read_isdb_database_info_using_default_range".into());}
-        'collection: for chunk_start in (1..=max_id).step_by(1000) {
+        'collection: for chunk_start in (1..=collect_max).step_by(1000) {
             if start.elapsed()>Duration::from_secs(600){break}
-            let chunk_end=(chunk_start+999).min(max_id);let mut chunk_ok=false;
+            let chunk_end=(chunk_start+999).min(collect_max);let mut chunk_ok=false;
             for attempt in 0..3 {
                 if attempt>0{std::thread::sleep(Duration::from_secs(attempt as u64));}
                 let chunk_started=std::time::Instant::now();let mut chunk_services=serde_json::Map::new();let mut chunk_by_name=serde_json::Map::new();let mut failed=false;

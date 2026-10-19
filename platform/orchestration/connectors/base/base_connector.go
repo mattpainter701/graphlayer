@@ -12,6 +12,8 @@ import (
 
 // BaseConnector provides common functionality for all connector implementations
 type BaseConnector struct {
+	// Config is retained for compatibility with existing connector callers.
+	Config         *ConnectionConfig
 	config        *ConnectionConfig
 	state         ConnectionState
 	stateMux      sync.RWMutex
@@ -23,6 +25,7 @@ type BaseConnector struct {
 // NewBaseConnector creates a new base connector instance
 func NewBaseConnector(config *ConnectionConfig) *BaseConnector {
 	return &BaseConnector{
+		Config: config,
 		config: config,
 		state:  ConnectionStateDisconnected,
 	}
@@ -47,6 +50,9 @@ func (bc *BaseConnector) setConnectionState(state ConnectionState) {
 	bc.state = state
 }
 
+// SetConnectionState updates the connector state for concrete adapters.
+func (bc *BaseConnector) SetConnectionState(state ConnectionState) { bc.setConnectionState(state) }
+
 // IsConnected returns whether the connector is connected
 func (bc *BaseConnector) IsConnected() bool {
 	bc.connMux.RLock()
@@ -60,6 +66,9 @@ func (bc *BaseConnector) setConnected(connected bool) {
 	defer bc.connMux.Unlock()
 	bc.connected = connected
 }
+
+// SetConnected updates the connection flag for concrete adapters.
+func (bc *BaseConnector) SetConnected(connected bool) { bc.setConnected(connected) }
 
 // Connect attempts to establish a connection (to be overridden by implementations)
 func (bc *BaseConnector) Connect(ctx context.Context) error {
@@ -145,16 +154,6 @@ func (bc *BaseConnector) SendCommandsToDevice(ctx context.Context, deviceID stri
 	return nil, fmt.Errorf("send commands to device not implemented")
 }
 
-// GetDeviceInventory gets device inventory (to be overridden)
-func (bc *BaseConnector) GetDeviceInventory(ctx context.Context) ([]*DeviceInfo, error) {
-	return nil, fmt.Errorf("get device inventory not implemented")
-}
-
-// GetDeviceConfigs gets configurations for multiple devices (to be overridden)
-func (bc *BaseConnector) GetDeviceConfigs(ctx context.Context, deviceIDs []string) (map[string]*ConfigResult, error) {
-	return nil, fmt.Errorf("get device configs not implemented")
-}
-
 // calculateConfigHash calculates a SHA256 hash of the configuration data
 func (bc *BaseConnector) calculateConfigHash(configData string) string {
 	hash := sha256.Sum256([]byte(configData))
@@ -174,6 +173,11 @@ func (bc *BaseConnector) createCommandResult(deviceID, command, output, errorMsg
 	}
 }
 
+// CreateCommandResult builds a timestamped command result for concrete adapters.
+func (bc *BaseConnector) CreateCommandResult(deviceID, command, output, errorMsg string, exitCode int, duration time.Duration) *CommandResult {
+	return bc.createCommandResult(deviceID, command, output, errorMsg, exitCode, duration)
+}
+
 // createConfigResult creates a standardized config result
 func (bc *BaseConnector) createConfigResult(deviceID, configType, configData string, duration time.Duration) *ConfigResult {
 	return &ConfigResult{
@@ -184,6 +188,11 @@ func (bc *BaseConnector) createConfigResult(deviceID, configType, configData str
 		RetrievedAt: time.Now(),
 		Duration:    duration,
 	}
+}
+
+// CreateConfigResult builds a hashed config result for concrete adapters.
+func (bc *BaseConnector) CreateConfigResult(deviceID, configType, configData string, duration time.Duration) *ConfigResult {
+	return bc.createConfigResult(deviceID, configType, configData, duration)
 }
 
 // RetryOperation retries an operation with exponential backoff
