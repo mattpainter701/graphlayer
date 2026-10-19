@@ -310,8 +310,18 @@ fn request(input: &Value) -> Result<Value, String> {
         }
         request = request.query(&pairs)
     }
-    let body = input.get("body").filter(|v| !v.is_null());
-    if let Some(body) = body {
+    if let Some(encoded) = input.get("body_base64").and_then(Value::as_str) {
+        if encoded.len() > MAX_BODY_BYTES.div_ceil(3) * 4 {
+            return Err("request_body_too_large".into());
+        }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|_| "request_body_decode_failed".to_string())?;
+        if bytes.len() > MAX_BODY_BYTES {
+            return Err("request_body_too_large".into());
+        }
+        request = request.body(bytes);
+    } else if let Some(body) = input.get("body").filter(|v| !v.is_null()) {
         if serde_json::to_vec(body)
             .map_err(|_| "request_body_serialize_failed".to_string())?
             .len()

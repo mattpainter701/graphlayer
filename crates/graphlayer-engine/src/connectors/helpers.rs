@@ -100,7 +100,8 @@ fn write_config(input: &Value) -> Result<Value, String> {
         return Err("config_file_too_large".into());
     }
     let canonical_root = prepare_private_output_directory(Path::new(&root))?;
-    secure_write(&canonical_root, &file_name, bytes).map_err(|_| "config_file_write_failed".to_string())?;
+    secure_write(&canonical_root, &file_name, bytes)
+        .map_err(|_| "config_file_write_failed".to_string())?;
     Ok(json!({"path":canonical_root.join(file_name).to_string_lossy()}))
 }
 
@@ -473,18 +474,34 @@ mod output_tests {
             &json!({"working_folder":root.to_string_lossy(),"file_name":"router_running.txt","content":"sensitive config"}),
         )
         .unwrap();
-        assert_eq!(fs::read(result["path"].as_str().unwrap()).unwrap(), b"sensitive config");
+        assert_eq!(
+            fs::read(result["path"].as_str().unwrap()).unwrap(),
+            b"sensitive config"
+        );
         let replaced = dispatch(
             "connector.write_config",
             &json!({"working_folder":root.to_string_lossy(),"file_name":"router_running.txt","content":"updated config"}),
         )
         .unwrap();
-        assert_eq!(fs::read(replaced["path"].as_str().unwrap()).unwrap(), b"updated config");
+        assert_eq!(
+            fs::read(replaced["path"].as_str().unwrap()).unwrap(),
+            b"updated config"
+        );
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(fs::metadata(root).unwrap().permissions().mode() & 0o777, 0o700);
-            assert_eq!(fs::metadata(result["path"].as_str().unwrap()).unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(
+                fs::metadata(root).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(result["path"].as_str().unwrap())
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
         }
         let _ = fs::remove_dir_all(parent);
     }

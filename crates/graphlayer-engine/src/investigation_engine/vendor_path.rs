@@ -928,7 +928,9 @@ pub fn evaluate_vendor_return(
             s(&forward, "egress_interface"),
         )
     {
-        return Err("return scope, ingress, and tuple must exactly reverse the forward path".into());
+        return Err(
+            "return scope, ingress, and tuple must exactly reverse the forward path".into(),
+        );
     }
     let mut want = forward["egress_flow"].clone();
     want["scope"] = input["scope"].clone();
@@ -939,7 +941,9 @@ pub fn evaluate_vendor_return(
     want["source_port"] = want["destination_port"].clone();
     want["destination_port"] = fp;
     if input["flow"] != want {
-        return Err("return scope, ingress, and tuple must exactly reverse the forward path".into());
+        return Err(
+            "return scope, ingress, and tuple must exactly reverse the forward path".into(),
+        );
     }
     if verify_forward {
         let verify = json!({"scope":forward["scope"],"config":input["config"],"ingress_interface":forward["ingress_interface"],"flow":forward["original_flow"]});

@@ -665,7 +665,7 @@ mod tests {
     fn safe_output_creates_nested_files_and_rejects_traversal() {
         let root = temp_root();
         let target = secure_child(&root, "nested/config.txt").unwrap();
-        assert!(target.starts_with(&root));
+        assert!(target.starts_with(fs::canonicalize(&root).unwrap()));
         assert!(target.parent().unwrap().is_dir());
         assert_eq!(secure_write(&root, "nested/config.txt", b"config"), Ok(()));
         assert_eq!(fs::read(target).unwrap(), b"config");

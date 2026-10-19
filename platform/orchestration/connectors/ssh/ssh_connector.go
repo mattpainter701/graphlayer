@@ -22,6 +22,8 @@ type SSHConnector struct {
 	workerSessionID string
 	workerConfig    map[string]any
 	sessionMutex    sync.Mutex
+	workerMutex     sync.RWMutex
+	callGate        sync.RWMutex
 	shell           *InteractiveShell
 }
 
@@ -29,6 +31,7 @@ type InteractiveShell struct {
 	worker          *rustengine.Session
 	workerSessionID string
 	mutex           sync.Mutex
+	callGate        *sync.RWMutex
 }
 
 const maxSSHPrivateKeyBytes int64 = 1 << 20
@@ -88,12 +91,15 @@ func (sc *SSHConnector) Connect(ctx context.Context) error {
 		sc.SetConnectionState(base.ConnectionStateError)
 		return fmt.Errorf("SSH worker did not establish a session")
 	}
-	sc.worker = worker
-	sc.workerSessionID = sid
+	workerID := sid
 	if result.SessionID != "" {
-		sc.workerSessionID = result.SessionID
+		workerID = result.SessionID
 	}
+	sc.workerMutex.Lock()
+	sc.worker = worker
+	sc.workerSessionID = workerID
 	sc.workerConfig = config
+	sc.workerMutex.Unlock()
 	sc.SetConnected(true)
 	sc.SetConnectionState(base.ConnectionStateConnected)
 	return nil
@@ -116,20 +122,31 @@ func readPrivateKey(path string) ([]byte, error) {
 }
 
 func (sc *SSHConnector) InvokeShell(ctx context.Context) (*InteractiveShell, error) {
-	if !sc.IsConnected() {
+	sc.callGate.RLock()
+	defer sc.callGate.RUnlock()
+	sc.workerMutex.RLock()
+	worker, sid, config := sc.worker, sc.workerSessionID, sc.workerConfig
+	sc.workerMutex.RUnlock()
+	if worker == nil {
 		return nil, fmt.Errorf("not connected")
 	}
 	var result struct {
 		Connected bool `json:"connected"`
 	}
-	if err := sc.call(ctx, "ssh.open_shell", map[string]any{"config": sc.workerConfig}, &result); err != nil {
+	if err := callSSHSession(ctx, worker, sid, "ssh.open_shell", map[string]any{"config": config}, &result); err != nil {
 		return nil, err
 	}
 	if !result.Connected {
 		return nil, fmt.Errorf("SSH shell did not open")
 	}
-	shell := &InteractiveShell{worker: sc.worker, workerSessionID: sc.workerSessionID}
+	shell := &InteractiveShell{worker: worker, workerSessionID: sid, callGate: &sc.callGate}
+	sc.workerMutex.Lock()
+	if sc.worker != worker || sc.workerSessionID != sid {
+		sc.workerMutex.Unlock()
+		return nil, rustengine.ErrUnavailable
+	}
 	sc.shell = shell
+	sc.workerMutex.Unlock()
 	return shell, nil
 }
 
@@ -139,6 +156,10 @@ func (shell *InteractiveShell) SendCommand(command string, timeout time.Duration
 	}
 	shell.mutex.Lock()
 	defer shell.mutex.Unlock()
+	if shell.callGate != nil {
+		shell.callGate.RLock()
+		defer shell.callGate.RUnlock()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	var raw map[string]json.RawMessage
@@ -159,6 +180,12 @@ func (shell *InteractiveShell) Close() error {
 	if shell == nil || shell.worker == nil {
 		return nil
 	}
+	shell.mutex.Lock()
+	defer shell.mutex.Unlock()
+	if shell.callGate != nil {
+		shell.callGate.RLock()
+		defer shell.callGate.RUnlock()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var out map[string]json.RawMessage
@@ -166,33 +193,53 @@ func (shell *InteractiveShell) Close() error {
 }
 
 func (sc *SSHConnector) call(ctx context.Context, operation string, input map[string]any, out any) error {
-	if sc.worker == nil {
+	sc.callGate.RLock()
+	defer sc.callGate.RUnlock()
+	sc.workerMutex.RLock()
+	worker, sid := sc.worker, sc.workerSessionID
+	sc.workerMutex.RUnlock()
+	if worker == nil {
 		return rustengine.ErrUnavailable
 	}
-	input["session_id"] = sc.workerSessionID
-	return sc.worker.Call(ctx, operation, input, out)
+	return callSSHSession(ctx, worker, sid, operation, input, out)
 }
+
+func callSSHSession(ctx context.Context, worker *rustengine.Session, sid, operation string, input map[string]any, out any) error {
+	input["session_id"] = sid
+	return worker.Call(ctx, operation, input, out)
+}
+
 func (sc *SSHConnector) Disconnect(ctx context.Context) error {
 	sc.sessionMutex.Lock()
 	defer sc.sessionMutex.Unlock()
-	var disconnectErr error
-	if sc.worker != nil {
-		var out map[string]json.RawMessage
-		disconnectErr = sc.call(ctx, "ssh.disconnect", map[string]any{}, &out)
-		if closeErr := sc.worker.Close(); disconnectErr == nil {
-			disconnectErr = closeErr
-		}
-	}
+	sc.callGate.Lock()
+	defer sc.callGate.Unlock()
+	sc.workerMutex.Lock()
+	worker, sid := sc.worker, sc.workerSessionID
 	sc.worker = nil
 	sc.workerSessionID = ""
 	sc.workerConfig = nil
 	sc.shell = nil
+	sc.workerMutex.Unlock()
+	var disconnectErr error
+	if worker != nil {
+		var out map[string]json.RawMessage
+		disconnectErr = callSSHSession(ctx, worker, sid, "ssh.disconnect", map[string]any{}, &out)
+		if closeErr := worker.Close(); disconnectErr == nil {
+			disconnectErr = closeErr
+		}
+	}
 	sc.SetConnected(false)
 	sc.SetConnectionState(base.ConnectionStateDisconnected)
 	return disconnectErr
 }
-func (sc *SSHConnector) IsConnected() bool { return sc.BaseConnector.IsConnected() && sc.worker != nil }
-func (sc *SSHConnector) GetType() string   { return "ssh" }
+func (sc *SSHConnector) IsConnected() bool {
+	sc.workerMutex.RLock()
+	connected := sc.worker != nil
+	sc.workerMutex.RUnlock()
+	return sc.BaseConnector.IsConnected() && connected
+}
+func (sc *SSHConnector) GetType() string { return "ssh" }
 
 func (sc *SSHConnector) ExecuteCommand(ctx context.Context, command string, timeout time.Duration) (*base.CommandResult, error) {
 	if !sc.IsConnected() {
@@ -202,7 +249,10 @@ func (sc *SSHConnector) ExecuteCommand(ctx context.Context, command string, time
 	defer cancel()
 	start := time.Now()
 	op := "ssh.execute"
-	if sc.shell != nil {
+	sc.workerMutex.RLock()
+	shell := sc.shell
+	sc.workerMutex.RUnlock()
+	if shell != nil {
 		op = "ssh.shell_execute"
 	}
 	var raw map[string]json.RawMessage

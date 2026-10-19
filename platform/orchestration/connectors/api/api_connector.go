@@ -25,6 +25,9 @@ type APIConnector struct {
 	deviceType      types.DeviceType
 	worker          *rustengine.Session
 	workerSessionID string
+	sessionMutex    sync.Mutex
+	workerMutex     sync.RWMutex
+	callGate        sync.RWMutex
 	requestCount    uint64
 	requestMutex    sync.RWMutex
 }
@@ -61,7 +64,9 @@ func NewAPIConnector(config *base.ConnectionConfig, deviceType types.DeviceType)
 }
 
 func (ac *APIConnector) Connect(ctx context.Context) error {
-	if ac.worker != nil {
+	ac.sessionMutex.Lock()
+	defer ac.sessionMutex.Unlock()
+	if ac.session() != nil {
 		return nil
 	}
 	if err := ac.BaseConnector.Connect(ctx); err != nil {
@@ -89,26 +94,36 @@ func (ac *APIConnector) Connect(ctx context.Context) error {
 		ac.SetConnectionState(base.ConnectionStateError)
 		return fmt.Errorf("API worker did not establish a session")
 	}
-	ac.worker = worker
-	ac.workerSessionID = sid
+	workerID := sid
 	if result.SessionID != "" {
-		ac.workerSessionID = result.SessionID
+		workerID = result.SessionID
 	}
+	ac.workerMutex.Lock()
+	ac.worker = worker
+	ac.workerSessionID = workerID
+	ac.workerMutex.Unlock()
 	ac.SetConnected(true)
 	ac.SetConnectionState(base.ConnectionStateConnected)
 	return nil
 }
 
 func (ac *APIConnector) Disconnect(ctx context.Context) error {
+	ac.sessionMutex.Lock()
+	defer ac.sessionMutex.Unlock()
+	ac.callGate.Lock()
+	defer ac.callGate.Unlock()
+	ac.workerMutex.Lock()
+	worker, sid := ac.worker, ac.workerSessionID
+	ac.worker = nil
+	ac.workerSessionID = ""
+	ac.workerMutex.Unlock()
 	var disconnectErr error
-	if ac.worker != nil {
+	if worker != nil {
 		var result map[string]json.RawMessage
-		disconnectErr = ac.call(ctx, "api.disconnect", map[string]any{}, &result)
-		if closeErr := ac.worker.Close(); disconnectErr == nil {
+		disconnectErr = callSession(ctx, worker, sid, "api.disconnect", map[string]any{}, &result)
+		if closeErr := worker.Close(); disconnectErr == nil {
 			disconnectErr = closeErr
 		}
-		ac.worker = nil
-		ac.workerSessionID = ""
 	}
 	ac.SetConnected(false)
 	ac.SetConnectionState(base.ConnectionStateDisconnected)
@@ -116,15 +131,32 @@ func (ac *APIConnector) Disconnect(ctx context.Context) error {
 }
 
 func (ac *APIConnector) call(ctx context.Context, operation string, input map[string]any, out any) error {
-	if ac.worker == nil {
+	ac.callGate.RLock()
+	defer ac.callGate.RUnlock()
+	ac.workerMutex.RLock()
+	worker, sid := ac.worker, ac.workerSessionID
+	ac.workerMutex.RUnlock()
+	if worker == nil {
 		return rustengine.ErrUnavailable
 	}
-	input["session_id"] = ac.workerSessionID
-	return ac.worker.Call(ctx, operation, input, out)
+	return callSession(ctx, worker, sid, operation, input, out)
 }
 
-func (ac *APIConnector) IsConnected() bool { return ac.BaseConnector.IsConnected() && ac.worker != nil }
-func (ac *APIConnector) GetType() string   { return "api" }
+func callSession(ctx context.Context, worker *rustengine.Session, sid, operation string, input map[string]any, out any) error {
+	input["session_id"] = sid
+	return worker.Call(ctx, operation, input, out)
+}
+
+func (ac *APIConnector) session() *rustengine.Session {
+	ac.workerMutex.RLock()
+	defer ac.workerMutex.RUnlock()
+	return ac.worker
+}
+
+func (ac *APIConnector) IsConnected() bool {
+	return ac.BaseConnector.IsConnected() && ac.session() != nil
+}
+func (ac *APIConnector) GetType() string { return "api" }
 func (ac *APIConnector) Ping(ctx context.Context, timeout time.Duration) error {
 	if !ac.IsConnected() {
 		return fmt.Errorf("not connected")
@@ -361,13 +393,14 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 			query[k] = v
 		}
 	}
-	payload := ""
+	var payload *string
 	if body != nil {
 		b, e := readRequestBody(body)
 		if e != nil {
 			return nil, e
 		}
-		payload = string(b)
+		encoded := base64.StdEncoding.EncodeToString(b)
+		payload = &encoded
 	}
 	var result struct {
 		Status     int                 `json:"status"`
@@ -377,7 +410,7 @@ func (ac *APIConnector) doRequest(ctx context.Context, method, endpoint string, 
 	ac.requestMutex.Lock()
 	ac.requestCount++
 	ac.requestMutex.Unlock()
-	if err := ac.call(ctx, "api.request", map[string]any{"method": method, "path": parsed.EscapedPath(), "query": query, "body": payload, "raw_response": true}, &result); err != nil {
+	if err := ac.call(ctx, "api.request", map[string]any{"method": method, "path": parsed.EscapedPath(), "query": query, "body_base64": payload, "raw_response": true}, &result); err != nil {
 		return nil, err
 	}
 	if result.Status < 100 || result.Status > 599 || result.BodyBase64 == nil {

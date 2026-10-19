@@ -139,6 +139,22 @@ func assertSSHConnectorConnectsWithHostKey(t *testing.T, hostKeyAlgorithm string
 			t.Fatalf("expected parsed SSH fixture output for %q, got %#v", command, result)
 		}
 	}
+
+	startCalls := make(chan struct{})
+	var calls sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		calls.Add(1)
+		go func() {
+			defer calls.Done()
+			<-startCalls
+			_, _ = connector.ExecuteCommand(ctx, "show version", time.Second)
+		}()
+	}
+	close(startCalls)
+	if err := connector.Disconnect(context.Background()); err != nil {
+		t.Fatalf("disconnect during concurrent command calls: %v", err)
+	}
+	calls.Wait()
 }
 
 func newTestSSHServer(t *testing.T, username, password, hostKeyAlgorithm string) (net.Listener, *gossh.ServerConfig, gossh.PublicKey) {

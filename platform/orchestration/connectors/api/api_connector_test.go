@@ -69,8 +69,9 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 
 	var (
 		mu     sync.Mutex
-		bodies []string
+		bodies [][]byte
 	)
+	wantBody := []byte{0x00, 'p', 'a', 'y', 'l', 'o', 'a', 'd', '-', 0xff, '\n'}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/payload" {
@@ -83,7 +84,7 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 		}
 
 		mu.Lock()
-		bodies = append(bodies, string(data))
+		bodies = append(bodies, append([]byte(nil), data...))
 		count := len(bodies)
 		mu.Unlock()
 
@@ -113,7 +114,7 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 		t.Fatalf("connect returned error: %v", err)
 	}
 
-	resp, err := connector.doRequest(context.Background(), http.MethodPost, "/payload", bytes.NewBufferString("payload-data"))
+	resp, err := connector.doRequest(context.Background(), http.MethodPost, "/payload", bytes.NewReader(wantBody))
 	if err != nil {
 		t.Fatalf("doRequest failed: %v", err)
 	}
@@ -138,8 +139,8 @@ func TestAPIConnectorRetryClonesRequestBody(t *testing.T) {
 	}
 
 	for i, body := range bodies {
-		if body != "payload-data" {
-			t.Fatalf("attempt %d body mismatch: %q", i+1, body)
+		if !bytes.Equal(body, wantBody) {
+			t.Fatalf("attempt %d body mismatch: %v", i+1, body)
 		}
 	}
 }
@@ -154,6 +155,57 @@ func TestWriteConfigFileHonorsCanceledContext(t *testing.T) {
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("cancelled config write created target: %v", err)
+	}
+}
+
+func TestAPIConnectorConcurrentRequestAndDisconnect(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/payload" {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	config, cleanup := newTLSConfigForHandler(t, handler, 1)
+	defer cleanup()
+	var releaseOnce sync.Once
+	releaseRequest := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseRequest()
+	connector, err := NewAPIConnector(config, types.DeviceTypeGenericAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := connector.Connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	requestDone := make(chan error, 1)
+	go func() {
+		resp, err := connector.doRequest(ctx, http.MethodGet, "/payload", nil)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		requestDone <- err
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("request did not reach fixture server")
+	}
+	disconnectDone := make(chan error, 1)
+	go func() { disconnectDone <- connector.Disconnect(ctx) }()
+	releaseRequest()
+	if err := <-requestDone; err != nil {
+		t.Fatalf("in-flight request failed during disconnect: %v", err)
+	}
+	if err := <-disconnectDone; err != nil {
+		t.Fatalf("disconnect: %v", err)
 	}
 }
 
