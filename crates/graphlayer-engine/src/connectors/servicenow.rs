@@ -1,10 +1,11 @@
 use super::common::*;
+use super::fileshare::{create_private_dir_all, secure_write};
 use reqwest::blocking::Client;
 use reqwest::header::ACCEPT;
 use serde_json::{json, Value};
 use std::io::Read;
 use std::time::Duration;
-use std::{fs, path::PathBuf};
+use std::{fs, path::{Path, PathBuf}};
 
 fn config(i: &Value) -> &Value {
     i.get("connector_data").unwrap_or(&Value::Null)
@@ -218,12 +219,7 @@ pub fn collect(i: &Value) -> Result<Value, String> {
     let _ = ping(i)?;
     let kwargs = i.get("kwargs").unwrap_or(&Value::Null);
     let state_path = state_path(i);
-    let state = state_path
-        .as_ref()
-        .and_then(|p| fs::read(p).ok())
-        .filter(|b| b.len() <= 1024 * 1024)
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-        .unwrap_or_else(|| json!({}));
+    let state = load_state(i).unwrap_or_else(|_| json!({}));
     let updated = kwargs
         .get("updated_since")
         .filter(|v| !text(v).is_empty())
@@ -267,7 +263,7 @@ pub fn collect(i: &Value) -> Result<Value, String> {
         if bytes.len() > 1024 * 1024 {
             return Err("state_too_large".into());
         }
-        fs::write(path, bytes).map_err(|_| "state_write_failed".to_string())?;
+        write_state_file(&path, &bytes)?;
     }
     Ok(result)
 }
@@ -281,9 +277,25 @@ pub fn load_state(i: &Value) -> Result<Value, String> {
     let Some(path) = state_path(i) else {
         return Ok(json!({}));
     };
-    let Some(bytes) = fs::read(path).ok().filter(|b| b.len() <= 1024 * 1024) else {
+    const MAX_STATE_BYTES: u64 = 1024 * 1024;
+    let Ok(meta) = fs::symlink_metadata(&path) else {
         return Ok(json!({}));
     };
+    if meta.file_type().is_symlink() || !meta.is_file() {
+        return Ok(json!({}));
+    }
+    let Ok(file) = fs::File::open(path) else {
+        return Ok(json!({}));
+    };
+    let mut bytes = Vec::with_capacity((MAX_STATE_BYTES as usize).min(meta.len() as usize));
+    if file
+        .take(MAX_STATE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() as u64 > MAX_STATE_BYTES
+    {
+        return Ok(json!({}));
+    }
     Ok(serde_json::from_slice::<Value>(&bytes)
         .ok()
         .filter(Value::is_object)
@@ -303,8 +315,21 @@ pub fn save_state(i: &Value) -> Result<Value, String> {
     if bytes.len() > 1024 * 1024 {
         return Err("state_too_large".into());
     }
-    fs::write(path, bytes).map_err(|_| "state_write_failed".to_string())?;
+    write_state_file(&path, &bytes)?;
     Ok(json!({"saved":true}))
+}
+fn write_state_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let basename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "state_write_failed".to_string())?;
+    create_private_dir_all(parent).map_err(|_| "state_write_failed".to_string())?;
+    secure_write(parent, basename, bytes).map_err(|_| "state_write_failed".to_string())
 }
 pub fn resolve_updated_since(i: &Value) -> Result<Value, String> {
     let explicit = i.get("updated_since").filter(|v| !text(v).is_empty());
@@ -513,4 +538,67 @@ fn first(v: &[String]) -> String {
         .find(|s| !s.is_empty())
         .cloned()
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod state_file_tests {
+    use super::*;
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "graphlayer-servicenow-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn state_round_trip_is_private_and_bounded() {
+        let dir = temp_dir("roundtrip");
+        let path = dir.join("private/state.json");
+        let input = json!({"state_file_path":path,"state":{"last_sync":"2026-10-18T00:00:00Z","opaque":{"credential":"transient"}}});
+        save_state(&input).unwrap();
+        assert_eq!(load_state(&input).unwrap(), input["state"]);
+        let updated = json!({"state_file_path":path,"state":{"last_sync":"2026-10-19T00:00:00Z"}});
+        save_state(&updated).unwrap();
+        assert_eq!(load_state(&updated).unwrap(), updated["state"]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(dir.join("private")).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_state_rejects_existing_symlink_without_touching_target() {
+        use std::os::unix::fs::symlink;
+        let dir = temp_dir("symlink");
+        let target = dir.join("outside.json");
+        let state_path = dir.join("state.json");
+        fs::write(&target, b"private-original").unwrap();
+        symlink(&target, &state_path).unwrap();
+        let input = json!({"state_file_path":state_path,"state":{"secret":"replacement"}});
+        assert_eq!(save_state(&input).unwrap_err(), "state_write_failed");
+        assert_eq!(fs::read(target).unwrap(), b"private-original");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn oversized_state_load_fails_closed() {
+        let dir = temp_dir("oversized");
+        let path = dir.join("state.json");
+        let oversized = vec![b' '; 1024 * 1024 + 1];
+        fs::write(&path, oversized).unwrap();
+        let input = json!({"state_file_path":path});
+        assert_eq!(load_state(&input).unwrap(), json!({}));
+        let _ = fs::remove_dir_all(dir);
+    }
 }

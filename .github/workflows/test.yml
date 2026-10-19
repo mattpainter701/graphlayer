@@ -192,6 +192,9 @@ jobs:
 
       - uses: ./.github/actions/build-rust-engine
 
+      - name: Test native Rust filesystem and worker contracts
+        run: cargo test --locked --release --workspace --lib --bins
+
       - name: Test native vendor parsers and investigation storage
         working-directory: platform
         run: go test ./vendors/cisco/asa ./firewall ./policy ./investigation ./cmd/graphlayer-investigate ./pathanalysis ./networkpath ./rustengine

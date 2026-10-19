@@ -6,7 +6,10 @@ use std::{
     fs::{self, DirBuilder, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 use tokio::{io::AsyncReadExt, runtime::Runtime};
@@ -482,28 +485,52 @@ fn normalize(raw: &str) -> String {
         format!("/{s}")
     }
 }
-fn secure_write(root: &Path, rel: &str, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn secure_write(root: &Path, rel: &str, bytes: &[u8]) -> Result<(), String> {
     let dest = secure_child(root, rel)?;
     match fs::symlink_metadata(&dest) {
         Ok(meta) if meta.file_type().is_symlink() || !meta.is_file() => {
             return Err("unsafe_output_path".into())
         }
-        Ok(_) => fs::remove_file(&dest).map_err(|_| "output_file_error".to_string())?,
+        Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => return Err("output_file_error".to_string()),
     }
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let parent = dest
+        .parent()
+        .ok_or_else(|| "output_file_error".to_string())?;
+    let mut temp = None;
+    for _ in 0..16 {
+        let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(".graphlayer-{}-{id}.tmp", std::process::id()));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&candidate) {
+            Ok(mut file) => {
+                let write_result = file.write_all(bytes).and_then(|()| file.sync_all());
+                drop(file);
+                if write_result.is_err() {
+                    let _ = fs::remove_file(&candidate);
+                    return Err("output_file_error".into());
+                }
+                temp = Some(candidate);
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err("output_file_error".into()),
+        }
     }
-    let mut file = options
-        .open(&dest)
-        .map_err(|_| "output_file_error".to_string())?;
-    file.write_all(bytes)
-        .map_err(|_| "output_file_error".to_string())
+    let temp = temp.ok_or_else(|| "output_file_error".to_string())?;
+    if fs::rename(&temp, &dest).is_err() {
+        let _ = fs::remove_file(&temp);
+        return Err("output_file_error".into());
+    }
+    Ok(())
 }
 fn secure_child(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let path = Path::new(rel);
@@ -553,7 +580,7 @@ fn create_private_dir(path: &Path) -> std::io::Result<()> {
     }
     builder.create(path)
 }
-fn create_private_dir_all(path: &Path) -> std::io::Result<()> {
+pub(crate) fn create_private_dir_all(path: &Path) -> std::io::Result<()> {
     let mut builder = DirBuilder::new();
     #[cfg(unix)]
     {

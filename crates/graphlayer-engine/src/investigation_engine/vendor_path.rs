@@ -902,6 +902,7 @@ pub fn evaluate_vendor_return(
     input: Value,
     forward: Value,
     route_id: Option<&str>,
+    verify_forward: bool,
 ) -> Result<Value, String> {
     if s(&forward, "engine_contract_version") != "graphlayer-vendor-path-v1"
         || s(&forward, "disposition") != "modeled_forward"
@@ -940,10 +941,12 @@ pub fn evaluate_vendor_return(
     if input["flow"] != want {
         return Err("return scope, ingress, and tuple must exactly reverse the forward path".into());
     }
-    let verify = json!({"scope":forward["scope"],"config":input["config"],"ingress_interface":forward["ingress_interface"],"flow":forward["original_flow"]});
-    let verified = evaluate_vendor_path(verify, None)?;
-    if verified != forward {
-        return Err("forward result does not match supplied configuration evidence".into());
+    if verify_forward {
+        let verify = json!({"scope":forward["scope"],"config":input["config"],"ingress_interface":forward["ingress_interface"],"flow":forward["original_flow"]});
+        let verified = evaluate_vendor_path(verify, None)?;
+        if verified != forward {
+            return Err("forward result does not match supplied configuration evidence".into());
+        }
     }
     let mut packet = input["flow"].clone();
     let mut reverse_snat = None;
@@ -972,7 +975,7 @@ pub fn evaluate_vendor_return(
         .unwrap()
         .push(policy);
     let mut result = evaluate_vendor_path(request, route_id)?;
-    add_result_refs(&mut result, refs(&forward));
+    add_result_refs(&mut result, refs(&forward["policy"]));
     result["original_flow"] = input["flow"].clone();
     result["policy_flow"] = packet.clone();
     result["policy"] = forward["policy"].clone();
@@ -995,6 +998,7 @@ pub fn evaluate_vendor_return(
         object.remove("evidence_refs");
     }
     if let Some(t) = reverse_snat {
+        add_result_refs(&mut result, refs(&t));
         let ix = result["stages"]
             .as_array()
             .unwrap()
@@ -1014,6 +1018,7 @@ pub fn evaluate_vendor_return(
         }
     }
     if let Some(t) = reverse_dnat {
+        add_result_refs(&mut result, refs(&t));
         let before = result["egress_flow"].clone();
         if s(&result, "disposition") == "modeled_forward" {
             let after = translated(&before, &t, false)?;

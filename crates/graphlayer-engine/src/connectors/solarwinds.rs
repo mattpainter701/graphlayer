@@ -1,10 +1,12 @@
-use super::common::{normalize_base_url, MAX_BODY_BYTES};
+use super::{
+    common::{normalize_base_url, MAX_BODY_BYTES},
+    fileshare::{create_private_dir_all, secure_write},
+};
 use reqwest::blocking::Client;
 use serde_json::{json, Value};
 use std::{
-    fs,
     io::Read,
-    path::{Component, Path, PathBuf},
+    path::PathBuf,
     time::Duration,
 };
 
@@ -197,7 +199,7 @@ fn save_config(input: &Value) -> Result<Value, String> {
     if root.as_os_str().is_empty() {
         return Err("missing_working_folder".into());
     }
-    fs::create_dir_all(&root).map_err(|_| "output_directory_error".to_string())?;
+    create_private_dir_all(&root).map_err(|_| "output_directory_error".to_string())?;
     let host = text(&device["Caption"]);
     let typ = text(&input["config_type"]);
     let config = text(&input["config"]);
@@ -205,9 +207,9 @@ fn save_config(input: &Value) -> Result<Value, String> {
         return Err("config_too_large".into());
     }
     let filename = format!("{}_{}.cfg", sanitize(&host), typ.to_lowercase());
-    let path = safe_child(&root, &filename)?;
     let output=format!("! Configuration downloaded from SolarWinds NCM\n! Device: {host}\n! IP Address: {}\n! Vendor: {}\n! Machine Type: {}\n! Config Type: {typ}\n! Downloaded: {}\n!\n{}",display(&device["IPAddress"],"N/A"),display(&device["Vendor"],"N/A"),display(&device["MachineType"],"N/A"),chrono::Utc::now().to_rfc3339(),config);
-    fs::write(&path, output).map_err(|_| "config_write_failed".to_string())?;
+    secure_write(&root, &filename, output.as_bytes())?;
+    let path = root.join(filename);
     Ok(json!({"path":path}))
 }
 fn collect(input: &Value) -> Result<Value, String> {
@@ -242,7 +244,7 @@ fn collect(input: &Value) -> Result<Value, String> {
     if root.as_os_str().is_empty() {
         return Err("missing_working_folder".into());
     }
-    fs::create_dir_all(&root).map_err(|_| "output_directory_error".to_string())?;
+    create_private_dir_all(&root).map_err(|_| "output_directory_error".to_string())?;
     let mut downloaded = 0usize;
     for device in &devices {
         let node = device
@@ -275,22 +277,14 @@ fn collect(input: &Value) -> Result<Value, String> {
             }
             let caption = text(&device["Caption"]);
             let file = format!("{}_{}.cfg", sanitize(&caption), config_type.to_lowercase());
-            let path = safe_child(&root, &file)?;
             let content=format!("! Configuration downloaded from SolarWinds NCM\n! Device: {caption}\n! IP Address: {}\n! Vendor: {}\n! Machine Type: {}\n! Config Type: {config_type}\n! Downloaded: {}\n!\n{}",display(&device["IPAddress"],"N/A"),display(&device["Vendor"],"N/A"),display(&device["MachineType"],"N/A"),chrono::Utc::now().to_rfc3339(),config);
-            fs::write(path, content).map_err(|_| "config_write_failed".to_string())?;
+            secure_write(&root, &file, content.as_bytes())?;
             downloaded += 1;
         }
     }
     Ok(
         json!({"status":"completed","devices_processed":devices.len(),"configs_downloaded":downloaded,"message":format!("Downloaded {downloaded} configs from {} devices",devices.len())}),
     )
-}
-fn safe_child(root: &Path, name: &str) -> Result<PathBuf, String> {
-    let p = Path::new(name);
-    if p.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err("invalid_output_filename".into());
-    }
-    Ok(root.join(p))
 }
 fn sanitize(v: &str) -> String {
     v.replace(' ', "_")
@@ -312,5 +306,82 @@ fn text(v: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn save_input(root: &std::path::Path) -> Value {
+        json!({
+            "working_folder": root.to_string_lossy(),
+            "config_type": "Running",
+            "config": "hostname edge\nusername admin secret sanitized-canary",
+            "device": {
+                "Caption": "edge",
+                "IPAddress": "192.0.2.10",
+                "Vendor": "Cisco",
+                "MachineType": "ASA"
+            }
+        })
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_raw_configuration_uses_private_directory_and_file_modes() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "graphlayer-solarwinds-private-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let result = save_config(&save_input(&root)).unwrap();
+        let output_path = root.join("edge_running.cfg");
+        assert_eq!(result["path"].as_str(), output_path.to_str());
+        assert_eq!(
+            std::fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            std::fs::metadata(root.join("edge_running.cfg"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_raw_configuration_rejects_existing_symlink_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "graphlayer-solarwinds-link-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let outside = root.with_extension("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&outside, b"preserve this file").unwrap();
+        symlink(&outside, root.join("edge_running.cfg")).unwrap();
+
+        assert_eq!(
+            save_config(&save_input(&root)).unwrap_err(),
+            "unsafe_output_path"
+        );
+        assert_eq!(std::fs::read(&outside).unwrap(), b"preserve this file");
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_file(outside);
     }
 }

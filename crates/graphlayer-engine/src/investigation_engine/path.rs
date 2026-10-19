@@ -235,7 +235,7 @@ fn evaluate_return_checked_route(
     let input = normalize_input(input);
     let v = s(&input["config"], "vendor").trim().to_ascii_lowercase();
     if !["", "cisco-asa", "cisco_asa", "asa"].contains(&v.as_str()) {
-        return super::vendor_path::evaluate_vendor_return(input, forward, route_id);
+        return super::vendor_path::evaluate_vendor_return(input, forward, route_id, verify);
     }
     if s(&forward, "disposition") != "modeled_forward"
         || forward["policy"].is_null()
