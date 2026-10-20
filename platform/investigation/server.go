@@ -142,6 +142,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"/style.css":    "text/css; charset=utf-8",
 		"/shell.css":    "text/css; charset=utf-8",
 		"/topology.css": "text/css; charset=utf-8",
+		"/topology-layers.css": "text/css; charset=utf-8",
+		"/topology-layers.js": "text/javascript; charset=utf-8",
 	}
 	contentType, allowed := contentTypes[path]
 	if !allowed {
@@ -186,6 +188,14 @@ func (a *App) trustedRequest(r *http.Request) bool {
 
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) == 2 && parts[1] == "topology-layers" || len(parts) == 3 && parts[1] == "sample" && parts[2] == "topology-layers" {
+		if r.Method != http.MethodPost {
+			methodError(w)
+		} else {
+			a.projectLayerTopology(w, r, len(parts) == 3)
+		}
+		return
+	}
 	if len(parts) == 2 && parts[1] == "topology-view" {
 		if r.Method != http.MethodPost {
 			methodError(w)
@@ -325,6 +335,34 @@ type topologyViewRequest struct {
 	BranchIndex     int               `json:"branch_index,omitempty"`
 	ReturnIndex     int               `json:"return_index,omitempty"`
 	Roles           map[string]string `json:"roles,omitempty"`
+}
+
+// Layer maps are transient projections of an explicitly supplied auxiliary
+// dataset. Rust validates records, resolves evidence, aggregates the graph and
+// evaluates L2 paths. This adapter never changes saved workspace evidence.
+func (a *App) projectLayerTopology(w http.ResponseWriter, r *http.Request, sample bool) {
+	var input json.RawMessage
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	operation, required := "topology.project_layers", "counts"
+	if sample {
+		operation, required = "topology.layer_sample", "dataset"
+	}
+	var output map[string]json.RawMessage
+	err := rustengine.Call(r.Context(), operation, input, &output)
+	if analysisUnavailable(w, err) {
+		return
+	}
+	if err != nil {
+		apiError(w, 400, "invalid_topology_layers", "Review the auxiliary dataset, view, filters and host selections.")
+		return
+	}
+	if len(output[required]) == 0 || bytes.Equal(output[required], []byte("null")) {
+		apiError(w, 503, "analysis_engine_unavailable", "The required Rust worker returned an incomplete layer map.")
+		return
+	}
+	writeJSON(w, 200, output)
 }
 
 func (a *App) projectTopology(w http.ResponseWriter, r *http.Request) {

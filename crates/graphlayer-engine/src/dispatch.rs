@@ -170,6 +170,8 @@ pub fn dispatch(operation: &str, input: Value) -> Result<Value, String> {
         "evaluate_network" => e::evaluate_network(input),
         "explore_network" => e::explore_network(input),
         "project_topology" => crate::topology_projection::project_topology(input),
+        "topology.layer_sample" => crate::topology_layers::layer_sample(input),
+        "topology.project_layers" => crate::topology_layers::project_layers(input),
         operation
             if [
                 "connector.",

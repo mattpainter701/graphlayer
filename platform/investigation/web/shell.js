@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const pages = new Set(['workspace', 'imports', 'investigation', 'topology']);
+  const pages = new Set(['workspace', 'imports', 'investigation', 'topology', 'map']);
   const aliases = {
     '': { page: 'workspace' },
     workspace: { page: 'workspace' },
@@ -9,6 +9,8 @@
     imports: { page: 'imports' },
     investigation: { page: 'investigation' },
     topology: { page: 'topology' },
+    map: { page: 'map' },
+    'network-map': { page: 'map' },
     'network-path': { page: 'topology' },
     'policy-inventory': { page: 'investigation', anchor: 'policy-inventory' },
     objects: { page: 'investigation', anchor: 'objects' }
@@ -17,7 +19,8 @@
     workspace: 'Workspace home',
     imports: 'Sources & imports',
     investigation: 'Firewall investigation',
-    topology: 'Network topology'
+    topology: 'Network topology',
+    map: 'Network map'
   };
   function routeFromHash(hash) {
     const raw = String(hash || '').replace(/^#/, '');
