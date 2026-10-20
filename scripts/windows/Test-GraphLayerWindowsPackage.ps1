@@ -14,11 +14,12 @@ $packageRoot = Get-Item -LiteralPath $directory -Force
 if (-not $packageRoot.PSIsContainer) { throw 'PackageDirectory must be a directory.' }
 if ($packageRoot.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Package directory must not be a reparse point.' }
 $expectedNames = @('graphlayer-engine.exe', 'graphlayer-investigate.exe')
-$expectedEntries = @('SHA256SUMS', 'graphlayer-engine.exe', 'graphlayer-investigate.exe', 'manifest.json')
+$expectedPayloads = @('LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'graphlayer-engine.exe', 'graphlayer-investigate.exe')
+$expectedEntries = @('LICENSE.txt', 'SHA256SUMS', 'THIRD-PARTY-NOTICES.txt', 'graphlayer-engine.exe', 'graphlayer-investigate.exe', 'manifest.json')
 $packageItems = @(Get-ChildItem -LiteralPath $directory -Force)
 $actualEntries = @($packageItems | ForEach-Object Name | Sort-Object)
 if (($actualEntries -join '|') -ne (@($expectedEntries | Sort-Object) -join '|')) {
-    throw 'Package directory must contain only the two executables, manifest.json, and SHA256SUMS; nested or extra entries are forbidden.'
+    throw 'Package directory must contain exactly four payloads, manifest.json, and SHA256SUMS; nested or extra entries are forbidden.'
 }
 foreach ($item in $packageItems) {
     if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Package entry must be a regular file: $($item.Name)." }
@@ -33,15 +34,16 @@ if ($RequireSigned -and $manifest.signing_mode -notin @('CertificateStore', 'Pre
 if (-not $RequireSigned -and $manifest.signing_mode) { throw 'Development package manifest must not claim a signing mode.' }
 if ($manifest.commit -notmatch '^[0-9a-fA-F]{40}$') { throw 'Manifest source revision must be a 40-digit commit SHA.' }
 $entries = @($manifest.files)
-if ($entries.Count -ne 2 -or (@($entries | ForEach-Object name | Sort-Object) -join '|') -ne (@($expectedNames | Sort-Object) -join '|')) {
-    throw 'Manifest must contain exactly graphlayer-engine.exe and graphlayer-investigate.exe.'
+if ($entries.Count -ne 4 -or (@($entries | ForEach-Object name | Sort-Object) -join '|') -cne (@($expectedPayloads | Sort-Object) -join '|')) {
+    throw 'Manifest must contain exactly the two executables and both license notices.'
 }
 $actualExe = @(Get-ChildItem -LiteralPath $directory -Filter '*.exe' -File | ForEach-Object Name | Sort-Object)
 if (($actualExe -join '|') -ne (@($expectedNames | Sort-Object) -join '|')) { throw 'Package must contain exactly the application and Rust worker executables.' }
 foreach ($entry in $entries) {
     $file = Join-Path $directory $entry.name
     if ((Get-Item -LiteralPath $file -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Package file must not be a reparse point: $($entry.name)." }
-    if (-not (Test-GraphLayerPE -Path $file)) { throw "Package file is not a valid PE executable: $($entry.name)." }
+    if ($entry.name -in @('LICENSE.txt', 'THIRD-PARTY-NOTICES.txt') -and (Get-Item -LiteralPath $file -Force).Length -le 0) { throw "License notice must not be empty: $($entry.name)." }
+    if ($entry.name -in $expectedNames -and -not (Test-GraphLayerPE -Path $file)) { throw "Package file is not a valid PE executable: $($entry.name)." }
     $actualHash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($entry.sha256 -notmatch '^[0-9a-f]{64}$' -or $actualHash -ne $entry.sha256) { throw "SHA-256 mismatch for $($entry.name)." }
 }

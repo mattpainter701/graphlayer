@@ -21,7 +21,11 @@ function Write-FakePE([string] $Path) {
 }
 
 function Write-Manifest([string] $Directory, [string] $Kind, [string] $Signer) {
-    $names = @('graphlayer-engine.exe', 'graphlayer-investigate.exe')
+    foreach ($noticeName in @('LICENSE.txt', 'THIRD-PARTY-NOTICES.txt')) {
+        $noticePath = Join-Path $Directory $noticeName
+        if (-not (Test-Path -LiteralPath $noticePath -PathType Leaf)) { Copy-Item -LiteralPath (Join-Path $licenseInput $noticeName) -Destination $noticePath }
+    }
+    $names = @('LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'graphlayer-engine.exe', 'graphlayer-investigate.exe')
     $entries = @($names | ForEach-Object { [ordered]@{ name = $_; sha256 = (Get-FileHash (Join-Path $Directory $_) -Algorithm SHA256).Hash.ToLowerInvariant() } })
     $mode = if ($Kind -eq 'Signed') { 'PreSigned' } else { $null }
     $manifest = [ordered]@{ schema='graphlayer-windows-package-v1'; package_kind=$Kind; signing_mode=$mode; commit=('a' * 40); signer_thumbprint=$Signer; files=$entries }
@@ -63,11 +67,49 @@ try {
     $signTool = Resolve-VerifiedSignTool $SignToolPath
     $packageInput = Join-Path $temp 'input'
     New-Item -ItemType Directory -Path $packageInput | Out-Null
+    $licenseInput = Join-Path $temp 'license-input'
+    New-Item -ItemType Directory -Path $licenseInput | Out-Null
+    [IO.File]::WriteAllText((Join-Path $licenseInput 'LICENSE.txt'), 'Synthetic project license notice.' + "`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $licenseInput 'THIRD-PARTY-NOTICES.txt'), 'Synthetic dependency notice.' + "`n", [Text.UTF8Encoding]::new($false))
     Write-FakePE (Join-Path $packageInput 'graphlayer-engine.exe')
     Write-FakePE (Join-Path $packageInput 'graphlayer-investigate.exe')
+    $missingNotices = Join-Path $temp 'missing-notices'
+    Assert-Fails { & $newPackage -InputDirectory $packageInput -LicenseDirectory $missingNotices -OutputDirectory (Join-Path $temp 'missing-license-dir-out') -PackageKind Development -SourceRevision ('a' * 40) } 'missing license directory accepted'
+    $missingNoticeInput = Join-Path $temp 'missing-notice-input'
+    New-Item -ItemType Directory -Path $missingNoticeInput | Out-Null
+    Copy-Item -LiteralPath (Join-Path $licenseInput 'LICENSE.txt') -Destination $missingNoticeInput
+    Assert-Fails { & $newPackage -InputDirectory $packageInput -LicenseDirectory $missingNoticeInput -OutputDirectory (Join-Path $temp 'missing-notice-out') -PackageKind Development -SourceRevision ('a' * 40) } 'missing third-party notice accepted'
+    $emptyNoticeInput = Join-Path $temp 'empty-notice-input'
+    Copy-Item -LiteralPath $licenseInput -Destination $emptyNoticeInput -Recurse
+    [IO.File]::WriteAllBytes((Join-Path $emptyNoticeInput 'LICENSE.txt'), [byte[]]::new(0))
+    Assert-Fails { & $newPackage -InputDirectory $packageInput -LicenseDirectory $emptyNoticeInput -OutputDirectory (Join-Path $temp 'empty-notice-out') -PackageKind Development -SourceRevision ('a' * 40) } 'empty license notice accepted'
+    $extraNoticeInput = Join-Path $temp 'extra-notice-input'
+    Copy-Item -LiteralPath $licenseInput -Destination $extraNoticeInput -Recurse
+    [IO.File]::WriteAllText((Join-Path $extraNoticeInput 'extra.txt'), 'extra')
+    Assert-Fails { & $newPackage -InputDirectory $packageInput -LicenseDirectory $extraNoticeInput -OutputDirectory (Join-Path $temp 'extra-notice-out') -PackageKind Development -SourceRevision ('a' * 40) } 'extra license directory entry accepted'
+    $reparseLicense = Join-Path $temp 'reparse-license-input'
+    New-Item -ItemType Junction -Path $reparseLicense -Target $licenseInput | Out-Null
+    Assert-Fails { & $newPackage -InputDirectory $packageInput -LicenseDirectory $reparseLicense -OutputDirectory (Join-Path $temp 'reparse-license-out') -PackageKind Development -SourceRevision ('a' * 40) } 'reparse license directory accepted'
+    if (Test-Path -LiteralPath $reparseLicense) { Remove-Item -LiteralPath $reparseLicense -Force }
     $development = Join-Path $temp 'development'
-    & $newPackage -InputDirectory $packageInput -OutputDirectory $development -PackageKind Development -SourceRevision ('a' * 40) | Out-Null
+    & $newPackage -InputDirectory $packageInput -LicenseDirectory $licenseInput -OutputDirectory $development -PackageKind Development -SourceRevision ('a' * 40) | Out-Null
     & $testPackage -PackageDirectory $development | Out-Null
+    foreach ($noticeName in @('LICENSE.txt', 'THIRD-PARTY-NOTICES.txt')) {
+        $sourceNotice = Join-Path $licenseInput $noticeName
+        $packagedNotice = Join-Path $development $noticeName
+        if ([IO.File]::ReadAllBytes($sourceNotice).Length -ne [IO.File]::ReadAllBytes($packagedNotice).Length -or
+            (Get-FileHash -LiteralPath $sourceNotice -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $packagedNotice -Algorithm SHA256).Hash) {
+            throw "Packaged notice bytes or hash differ: $noticeName."
+        }
+    }
+    $noticeManifest = Get-Content -LiteralPath (Join-Path $development 'manifest.json') -Raw | ConvertFrom-Json
+    if (@($noticeManifest.files).Count -ne 4 -or @($noticeManifest.files | Where-Object { $_.name -in @('LICENSE.txt', 'THIRD-PARTY-NOTICES.txt') }).Count -ne 2) {
+        throw 'Manifest must hash both notices and both executables.'
+    }
+    if (@(Get-ChildItem -LiteralPath $development -Force).Count -ne 6) { throw 'Package must contain exactly six files.' }
+    [IO.File]::AppendAllText((Join-Path $development 'THIRD-PARTY-NOTICES.txt'), 'tampered')
+    Assert-Fails { & $testPackage -PackageDirectory $development } 'tampered packaged notice accepted'
+    Copy-Item -LiteralPath (Join-Path $licenseInput 'THIRD-PARTY-NOTICES.txt') -Destination (Join-Path $development 'THIRD-PARTY-NOTICES.txt') -Force
     Assert-Fails { & $testPackage -PackageDirectory $development -RequireSigned -ExpectedSignerThumbprint ('0' * 40) } 'unsigned package accepted as signed'
     $extra = Join-Path $development 'extra.exe'
     Copy-Item (Join-Path $packageInput 'graphlayer-engine.exe') $extra
@@ -78,10 +120,10 @@ try {
     Assert-Fails { & $testPackage -PackageDirectory $development -RequireSigned -ExpectedSignerThumbprint ('0' * 39) -SignToolPath $signTool } 'short signer thumbprint accepted'
 
     $invalidTimeOutput = Join-Path $temp 'invalid-time'
-    Assert-Fails { & $newPackage -InputDirectory $packageInput -OutputDirectory $invalidTimeOutput -PackageKind Signed -CertificateThumbprint ('1' * 40) -SignToolPath $signTool -TimestampServer 'http://timestamp.example.invalid' -SourceRevision ('a' * 40) } 'HTTP timestamp URL accepted'
+    Assert-Fails { & $newPackage -InputDirectory $packageInput -LicenseDirectory $licenseInput -OutputDirectory $invalidTimeOutput -PackageKind Signed -CertificateThumbprint ('1' * 40) -SignToolPath $signTool -TimestampServer 'http://timestamp.example.invalid' -SourceRevision ('a' * 40) } 'HTTP timestamp URL accepted'
     if (Test-Path -LiteralPath $invalidTimeOutput) { throw 'Invalid timestamp preflight created an output directory.' }
     $shortThumbOutput = Join-Path $temp 'short-thumb'
-    Assert-Fails { & $newPackage -InputDirectory $packageInput -OutputDirectory $shortThumbOutput -PackageKind Signed -CertificateThumbprint ('1' * 39) -SignToolPath $signTool -TimestampServer 'https://timestamp.example.invalid' -SourceRevision ('a' * 40) } 'short certificate thumbprint accepted'
+    Assert-Fails { & $newPackage -InputDirectory $packageInput -LicenseDirectory $licenseInput -OutputDirectory $shortThumbOutput -PackageKind Signed -CertificateThumbprint ('1' * 39) -SignToolPath $signTool -TimestampServer 'https://timestamp.example.invalid' -SourceRevision ('a' * 40) } 'short certificate thumbprint accepted'
     if (Test-Path -LiteralPath $shortThumbOutput) { throw 'Invalid thumbprint preflight created an output directory.' }
 
     $signedFixture = Join-Path $temp 'signed-fixture'
@@ -123,7 +165,7 @@ try {
     Assert-Fails { & $testPackage -PackageDirectory $alteredSums -RequireSigned -ExpectedSignerThumbprint $thumb -SignToolPath $signTool } 'altered SHA256SUMS accepted'
 
     $preSigned = Join-Path $temp 'pre-signed-package'
-    & $newPackage -InputDirectory $signedFixture -OutputDirectory $preSigned -PackageKind Signed -SigningMode PreSigned -CertificateThumbprint $thumb -SignToolPath $signTool -SourceRevision ('b' * 40) | Out-Null
+    & $newPackage -InputDirectory $signedFixture -LicenseDirectory $licenseInput -OutputDirectory $preSigned -PackageKind Signed -SigningMode PreSigned -CertificateThumbprint $thumb -SignToolPath $signTool -SourceRevision ('b' * 40) | Out-Null
     & $testPackage -PackageDirectory $preSigned -RequireSigned -ExpectedSignerThumbprint $thumb -SignToolPath $signTool | Out-Null
 
     $extraDll = Join-Path $temp 'extra-dll'

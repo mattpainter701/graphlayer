@@ -14,6 +14,8 @@ Use a code-signing identity approved for this application and this device. Smart
 
 The project ships no signing identity or private key. Do not substitute a self-signed or test certificate, export a private key, or place key material in the repository. For certificate-store signing, select the exact approved thumbprint in the specified `CurrentUser` or `LocalMachine` `My` store; the command requires a private key, Code Signing EKU, and current validity. Use the organization’s managed signing service, HSM, or approved certificate store for key custody.
 
+Windows packages include `LICENSE.txt` and `THIRD-PARTY-NOTICES.txt`. The notice collector reads the locked Rust Windows-target dependency report, Go Windows dependency report and saved license materials, the checked-in D3 notice, and upstream Go/Rust standard-library notice bundles. It fails when an identifier is unknown or outside the reviewed allowlist, attribution or full text is missing, or Go's saved material includes source files. The generated inventory preserves upstream text and attribution; it does not decide legal eligibility or prove that a particular linked symbol is present in a binary. Review the exact generated component set and notices as part of release preparation.
+
 A locally generated self-signed certificate does not establish the public trust required by Smart App Control. [SignPath Foundation](https://signpath.org/terms) offers free signing for eligible open-source projects. GraphLayer's Apache-2.0 project license is committed; acceptance and the licensing of the exact Windows release components remain to be assessed during onboarding. No signing identity has been provisioned. The package scripts do not create accounts, accept terms, or change Windows trust policy.
 
 For a signing service that returns already signed binaries, use `-PackageKind Signed -SigningMode PreSigned` with the approved signing certificate thumbprint and SignTool path. This verifies both returned embedded signatures and timestamps before writing the package manifest and hashes; it does not import or require a local private key. Obtain the expected signer identity through the approved signing process rather than trusting a thumbprint supplied by an untrusted download.
@@ -28,10 +30,27 @@ Sign every shipped executable component, including the application and worker. U
 
 The Windows package builder is `scripts/windows/New-GraphLayerWindowsPackage.ps1`. Its interface is:
 
+Generate the notice directory before packaging. The collector requires the pinned
+Rust and Go toolchains, `cargo-about` and `go-licenses` network access to their
+locked registries, and writes to a new work and output directory:
+
+```powershell
+python scripts/windows/build-release-notices.py `
+  --work-directory <new-private-temporary-directory> `
+  --output-directory <new-license-directory>
+```
+
+The notice directory contains exactly `LICENSE.txt` and
+`THIRD-PARTY-NOTICES.txt`. The Go inventory ignores only GraphLayer's own local
+`github.com/mattpainter701/graphlayer/platform` module because the collector
+includes the committed project `LICENSE`; external Go dependencies remain in
+the report and saved notice coverage check.
+
 ```powershell
 & .\scripts\windows\New-GraphLayerWindowsPackage.ps1 `
   -PackageKind Development `
   -InputDirectory <directory-containing-both-executables> `
+  -LicenseDirectory <generated-license-directory> `
   -OutputDirectory <new-directory> `
   -SourceRevision <source-revision>
 ```
@@ -42,6 +61,7 @@ For a signed package, require the approved certificate and timestamp service exp
 & .\scripts\windows\New-GraphLayerWindowsPackage.ps1 `
   -PackageKind Signed `
   -InputDirectory <directory-containing-both-executables> `
+  -LicenseDirectory <generated-license-directory> `
   -OutputDirectory <new-directory> `
   -CertificateThumbprint <approved-sha1-thumbprint> `
   -CertificateStore CurrentUser `
@@ -111,7 +131,9 @@ signatures, timestamp presence and pinned signer, then invokes the package
 builder so it calculates the manifest and SHA-256 sums over the signed bytes. It
 probes the sibling worker and smoke-tests the packaged application before
 uploading a `-signed` review artifact. It has no release-write permission and
-does not publish a GitHub release. Ordinary Windows CI emits a clearly labeled
+does not publish a GitHub release. SignPath receives only the two executable
+files; the final package contains those files plus `LICENSE.txt` and
+`THIRD-PARTY-NOTICES.txt`, for four hashed payloads. Ordinary Windows CI emits a clearly labeled
 unsigned Development package and does not call SignPath.
 
 The source workflow has not completed a real SignPath request. Its presence

@@ -92,6 +92,8 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: ./.github/actions/build-windows-notices
+
       - name: Prepare matching product metadata for both executables
         run: |
           $ErrorActionPreference = 'Stop'
@@ -118,6 +120,7 @@ jobs:
           "GRAPHLAYER_ENGINE=$engine" >> $env:GITHUB_ENV
           ./tests/windows-version-resources.Tests.ps1 -RcPath $env:GRAPHLAYER_RC_PATH -CvtresPath $env:GRAPHLAYER_CVTRES_PATH -RustWorkerPath $engine -Version $env:GRAPHLAYER_RELEASE_VERSION
           New-Item -ItemType Directory -Path signing-input | Out-Null
+          $env:CGO_ENABLED = '0'
           go -C platform build -trimpath -o ../signing-input/graphlayer-investigate.exe ./cmd/graphlayer-investigate
           if ($LASTEXITCODE -ne 0) { throw 'Application release build failed.' }
           Copy-Item -LiteralPath $engine -Destination signing-input/graphlayer-engine.exe
@@ -156,7 +159,7 @@ jobs:
           ./scripts/windows/Test-GraphLayerSigningInput.ps1 -InputDirectory signing-returned -Version $env:GRAPHLAYER_RELEASE_VERSION
           $signTool = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter signtool.exe -Recurse |
             Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-          ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -PackageKind Signed -SigningMode PreSigned -InputDirectory signing-returned -OutputDirectory signed-bundle -CertificateThumbprint $env:EXPECTED_SIGNER -SignToolPath $signTool -SourceRevision $env:GITHUB_SHA
+          ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -PackageKind Signed -SigningMode PreSigned -InputDirectory signing-returned -LicenseDirectory $env:GRAPHLAYER_LICENSE_DIRECTORY -OutputDirectory signed-bundle -CertificateThumbprint $env:EXPECTED_SIGNER -SignToolPath $signTool -SourceRevision $env:GITHUB_SHA
           ./scripts/windows/Test-GraphLayerWindowsPackage.ps1 -PackageDirectory signed-bundle -RequireSigned -ExpectedSignerThumbprint $env:EXPECTED_SIGNER -SignToolPath $signTool
           ./scripts/windows/Test-GraphLayerWorker.ps1 -PackageDirectory signed-bundle -PackageKind Signed -ExpectedSignerThumbprint $env:EXPECTED_SIGNER -SignToolPath $signTool
 

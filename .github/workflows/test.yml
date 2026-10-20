@@ -201,6 +201,12 @@ jobs:
           go-version-file: platform/go.mod
           cache: ${{ runner.environment != 'self-hosted' }}
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: ./.github/actions/build-windows-notices
+
       - name: Prepare matching application and Rust worker version resources
         shell: pwsh
         run: |
@@ -248,11 +254,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path native-input | Out-Null
+          $env:CGO_ENABLED = '0'
           go -C platform build -trimpath -o ../native-input/graphlayer-investigate.exe ./cmd/graphlayer-investigate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item -LiteralPath $env:GRAPHLAYER_ENGINE -Destination native-input/graphlayer-engine.exe
           ./tests/windows-signing-input.Tests.ps1 -ReleaseInputDirectory native-input -Version $env:GRAPHLAYER_PACKAGE_VERSION
-          ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -InputDirectory native-input -OutputDirectory native-bundle -PackageKind Development -SourceRevision (git rev-parse HEAD)
+          ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -InputDirectory native-input -LicenseDirectory $env:GRAPHLAYER_LICENSE_DIRECTORY -OutputDirectory native-bundle -PackageKind Development -SourceRevision (git rev-parse HEAD)
           ./scripts/windows/Test-GraphLayerWindowsPackage.ps1 -PackageDirectory native-bundle
           ./scripts/windows/Test-GraphLayerWorker.ps1 -PackageDirectory native-bundle -PackageKind Development
       - name: Upload explicitly unsigned development bundle
@@ -260,10 +267,6 @@ jobs:
         with:
           name: graphlayer-investigate-windows-amd64-development
           path: native-bundle/
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
 
       - name: Smoke test packaged Windows application and sibling Rust worker
         shell: pwsh

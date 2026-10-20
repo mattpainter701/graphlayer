@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory)] [ValidateSet('Development', 'Signed')] [string] $PackageKind,
     [Parameter(Mandatory)] [string] $InputDirectory,
+    [Parameter(Mandatory)] [string] $LicenseDirectory,
     [Parameter(Mandatory)] [string] $OutputDirectory,
     [ValidateSet('CertificateStore', 'PreSigned')] [string] $SigningMode = 'CertificateStore',
     [string] $SignToolPath,
@@ -21,6 +22,35 @@ $inputDirectoryItem = Get-Item -LiteralPath $InputDirectory -Force
 if (-not $inputDirectoryItem.PSIsContainer) { throw 'InputDirectory must be a directory.' }
 if ($inputDirectoryItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'InputDirectory must not be a reparse point.' }
 $inputRoot = (Resolve-Path -LiteralPath $InputDirectory).Path
+$licenseFullPath = [IO.Path]::GetFullPath($LicenseDirectory)
+$licenseCursor = $licenseFullPath
+while (-not [string]::IsNullOrWhiteSpace($licenseCursor)) {
+    if (Test-Path -LiteralPath $licenseCursor) {
+        $licenseComponent = Get-Item -LiteralPath $licenseCursor -Force
+        if ($licenseComponent.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'LicenseDirectory path must not contain reparse points.'
+        }
+    }
+    $licenseParent = Split-Path -Parent $licenseCursor
+    if ([string]::IsNullOrWhiteSpace($licenseParent) -or $licenseParent -eq $licenseCursor) { break }
+    $licenseCursor = $licenseParent
+}
+$licenseDirectoryItem = Get-Item -LiteralPath $LicenseDirectory -Force
+if (-not $licenseDirectoryItem.PSIsContainer) { throw 'LicenseDirectory must be a directory.' }
+if ($licenseDirectoryItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'LicenseDirectory must not be a reparse point.' }
+$licenseRoot = (Resolve-Path -LiteralPath $LicenseDirectory).Path
+$requiredNotices = @('LICENSE.txt', 'THIRD-PARTY-NOTICES.txt')
+$licenseItems = @(Get-ChildItem -LiteralPath $licenseRoot -Force)
+$actualLicenseNames = @($licenseItems | ForEach-Object Name | Sort-Object)
+if (($actualLicenseNames -join '|') -cne (@($requiredNotices | Sort-Object) -join '|')) {
+    throw 'LicenseDirectory must contain exactly LICENSE.txt and THIRD-PARTY-NOTICES.txt.'
+}
+foreach ($item in $licenseItems) {
+    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "License notice must be a regular file: $($item.Name)."
+    }
+    if ($item.Length -le 0) { throw "License notice must not be empty: $($item.Name)." }
+}
 if ($PackageKind -eq 'Signed') {
     if ([string]::IsNullOrWhiteSpace($CertificateThumbprint) -or [string]::IsNullOrWhiteSpace($SignToolPath)) {
         throw 'Signed packages require SignToolPath and CertificateThumbprint.'
@@ -72,8 +102,12 @@ $createdOutputPath = [IO.Path]::GetFullPath($createdOutput.FullName)
 try {
     $app = Join-Path $output 'graphlayer-investigate.exe'
     $worker = Join-Path $output 'graphlayer-engine.exe'
+    $license = Join-Path $output 'LICENSE.txt'
+    $thirdPartyNotices = Join-Path $output 'THIRD-PARTY-NOTICES.txt'
     Copy-Item -LiteralPath $applicationPath -Destination $app
     Copy-Item -LiteralPath $workerPath -Destination $worker
+    Copy-Item -LiteralPath (Join-Path $licenseRoot 'LICENSE.txt') -Destination $license
+    Copy-Item -LiteralPath (Join-Path $licenseRoot 'THIRD-PARTY-NOTICES.txt') -Destination $thirdPartyNotices
 
     if ($PackageKind -eq 'Signed' -and $SigningMode -eq 'CertificateStore') {
         $storeArg = if ($CertificateStore -eq 'LocalMachine') { '/sm' } else { $null }
@@ -91,7 +125,7 @@ try {
     }
 
     $entries = @()
-    foreach ($file in @($app, $worker)) {
+    foreach ($file in @($app, $worker, $license, $thirdPartyNotices)) {
         $entries += [ordered]@{ name = (Split-Path -Leaf $file); sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
     $manifest = [ordered]@{

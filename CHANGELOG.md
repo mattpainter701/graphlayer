@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows packages retain the project license and generated dependency notices, with notice bytes covered by package integrity checks.
+
 - Package Windows builds with matching application and Rust worker version resources, explicit unsigned development manifests, validated sibling-worker execution, and a gated signing workflow that verifies both executable signatures before hashing the final package.
 - Preserve reviewed Windows recovery validation on the isolated private Linux runner while hosted Windows validation and approved release signing remain pending.
 

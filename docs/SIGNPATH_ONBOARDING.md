@@ -7,6 +7,7 @@
 - Project: GraphLayer
 - Source repository: <https://github.com/mattpainter701/graphlayer>
 - Project license: Apache-2.0 is committed for GraphLayer source. Third-party components retain their respective licenses; inventory the exact Windows release and build dependencies before applying and confirm that all included components meet the Foundation's terms.
+- Windows package notices: the release build generates `LICENSE.txt` and `THIRD-PARTY-NOTICES.txt` from the pinned Windows Rust/Go dependency reports, checked-in D3 license, and upstream toolchain attribution files. The collector fails closed on unknown or unreviewed dependency license identifiers, missing attribution/text, and Go source-sharing material. Inspect the generated output for the exact proposed release before making any application; the inventory is factual preparation and does not establish provider eligibility.
 - Released Windows form: none is identified in the current release record. Current Windows CI is a development package. Publish and document the intended Windows release form before asking SignPath to sign it.
 - Project description: GraphLayer imports network-device configuration and operational state, presents topology views, and evaluates configured firewall policies and network paths. Operators can import files or explicitly initiate supported connector acquisition. Results are configuration-derived investigation evidence; they do not establish live packet reachability.
 
@@ -35,7 +36,7 @@ The opt-in [Windows signing workflow](../.github/workflows/sign-windows.yml) is 
 
 The workflow fails before signing unless the `windows-signing` environment has its explicit `SIGNPATH_APPROVED` switch, configured identifiers, a token, and the expected certificate thumbprint. After provider onboarding, also configure GitHub environment reviewers and branch restrictions, SignPath GitHub.com as the trusted build system, positive origin verification, a release-only signing policy, and manual approval for every signing request. GitHub environment controls and SignPath approval are separate gates.
 
-The [artifact configuration draft](../config/signpath/graphlayer-windows.xml) expects a ZIP containing exactly `graphlayer-engine.exe` and `graphlayer-investigate.exe`; it restricts both to the GraphLayer product name and the supplied version, then applies Authenticode signing. Confirm it against the accepted SignPath project's generated schema/configuration before use.
+The [artifact configuration draft](../config/signpath/graphlayer-windows.xml) expects a ZIP containing exactly `graphlayer-engine.exe` and `graphlayer-investigate.exe`; it restricts both to the GraphLayer product name and the supplied version, then applies Authenticode signing. The final package also contains `LICENSE.txt` and `THIRD-PARTY-NOTICES.txt`; those files are added and hashed after the two executable files return from signing. Confirm the artifact configuration against the accepted SignPath project's generated schema/configuration before use.
 
 | GitHub environment setting | Planned name | Purpose |
 | --- | --- | --- |
