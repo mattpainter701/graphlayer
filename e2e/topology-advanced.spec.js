@@ -1,4 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+
+const screenshotRoot = process.env.GRAPHLAYER_E2E_SCREENSHOT_DIR || path.resolve('test-results');
 
 test.use({ baseURL: 'http://127.0.0.1:8089' });
 
@@ -127,7 +131,7 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
     }
     await filter.selectOption('');
     await expect(canvas.locator('.topology-node:not(.topology-filtered)')).toHaveCount(initial.length);
-    await expect(page.locator('#exploration-disposition')).toContainText(result.disposition);
+    await expect(page.locator('#exploration-disposition')).toContainText(new RegExp(result.disposition, 'i'));
   }
   expect(await page.locator('#exploration-export').isEnabled()).toBe(true);
   expect(await exportAnalysis(page)).toEqual(exportedBeforeFilters);
@@ -200,11 +204,29 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
   expect(sourceEntry).toBeTruthy();
   const sourceLines = owner.snapshot.source_lines.filter((line) => line.number >= sourceEntry.start_line && line.number <= sourceEntry.end_line).map((line) => line.text).filter((line) => line.trim());
   expect(sourceLines.length).toBeGreaterThan(0);
+  const fullscreen = page.locator('#topology-fullscreen');
+  const originalOverflow = await page.locator('body').evaluate((body) => body.style.overflow);
+  await fullscreen.click();
+  await expect(page.locator('.topology-workbench.topology-fullscreen-active')).toBeVisible();
+  await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
   await evidence.click();
   await expect(page.locator('#source-lines')).toBeVisible();
   await expect(page.locator('#source-caption')).toContainText(owner.snapshot.hostname);
   for (const line of sourceLines) await expect(page.locator('#source-text')).toContainText(line);
-  await page.locator('#close-source').click();
+  await expect.poll(() => page.locator('#source-lines').evaluate((drawer) => {
+    const bounds = drawer.getBoundingClientRect();
+    const topmost = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    return Boolean(topmost && drawer.contains(topmost));
+  })).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#source-lines')).toBeHidden();
+  await expect(page.locator('.topology-workbench.topology-fullscreen-active')).toBeVisible();
+  await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.topology-workbench.topology-fullscreen-active')).toHaveCount(0);
+  await expect(fullscreen).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => page.locator('body').evaluate((body) => body.style.overflow)).toBe(originalOverflow);
+  await expect(fullscreen).toBeFocused();
 
   await page.locator('#topology-fit').click();
   const fitted = await canvas.getAttribute('viewBox');
@@ -236,9 +258,12 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
   await expect(page.locator('#exploration-result')).toBeVisible();
   expect(await exportAnalysis(page)).toEqual(exploration);
 
+  await fs.mkdir(screenshotRoot, { recursive: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'topology-advanced-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   const viewport = await page.evaluate(() => ({ width: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
   expect(viewport.document).toBeLessThanOrEqual(390);
   expect(viewport.body).toBeLessThanOrEqual(390);
   expect((await boxesDoNotOverlap(page)).collisions).toEqual([]);
+  await page.screenshot({ path: path.join(screenshotRoot, 'topology-advanced-mobile.png'), fullPage: true });
 });

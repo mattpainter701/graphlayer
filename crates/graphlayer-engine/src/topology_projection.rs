@@ -64,7 +64,7 @@ fn interface_fact_supported(
             let kind = evidence.get(id).map(String::as_str);
             matches!(kind, Some("interface" | "path_interface"))
                 || vendor == "fortinet-fortigate"
-                && matches!(kind, Some("configuration_entry" | "configuration_value"))
+                    && matches!(kind, Some("configuration_entry" | "configuration_value"))
         })
 }
 fn tuple(value: &Value) -> Value {
@@ -428,7 +428,7 @@ pub fn project_topology(input: Value) -> Result<Value, String> {
         };
         let icon = if matches!(
             role,
-            "firewall" | "router" | "switch" | "host" | "server" | "cloud"
+            "firewall" | "router" | "switch" | "host" | "server" | "network"
         ) {
             role
         } else {
@@ -638,7 +638,7 @@ pub fn project_topology(input: Value) -> Result<Value, String> {
         };
         let icon = if matches!(
             role,
-            "firewall" | "router" | "switch" | "host" | "server" | "cloud"
+            "firewall" | "router" | "switch" | "host" | "server" | "network"
         ) {
             role
         } else {
@@ -660,7 +660,7 @@ pub fn project_topology(input: Value) -> Result<Value, String> {
         };
         let icon = if matches!(
             role,
-            "firewall" | "router" | "switch" | "host" | "server" | "cloud"
+            "firewall" | "router" | "switch" | "host" | "server" | "network"
         ) {
             role
         } else {
@@ -721,6 +721,18 @@ mod tests {
         let top = project_topology(input()).unwrap();
         assert_eq!(top["topology"]["facets"]["vrf"]["available"], false);
         assert_eq!(top["topology"]["facets"]["vdom"]["available"], false);
+    }
+    #[test]
+    fn generic_configuration_evidence_does_not_validate_other_vendor_facets() {
+        for vendor in ["cisco-asa", "paloalto-panos"] {
+            let mut sample = input();
+            let config = &mut sample["request"]["nodes"][0]["config"];
+            config["vendor"] = json!(vendor);
+            config["evidence"][0]["kind"] = json!("configuration_value");
+            let top = project_topology(sample).unwrap();
+            assert_eq!(top["topology"]["facets"]["subnet"]["available"], false);
+            assert_eq!(top["topology"]["facets"]["zone"]["available"], false);
+        }
     }
     #[test]
     fn panos_virtual_router_name_requires_matching_parser_evidence() {
@@ -785,12 +797,14 @@ mod tests {
     }
     #[test]
     fn declared_roles_are_validated_and_only_projection_fields_are_emitted() {
-        let mut req = input();
-        req["roles"] = json!({"fw-a":"router"});
-        let top = project_topology(req).unwrap();
-        assert_eq!(top["topology"]["nodes"][0]["role"], "router");
-        let serialized = top.to_string();
-        assert!(!serialized.contains("secret-not-for-view"));
+        for role in ROLES {
+            let mut req = input();
+            req["roles"] = json!({"fw-a":role});
+            let top = project_topology(req).unwrap();
+            assert_eq!(top["topology"]["nodes"][0]["role"], *role);
+            assert_eq!(top["topology"]["nodes"][0]["icon"], *role);
+            assert!(!top.to_string().contains("secret-not-for-view"));
+        }
         let mut bad = input();
         bad["roles"] = json!({"fw-a":"database"});
         assert!(project_topology(bad).is_err());

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, inspectorCollapsed: true, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {} };
+  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, inspectorCollapsed: true, fullscreen: false, fullscreenFocus: null, savedBodyOverflow: null, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {} };
   const $ = (id) => document.getElementById(id);
   const node = (tag, className, text) => { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = String(text); return item; };
   const safeText = (value, fallback = 'Unavailable') => value === undefined || value === null || value === '' ? fallback : String(value);
@@ -25,7 +25,8 @@
     const layer = (id, label, checked) => { const wrap = node('label', 'topology-layer'); const input = node('input'); input.type = 'checkbox'; input.id = id; input.checked = checked; wrap.append(input, document.createTextNode(label)); return { wrap, input }; };
     const forward = layer('topology-show-forward', 'Forward', true); const returned = layer('topology-show-return', 'Return', true);
     const inspectorToggle = toolButton('topology-inspector-toggle', 'Details', 'Show selected device details'); inspectorToggle.setAttribute('aria-controls','topology-inspector'); inspectorToggle.setAttribute('aria-expanded','false');
-    const controls = node('div', 'topology-toolbar-actions'); controls.append(fit, zoomOut, zoom, zoomIn, focus, inspectorToggle, forward.wrap, returned.wrap);
+    const fullscreenToggle = toolButton('topology-fullscreen','Full screen','Expand topology canvas'); fullscreenToggle.setAttribute('aria-pressed','false');
+    const controls = node('div', 'topology-toolbar-actions'); controls.append(fit, zoomOut, zoom, zoomIn, focus, inspectorToggle, fullscreenToggle, forward.wrap, returned.wrap);
     const filters = node('div', 'topology-filter-bar'); filters.id = 'topology-filters'; filters.setAttribute('aria-label', 'Topology filters');
     const resultControls = node('div','topology-result-controls'); resultControls.id = 'topology-result-controls'; resultControls.hidden = true;
     const resultSelector = (id,label,sourceId) => { const wrap = node('label','topology-result-select-label',label); const select = node('select','topology-result-select'); select.id = id; select.setAttribute('aria-label',label); wrap.append(select); select.addEventListener('change',() => { const source = $(sourceId); if (!source || source.value === select.value) return; source.value = select.value; source.dispatchEvent(new Event('change',{bubbles:true})); }); return {wrap,select}; };
@@ -42,8 +43,9 @@
     const trafficStatus = node('span', 'topology-traffic-status', 'Traffic observations unavailable'); trafficStatus.dataset.available = 'false'; trafficStatus.setAttribute('aria-live', 'polite'); help.append(document.createTextNode(' '), trafficStatus);
     state.list.replaceChildren();
     state.root.append(toolbar, resultControls, traceBadge, filters, deviceList, body, help);
-    state.deviceList = deviceList; state.stage = stage; state.inspector = inspector; state.inspectorToggle = inspectorToggle; state.body = body; state.zoomOutput = zoom; state.search = search; state.caption = caption; state.forwardToggle = forward.input; state.returnToggle = returned.input; state.toolbar = toolbar; state.filtersHost = filters; state.resultControls = resultControls; state.branchSelect = branchControl.select; state.returnSelect = returnControl.select; state.resultStatus = resultStatus; state.traceBadge = traceBadge;
+    state.deviceList = deviceList; state.stage = stage; state.inspector = inspector; state.inspectorToggle = inspectorToggle; state.fullscreenToggle = fullscreenToggle; state.body = body; state.zoomOutput = zoom; state.search = search; state.caption = caption; state.forwardToggle = forward.input; state.returnToggle = returned.input; state.toolbar = toolbar; state.filtersHost = filters; state.resultControls = resultControls; state.branchSelect = branchControl.select; state.returnSelect = returnControl.select; state.resultStatus = resultStatus; state.traceBadge = traceBadge;
     inspectorToggle.addEventListener('click', () => setInspectorCollapsed(!state.inspectorCollapsed));
+    fullscreenToggle.addEventListener('click', () => setFullscreen(!state.fullscreen));
     const applyZoom = () => { if (!state.base) return; const width = state.base.width / state.scale; const height = state.base.height / state.scale; state.svg.setAttribute('viewBox', `${state.x} ${state.y} ${width} ${height}`); state.zoomOutput.value = `${Math.round(state.scale * 100)}%`; state.zoomOutput.textContent = `${Math.round(state.scale * 100)}%`; };
     state.applyZoom = applyZoom;
     const svgPoint = (clientX, clientY) => { const matrix = state.svg.getScreenCTM(); if (!matrix) return null; const point = state.svg.createSVGPoint(); point.x = clientX; point.y = clientY; return point.matrixTransform(matrix.inverse()); };
@@ -63,6 +65,7 @@
     state.svg.addEventListener('keydown', (event) => { if (!['Enter', ' '].includes(event.key)) return; const link = event.target.closest('.topology-link'); if (link) { event.preventDefault(); event.stopImmediatePropagation(); selectLink(Number(link.dataset.linkIndex)); return; } const target = event.target.closest('.topology-node'); if (!target) return; event.preventDefault(); event.stopImmediatePropagation(); selectNode(target.dataset.nodeId, false, true); }, true);
     state.filtersHost = filters; state.trafficStatus = trafficStatus;
     window.addEventListener('resize', () => { if (state.base) applyZoom(); });
+    document.addEventListener('keydown', (event) => { const sourceLines = $('source-lines'); const sourceVisible = Boolean(sourceLines && !sourceLines.hidden && sourceLines.getClientRects().length && getComputedStyle(sourceLines).visibility !== 'hidden' && getComputedStyle(sourceLines).display !== 'none'); if (event.key === 'Escape' && state.fullscreen && !sourceVisible) { event.preventDefault(); setFullscreen(false); } }, true);
     state.svg.classList.toggle('topology-hide-forward', !forward.input.checked); state.svg.classList.toggle('topology-hide-return', !returned.input.checked);
   }
 
@@ -151,7 +154,7 @@
     const degrees = new Map(); links.forEach((link) => [link.a.node_id,link.b.node_id].forEach((id) => degrees.set(id,(degrees.get(id) || 0) + 1)));
     const maxDegree = Math.max(1,...degrees.values()); const cardW = 172; const cardH = Math.max(96,30 + maxDegree * 20); const gapY = 50, marginX = 36, marginY = 34;
     const maxColumns = Math.max(1, ...layout.map((entry) => entry.column + 1)); const maxRows = Math.max(1, ...layout.map((entry) => entry.row + 1));
-    const availableWidth = Math.max(480, (state.stage && state.stage.clientWidth || 960) - 24); const desiredPitch = maxColumns > 1 ? (availableWidth - marginX * 2 - cardW) / (maxColumns - 1) : cardW + 120; const gapX = Math.max(72, Math.min(176, desiredPitch - cardW));
+    const availableWidth = Math.max(480, (state.stage && state.stage.clientWidth || 960) - 24); const desiredPitch = maxColumns > 1 ? (availableWidth - marginX * 2 - cardW) / (maxColumns - 1) : cardW + 120; const gapX = Math.max(128, Math.min(176, desiredPitch - cardW));
     const width = Math.max(480, marginX * 2 + cardW + (maxColumns - 1) * (cardW + gapX) + 48);
     const height = Math.max(280, marginY * 2 + cardH + (maxRows - 1) * (cardH + gapY));
     const geometry = layout.map(({ item, column, row }) => { const anchorX = marginX + column * (cardW + gapX) + cardW / 2; const anchorY = marginY + row * (cardH + gapY) + cardH / 2; return { nodeId: item.node_id, anchorX, anchorY, x: anchorX, y: anchorY }; });
@@ -160,7 +163,7 @@
       for (let tick = 0; tick < 90; tick += 1) simulation.tick();
     }
     const positions = new Map(geometry.map((entry) => [entry.nodeId, { x: entry.x - cardW / 2, y: entry.y - cardH / 2 }]));
-    state.svg.replaceChildren(); state.svg.setAttribute('viewBox', `0 0 ${width} ${height}`); state.svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+    state.svg.replaceChildren(); state.svg.setAttribute('viewBox', `0 0 ${width} ${height}`); state.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     state.base = { x: 0, y: 0, width, height }; state.x = 0; state.y = 0; state.scale = 1;
     const defs = svgElement('defs', {}, state.svg);
     [['forward','#27825f'],['return','#557eae'],['blocked','#bf5158'],['unknown','#c3913d']].forEach(([id,color]) => { const marker = svgElement('marker', { id: `topology-arrow-${id}`, viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '5', markerHeight: '5', markerUnits: 'userSpaceOnUse', orient: 'auto' }, defs); svgElement('path', { d: 'M0 0L10 5L0 10z', fill: color }, marker); });
@@ -178,7 +181,7 @@
       const group = svgElement('g', { class: `topology-link${index === state.selectedLink ? ' topology-link-selected' : ''}`, 'data-link-index': index, 'data-provenance': link.provenance || 'declared_topology', 'data-synthetic': String(Boolean(link.synthetic)), tabindex: '0', role: 'button', 'aria-pressed': String(index === state.selectedLink), 'aria-label': `Link ${link.a.node_id} ${link.a.interface || 'port unavailable'} to ${link.b.node_id} ${link.b.interface || 'port unavailable'}` }, linkLayer); linkIndex.set(link, { path, reversePath, group, index });
       svgElement('path', { d: path, class: 'topology-link-line' }, group);
       const title = svgElement('title', {}, group); title.textContent = `${link.a.node_id} · ${link.a.interface || 'port unavailable'} ↔ ${link.b.node_id} · ${link.b.interface || 'port unavailable'}`;
-      const portLabel = (x, y, label, side, lane) => { const text = label || 'port unavailable'; const width = Math.min(112, Math.max(48, text.length * 6.1 + 14)); const lx = side < 0 ? x - width - 7 : x + 7; const ly = y - 11 + lane * 12; const pill = svgElement('g', { class: 'topology-port-label', 'aria-label': text }, group); const title = svgElement('title',{},pill); title.textContent = text; svgElement('rect', { x: lx, y: ly, width, height: 22, rx: 7 }, pill); const t = svgElement('text', { x: lx + width / 2, y: ly + 15 }, pill); t.textContent = text.length > 17 ? `${text.slice(0,14)}…` : text; };
+      const portLabel = (x, y, label, side, lane) => { const text = label || 'port unavailable'; const width = Math.min(112, Math.max(48, text.length * 6.1 + 14)); const lx = side < 0 ? x - width - 7 : x + 7; const ly = y - 11 + lane * 14; const pill = svgElement('g', { class: 'topology-port-label', 'aria-label': text }, group); const title = svgElement('title',{},pill); title.textContent = text; svgElement('rect', { x: lx, y: ly, width, height: 22, rx: 7 }, pill); const t = svgElement('text', { x: lx + width / 2, y: ly + 15 }, pill); t.textContent = text.length > 17 ? `${text.slice(0,14)}…` : text; };
       portLabel(sx, sy, link.a.interface, sameColumn || direction > 0 ? 1 : -1, -1); portLabel(ex, ey, link.b.interface, sameColumn || direction < 0 ? 1 : -1, 1);
     });
     function overlay(hops, direction, status) {
@@ -221,6 +224,24 @@
   function omittedNote(host, omitted, label) { if (omitted > 0) host.append(node('p', 'topology-omitted-note', `${omitted} additional ${label} omitted from this view.`)); }
   function boundedArray(host, values, limit, label, render) { const items = Array.isArray(values) ? values : []; items.slice(0, limit).forEach(render); omittedNote(host, Math.max(0, items.length - limit), label); }
   function evidenceRefs(snapshotId, refs, host, title) { if (!Array.isArray(refs) || !refs.length) return; const row = node('div', 'topology-source-row'); row.append(node('span', 'topology-meta-label', title)); refs.slice(0, 6).forEach((entry) => { const ref = typeof entry === 'object' && entry ? entry.ref || entry.id : entry; const sid = typeof entry === 'object' && entry && entry.snapshot_id || snapshotId; const owner = (state.event && state.event.snapshots || []).map((item) => item.snapshot).find((snapshot) => snapshot && snapshot.id === sid); const evidence = owner && (owner.evidence || []).find((item) => item.id === ref); const label = evidence ? `${String(evidence.kind || 'Source').replaceAll('_', ' ')} · lines ${evidence.start_line}–${evidence.end_line}` : 'Open source'; sourceButton(sid, ref, label, row); }); omittedNote(row, Math.max(0, refs.length - 6), 'source references'); if (row.childElementCount > 1) host.append(row); }
+  function collectOwnedEvidence(snapshot, projected, hops) {
+    if (!snapshot || !snapshot.id || !Array.isArray(snapshot.evidence)) return [];
+    const known = new Map(snapshot.evidence.map((entry) => [String(entry.id),entry])); const refs = new Set();
+    const collect = (values, fallbackOwner) => {
+      if (!Array.isArray(values)) return;
+      values.forEach((entry) => { const ref = entry && typeof entry === 'object' ? entry.ref || entry.id : entry; const owner = entry && typeof entry === 'object' && entry.snapshot_id || fallbackOwner; if (ref !== undefined && ref !== null && String(owner) === String(snapshot.id) && known.has(String(ref))) refs.add(String(ref)); });
+    };
+    (projected && projected.interfaces || []).forEach((iface) => collect(iface && iface.evidence_refs,snapshot.id));
+    const path = snapshot.path || {};
+    ['interfaces','routes','nat_rules','translations','policies'].forEach((field) => (Array.isArray(path[field]) ? path[field] : []).forEach((item) => collect(item && item.evidence_refs,snapshot.id)));
+    collect(path.evidence_refs,snapshot.id);
+    (hops || []).forEach((hop) => {
+      if (String(hop.snapshot_id || '') !== String(snapshot.id)) return;
+      const pathResult = hop.path || {}; collect(hop.evidence || pathResult.evidence_refs,hop.snapshot_id);
+      (Array.isArray(pathResult.stages || pathResult.hops) ? pathResult.stages || pathResult.hops : []).forEach((stage) => collect(stage && (stage.evidence_refs || stage.evidence),hop.snapshot_id));
+    });
+    return [...refs].map((ref) => ({ ref, evidence: known.get(ref) }));
+  }
   function renderDeviceList() {
     if (!state.deviceList) return;
     const query = (state.search.value || '').trim().toLocaleLowerCase(); const nodes = getNodes().filter((item) => matchesFacetFilters(item) && deviceSearchText(item).includes(query));
@@ -271,6 +292,12 @@
       boundedArray(routeContext, p.stages || p.hops, 10, 'path stages', (stage) => { routeContext.append(node('p', 'topology-config-item', `${stage.name || stage.kind || 'Decision'} · ${stage.status || stage.disposition || 'unavailable'}: ${stage.detail || stage.reason || 'No explanation returned'}`)); evidenceRefs(hop.snapshot_id, stage.evidence_refs || stage.evidence, routeContext, `${stage.name || stage.kind || 'Decision'} sources`); }); evidenceRefs(hop.snapshot_id, hop.evidence || p.evidence_refs, routeContext, `${direction} hop sources`);
     });
     routeContext.append(node('p', 'topology-runtime-unavailable', 'Runtime session state, packet captures, counters, and live forwarding observations are unavailable.')); const pathGroup = node('details','topology-inspector-group'); pathGroup.dataset.group = 'path'; pathGroup.open = false; pathGroup.append(node('summary','',state.event && state.event.mode === 'draft' ? 'Analysis status' : 'Selected path context'), routeContext); panel.append(pathGroup);
+    const evidenceContent = node('section','topology-inspector-section'); evidenceContent.append(node('h5','','Saved source references'));
+    const ownedEvidence = collectOwnedEvidence(snapshot,projected,hops); const evidenceRow = node('div','topology-source-row'); evidenceRow.append(node('span','topology-meta-label','Configuration and selected path sources'));
+    ownedEvidence.slice(0,18).forEach(({ref,evidence}) => sourceButton(snapshot && snapshot.id,ref,`${String(evidence.kind || 'Source').replaceAll('_',' ')} · lines ${evidence.start_line}–${evidence.end_line}`,evidenceRow));
+    if (ownedEvidence.length > 18) omittedNote(evidenceRow,ownedEvidence.length - 18,'source references');
+    if (evidenceRow.childElementCount > 1) evidenceContent.append(evidenceRow); else evidenceContent.append(node('p','topology-config-status','No owned source references are available for this snapshot or its selected path.'));
+    const evidenceGroup = node('details','topology-inspector-group'); evidenceGroup.dataset.group = 'evidence'; evidenceGroup.open = false; evidenceGroup.append(node('summary','','Source evidence'),evidenceContent); panel.append(evidenceGroup);
     state.inspector.replaceChildren(panel);
   }
   function selectLink(index) {
@@ -291,6 +318,31 @@
     if (!state.body) return;
     state.inspectorCollapsed = Boolean(collapsed); state.body.classList.toggle('topology-inspector-collapsed',state.inspectorCollapsed);
     if (state.inspectorToggle) { state.inspectorToggle.setAttribute('aria-expanded',String(!state.inspectorCollapsed)); state.inspectorToggle.setAttribute('aria-label',state.inspectorCollapsed ? 'Show selected device details' : 'Hide selected device details'); state.inspectorToggle.textContent = state.inspectorCollapsed ? 'Details' : 'Hide details'; }
+  }
+  function setFullscreen(active) {
+    if (!state.root || !state.fullscreenToggle || state.fullscreen === Boolean(active)) return;
+    state.fullscreen = Boolean(active);
+    if (state.fullscreen) {
+      state.fullscreenFocus = document.activeElement;
+      state.savedBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = state.savedBodyOverflow || '';
+      state.savedBodyOverflow = null;
+    }
+    state.root.classList.toggle('topology-fullscreen-active',state.fullscreen);
+    state.fullscreenToggle.setAttribute('aria-pressed',String(state.fullscreen));
+    state.fullscreenToggle.setAttribute('aria-label',state.fullscreen ? 'Exit full-screen topology' : 'Expand topology canvas');
+    state.fullscreenToggle.textContent = state.fullscreen ? 'Exit full screen' : 'Full screen';
+    const desiredState = state.fullscreen;
+    requestAnimationFrame(() => {
+      if (state.fullscreen !== desiredState) return;
+      if (state.svg.querySelector('.topology-node') && renderGraph()) state.fit();
+      if (!state.fullscreen) {
+        const target = state.fullscreenFocus && state.fullscreenFocus.isConnected ? state.fullscreenFocus : state.fullscreenToggle;
+        state.fullscreenFocus = null; target.focus({ preventScroll: true });
+      }
+    });
   }
   function selectNode(nodeId, focus, revealInspector) {
     if (!nodeId) return; state.selected = nodeId; state.selectedLink = -1; state.svg.querySelectorAll('.topology-link').forEach((item) => { item.classList.remove('topology-link-selected'); item.setAttribute('aria-pressed','false'); }); state.svg.querySelectorAll('.topology-node').forEach((item) => { const selected = item.dataset.nodeId === nodeId; item.classList.toggle('topology-selected', selected); item.setAttribute('aria-pressed', String(selected)); });

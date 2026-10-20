@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Rebuild the topology workspace with D3-spaced device cards, firewall/router/switch/host/server icons, port labels, separate forward/return paths and click-through device/link inspectors. Add explicitly labeled query endpoints and presentation-only icon annotations.
+- Rebuild the topology workspace with D3-spaced device cards, firewall/router/switch/host/server icons, buffered port labels, separate forward/return paths, a full-screen map and expandable device/link inspectors. Add explicitly labeled query endpoints and presentation-only icon annotations.
 - Filter the map by evidence-backed zones, normalized interface subnets, Palo Alto virtual routers and supported FortiGate VDOM context. Keep unavailable observations explicit, and preserve source ownership, saved analysis identities and workspace-v1 through v7 replay.
 
 - Move the local investigation app's ASA, PAN-OS and FortiOS parsers, model validation, policy decisions, routing/NAT, return paths and multi-firewall exploration into the required Rust engine. Preserve released workspace-v1 through v7 records, sanitized source evidence and saved investigation identities.

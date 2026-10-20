@@ -96,7 +96,7 @@ async function expectEvidenceReadableAndOwned(page, hopLocator) {
 test('explores both firewall branches, asymmetric and symmetric returns, source evidence, export, and exact replay', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loadSample(page);
-  await expect(page.locator('[data-app-page="topology"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="topology"]')).toBeVisible();
   await expect(page.locator('.nav-item[href="#network-path"]')).toHaveClass(/active/);
   const exploration = await explore(page);
   const result = exploration.result;
@@ -176,7 +176,7 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
 test('topology workspace searches and inspects a branch device, controls the canvas, and opens its saved evidence', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loadSample(page);
-  await expect(page.locator('[data-app-page="topology"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="topology"]')).toBeVisible();
   await expect(page.locator('.nav-item[href="#network-path"]')).toHaveClass(/active/);
   const exploration = await explore(page);
   expect(exploration.result.branches).toHaveLength(2);

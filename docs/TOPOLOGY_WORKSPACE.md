@@ -29,6 +29,8 @@ configuration parser, route evaluator or alternate analysis engine is involved.
   evidence sections. Clicking a link opens its endpoint ports, provenance and
   snapshot-qualified source links. Evidence opens the shared physical-line drawer.
   The canvas starts at full width; Hide details closes the inspector again.
+  Full screen expands the workbench. Escape closes source evidence first, then
+  exits the expanded map and restores focus to its control.
 - Search, exact facet filters, layer toggles, focus, fit, wheel zoom and background
   drag change only the current view. Filtered nodes/links are hidden without
   recomputing or rewriting saved analysis. Clearing filters restores the map.

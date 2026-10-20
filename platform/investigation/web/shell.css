@@ -38,7 +38,7 @@
 .page-topology .exploration-visual { width: 100%; }
 
 /* Keep the map primary; configuration forms and detailed traces live below it. */
-body[data-app-page="topology"] .main { max-width: none; padding-right: 24px; padding-left: 24px; }
+body[data-current-page="topology"] .main { max-width: none; padding-right: 24px; padding-left: 24px; }
 .page-topology .topology-page-heading { padding: 22px 0 10px; margin: 0; }
 .page-topology .topology-page-heading h1 { font-size: 26px; letter-spacing: -.035em; }
 .page-topology .network-panel { padding: 0; border: 0; background: transparent; box-shadow: none; }
@@ -59,7 +59,7 @@ body[data-app-page="topology"] .main { max-width: none; padding-right: 24px; pad
 .page-topology .history-panel { margin-top: 0; }
 
 @media (max-width: 600px) {
-  body[data-app-page="topology"] .main { padding-right: 12px; padding-left: 12px; }
+  body[data-current-page="topology"] .main { padding-right: 12px; padding-left: 12px; }
   .page-topology .network-actions .button { flex: 1 1 130px; }
   .network-setup { padding-right: 10px; padding-left: 10px; }
   .network-setup-hint { flex-basis: 100%; margin-left: 28px; padding-bottom: 8px; }

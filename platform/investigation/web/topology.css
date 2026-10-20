@@ -127,6 +127,34 @@
 .topology-stage .topology-node.topology-cloud .topology-device-icon { stroke: #27847f; }
 .topology-stage .topology-node.topology-network .topology-device-icon { stroke: #4d6c54; }
 .topology-stage .topology-node.topology-device .topology-device-icon { stroke: #647887; }
+
+.topology-workbench.topology-fullscreen-active {
+  position: fixed;
+  inset: 12px;
+  z-index: 10;
+  display: flex;
+  width: auto;
+  height: auto;
+  max-height: none;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 0 0 100vmax rgba(13,30,43,.54), 0 24px 80px rgba(8,24,36,.28);
+}
+.topology-fullscreen-active .topology-workbench-body { flex: 1 1 auto; min-height: 0; }
+.topology-fullscreen-active .topology-stage { min-height: 0; height: auto; }
+.topology-fullscreen-active .topology-canvas { flex: 1 1 auto; min-height: 0; }
+.topology-fullscreen-active .topology-stage .exploration-topology { height: 100%; min-height: 0; }
+.topology-fullscreen-active .topology-inspector { min-height: 0; max-height: none; height: 100%; }
+@media (max-width: 900px) {
+  .topology-workbench.topology-fullscreen-active { inset: 0; border-radius: 0; }
+  .topology-fullscreen-active .topology-workbench-body { min-height: 0; }
+  .topology-fullscreen-active .topology-workbench-body:not(.topology-inspector-collapsed) { grid-template-rows: minmax(0,1fr) minmax(0,45vh); }
+  .topology-fullscreen-active .topology-stage { min-height: 0; height: auto; }
+  .topology-fullscreen-active .topology-inspector { min-height: 0; max-height: 45vh; height: auto; }
+}
 .topology-stage .topology-node.topology-search-dim { opacity: .22; }
 .topology-stage .topology-node.topology-search-match .topology-node-card { stroke: #c28b36; stroke-width: 2.5; }
 .topology-stage .topology-node.topology-filtered,.topology-stage .topology-link.topology-filtered { display: none; }
