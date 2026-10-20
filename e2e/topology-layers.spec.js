@@ -211,6 +211,10 @@ test('network map scales through real Rust projections, evidence, tracing, and e
   expect(traced.path.hops.map((hop) => hop.node_id)).toEqual(expect.arrayContaining(['host-0001', 'sw-01-a', 'sw-01-d', 'sw-01-b', 'host-0075']));
   expect(traced.path.evidence.length).toBeGreaterThan(0);
   await expect(page.locator('#tl-trace-status')).toContainText('modeled_l2_path');
+  await expect(page.locator('#tl-trace-status')).toContainText('Gi1/0/51');
+  await expect(page.locator('#tl-trace-status')).toContainText('VLAN 101');
+  await page.locator('#tl-trace-status .tl-hop-source').first().click();
+  await expect(page.locator('#tl-source-body')).toContainText('host-0001');
   await expect(page.locator('#tl-svg .tl-on-path')).toHaveCount(5);
 
   await page.locator('#tl-network').fill('net-02');

@@ -41,6 +41,23 @@ fn incomplete_and_forged_auxiliary_facts_fail_closed() {
 }
 
 #[test]
+fn host_mac_addresses_are_unicast_and_compared_as_bytes() {
+    let original = dataset();
+    let mut multicast = original.clone();
+    multicast["hosts"][0]["mac"] = json!("03:20:01:00:01:01");
+    let request = json!({"dataset":multicast,"view":"l2"});
+    assert_eq!(project_layers(request).unwrap_err(), "invalid_mac");
+    let mut duplicate = original.clone();
+    duplicate["hosts"][1]["mac"] = original["hosts"][9]["mac"]
+        .as_str()
+        .unwrap()
+        .to_uppercase()
+        .into();
+    let request = json!({"dataset":duplicate,"view":"l2"});
+    assert_eq!(project_layers(request).unwrap_err(), "invalid_mac");
+}
+
+#[test]
 fn filters_and_selected_path_keep_inventory_and_evidence_ownership() {
     let original = dataset();
     let late =

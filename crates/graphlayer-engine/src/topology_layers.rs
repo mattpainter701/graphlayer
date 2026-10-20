@@ -354,11 +354,14 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             return Err("invalid_host_ip".into());
         }
         let mac = h["mac"].as_str().ok_or("invalid_dataset")?;
+        if mac.split(':').any(|part| part.len() != 2) {
+            return Err("invalid_mac".into());
+        }
         let octets: Vec<u8> = mac
             .split(':')
             .map(|part| u8::from_str_radix(part, 16).map_err(|_| "invalid_mac"))
             .collect::<Result<_, _>>()?;
-        if octets.len() != 6 || octets[0] & 2 == 0 || !macs.insert(mac.to_owned()) {
+        if octets.len() != 6 || octets[0] & 2 == 0 || octets[0] & 1 != 0 || !macs.insert(octets) {
             return Err("invalid_mac".into());
         }
     }
@@ -1256,7 +1259,10 @@ mod tests {
         let d = layer_sample(json!({})).unwrap()["dataset"].clone();
         let mut bad = d.clone();
         bad["links"][0]["to"] = "missing-switch".into();
-        assert_eq!(validate_dataset(&bad).unwrap_err(), "record_evidence_mismatch");
+        assert_eq!(
+            validate_dataset(&bad).unwrap_err(),
+            "record_evidence_mismatch"
+        );
         assert!(project_layers(json!({"dataset":d,"view":"l2","limit":"100"})).is_err());
         assert!(project_layers(json!({"dataset":null,"view":"l2","unknown":true})).is_err());
     }

@@ -183,7 +183,22 @@
     if (!path) return;
     state.traceStatus.append(el('strong', '', str(first(path.disposition, path.status), 'Path evaluated')));
     const hops = arr(first(path.hops, path.nodes, path.path));
-    if (hops.length) { const list = el('ol', 'tl-hop-list'); hops.forEach((hop) => list.append(el('li', '', str(first(hop.label, hop.name, hop.host_id, hop.id, hop.node_id, hop))))); state.traceStatus.append(list); }
+    if (hops.length) {
+      const list = el('ol', 'tl-hop-list');
+      hops.forEach((hop) => {
+        const entry = el('li');
+        entry.append(el('strong', '', str(first(hop.label, hop.name, hop.node_id, hop.id))));
+        entry.append(el('span', 'tl-hop-ports', `${str(hop.ingress, 'Origin')} → ${str(hop.egress, 'Destination')} · VLAN ${str(hop.vlan, 'unavailable')}`));
+        if (arr(hop.evidence).length) {
+          const source = button('', 'Source', 'tl-button tl-hop-source');
+          source.setAttribute('aria-label', `Source evidence for ${str(hop.node_id)}`);
+          source.addEventListener('click', () => showSources(resolveSources(hop.evidence)));
+          entry.append(source);
+        }
+        list.append(entry);
+      });
+      state.traceStatus.append(list);
+    }
     if (path.status === 'requires_l3') state.traceStatus.append(el('span', 'tl-callout', 'These hosts are on different networks or VLANs; an L2 path cannot be established.'));
     else if (path.status === 'indeterminate') state.traceStatus.append(el('span', 'tl-callout', 'The available link evidence does not establish a path.'));
     state.traceStatus.append(el('span', 'tl-callout', 'Runtime observations unavailable; this result uses the synthetic lab configuration.'));
