@@ -1,0 +1,44 @@
+name: Archive CI evidence
+description: Upload artifacts on hosted runners and archive them locally on the private runner.
+inputs:
+  name:
+    description: Artifact name
+    required: true
+  path:
+    description: Newline-separated files, directories, or glob patterns
+    required: true
+  if-no-files-found:
+    description: Behavior when no files match (warn, error, or ignore)
+    required: false
+    default: warn
+  retention-days:
+    description: Artifact retention period in days
+    required: false
+    default: "7"
+runs:
+  using: composite
+  steps:
+    - name: Upload on GitHub-hosted runner
+      if: ${{ runner.environment == 'github-hosted' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Archive on dedicated local runner
+      if: ${{ runner.environment == 'self-hosted' }}
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_IF_NO_FILES_FOUND: ${{ inputs.if-no-files-found }}
+        INPUT_RETENTION_DAYS: ${{ inputs.retention-days }}
+      run: python scripts/ci/archive-artifact.py
+
+    - name: Reject unknown runner environment
+      if: ${{ runner.environment != 'github-hosted' && runner.environment != 'self-hosted' }}
+      shell: bash
+      run: exit 1

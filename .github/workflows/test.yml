@@ -18,6 +18,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
 
       - uses: ./.github/actions/build-rust-engine
 
@@ -45,7 +46,7 @@ jobs:
           fi
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/archive-ci-artifact
         with:
           name: coverage
           path: platform/coverage.out
@@ -74,11 +75,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: ${{ runner.environment != 'self-hosted' && 'npm' || '' }}
 
       - uses: ./.github/actions/build-rust-engine
 
@@ -94,7 +96,7 @@ jobs:
 
       - name: Upload browser screenshots and diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/archive-ci-artifact
         with:
           name: firewall-investigation-playwright
           path: |
@@ -111,6 +113,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
       - uses: ./.github/actions/build-rust-engine
       - name: Test Rust-backed Go connector compatibility
         working-directory: platform/orchestration
@@ -129,6 +132,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -185,6 +189,9 @@ jobs:
           docker rm --force graphlayer-connector-fixture || true
 
   windows-native-go:
+    # Private validation is local and must not start paid hosted Windows work.
+    # Resume the native check when public hosted CI is available again.
+    if: github.event.repository.private != true || vars.GRAPHLAYER_ONPREM_RUNNERS != 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -192,6 +199,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
 
       - uses: ./.github/actions/build-rust-engine
 
@@ -214,7 +222,7 @@ jobs:
             "$digest  $($_.Name)"
           } | Set-Content -LiteralPath native-bundle/SHA256SUMS -Encoding utf8
       - name: Upload native Windows application bundle
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/archive-ci-artifact
         with:
           name: graphlayer-investigate-windows-amd64
           path: native-bundle/

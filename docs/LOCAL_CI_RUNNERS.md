@@ -5,8 +5,10 @@ when repository variable `GRAPHLAYER_ONPREM_RUNNERS` is `true`. Routing also
 requires the repository to be private, its name to be exactly
 `mattpainter701/graphlayer`, and the event to be a push to `main` or
 `codex/repository-privacy`. Pull requests, including fork pull requests, and
-manual QA dispatches use GitHub-hosted runners. The Windows native job always
-uses `windows-latest`.
+manual QA dispatches use GitHub-hosted runners. The Windows native job uses
+`windows-latest`; it is deferred while private local validation is enabled to
+avoid paid hosted execution, and resumes when the repository is public. A
+deferred Windows job is not evidence of a successful native Windows check.
 
 ## Runner host
 
@@ -66,6 +68,10 @@ workspace and mount.
 
 Enable `GRAPHLAYER_ONPREM_RUNNERS` only while trusted maintainers control pushes
 to the two enabled branches. Before making the repository public, disable the
-variable and remove all repository runner registrations. Job execution stays
-on-premises, while configured Actions artifact and cache steps still upload
-their generated outputs to GitHub.
+variable and remove all repository runner registrations. Hosted jobs use the
+configured GitHub artifact and cache storage. Local Linux jobs keep
+artifacts under `/opt/graphlayer-ci-evidence/<commit>/<run>/<job>/` and build
+caches under `/opt/graphlayer-ci-cache/`, rather than using GitHub
+artifact or cache storage. Archive manifests record hashes and counts; they
+do not publish the archived files. Preserve these local results before
+retiring the runner environment.

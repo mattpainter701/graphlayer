@@ -23,7 +23,7 @@ jobs:
           exit 1
       - name: Upload formatting correction for review
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/archive-ci-artifact
         with:
           name: rustfmt-correction
           path: ${{ runner.temp }}/rustfmt.patch
@@ -39,7 +39,7 @@ jobs:
           GRAPHLAYER_SCALE_ARTIFACT_DIR: ${{ runner.temp }}/topology-scale
         run: cargo test --locked --release -p graphlayer-engine --test topology_layers_scale -- --nocapture
       - name: Upload synthetic scale corpus and measurements
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/archive-ci-artifact
         with:
           name: topology-scale-corpus
           path: ${{ runner.temp }}/topology-scale/

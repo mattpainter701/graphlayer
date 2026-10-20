@@ -18,6 +18,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Run benchmarks
         run: |
@@ -27,7 +28,7 @@ jobs:
             | tee bench.txt
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/archive-ci-artifact
         with:
           name: benchmarks
           path: platform/bench.txt

@@ -18,6 +18,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Vet supported contract packages
         working-directory: platform
@@ -33,6 +34,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Fuzz correlation deduplication
         run: |

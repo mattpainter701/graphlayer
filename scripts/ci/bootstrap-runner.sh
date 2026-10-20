@@ -36,7 +36,7 @@ usermod -aG docker graphlayer
 printf 'graphlayer ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/90-graphlayer-ci
 chmod 0440 /etc/sudoers.d/90-graphlayer-ci
 visudo -cf /etc/sudoers.d/90-graphlayer-ci
-install -m 0755 -d -o graphlayer -g graphlayer /opt/graphlayer-runner /opt/hostedtoolcache /opt/graphlayer-tools
+install -m 0755 -d -o graphlayer -g graphlayer /opt/graphlayer-runner /opt/hostedtoolcache /opt/graphlayer-tools /opt/graphlayer-ci-cache /opt/graphlayer-ci-evidence
 runner_version=2.338.0
 runner_sha=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
 curl --fail --silent --show-error --location --retry 3 \
