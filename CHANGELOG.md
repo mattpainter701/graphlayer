@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Explore an explicitly synthetic 1,000-host lab across ten networks with host/Layer 2, Layer 3 and zone maps, bounded host pages, search and drill-down. Trace explicit same-VLAN switch paths and show when routing is required.
+- Generate and validate auxiliary attachment, VLAN, MAC/ARP and uplink evidence in Rust alongside parsed PAN-OS and FortiOS samples. Inspect source lines and hashes, export the lab dataset and measure graph/projection budgets without changing saved workspace evidence.
+
 - Rebuild the topology workspace with D3-spaced device cards, firewall/router/switch/host/server icons, buffered port labels, separate forward/return paths, a full-screen map and expandable device/link inspectors. Add explicitly labeled query endpoints and presentation-only icon annotations.
 - Filter the map by evidence-backed zones, normalized interface subnets, Palo Alto virtual routers and supported FortiGate VDOM context. Keep unavailable observations explicit, and preserve source ownership, saved analysis identities and workspace-v1 through v7 replay.
 

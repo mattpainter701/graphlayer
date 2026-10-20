@@ -1925,6 +1925,7 @@
       const session = await request('/session');
       state.csrf = session.csrf_token || '';
       if (!state.csrf) throw new Error('The local session could not be initialized. Reload the page.');
+      window.GraphLayerLayers?.setSession(state.csrf);
       await readWorkspace();
       await loadSnapshots();
       await loadHistory();

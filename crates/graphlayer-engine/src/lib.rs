@@ -6,6 +6,7 @@ pub mod dispatch;
 pub mod investigation_engine;
 pub mod model_validation;
 pub mod topology_projection;
+pub mod topology_layers;
 pub mod vendor_parsers;
 
 use serde::{Deserialize, Serialize};
