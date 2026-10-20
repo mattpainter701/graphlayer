@@ -280,3 +280,73 @@ test('network map scales through real Rust projections, evidence, tracing, and e
   diagnostics.workspaceUnchanged = true;
   await fs.writeFile(path.join(screenshotRoot, 'topology-layers-diagnostics.json'), `${JSON.stringify(diagnostics, null, 2)}\n`, 'utf8');
 });
+
+test('editing a host during a pending Rust trace suppresses the stale path and recovers', async ({ page }) => {
+  await page.goto('/#network-map');
+  await page.locator('#tl-load').click();
+  await expect(page.locator('#tl-caption')).toContainText(/configuration-derived map/i);
+  await expect(page.locator('#tl-summary')).toContainText('1000');
+
+  const source = page.locator('#tl-source');
+  const destination = page.locator('#tl-destination');
+  await source.fill('host-0001 (host-0001)');
+  await destination.fill('host-0075 (host-0075)');
+
+  let capturedResolve;
+  let releaseResolve;
+  const captured = new Promise((resolve) => { capturedResolve = resolve; });
+  const release = new Promise((resolve) => { releaseResolve = resolve; });
+  const handler = async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    capturedResolve({ status: response.status(), request: route.request().postDataJSON(), payload });
+    await release;
+    await route.fulfill({ response });
+  };
+  await page.route('**/api/topology-layers', handler);
+
+  let responsePromise;
+  try {
+    responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/topology-layers') && response.request().method() === 'POST');
+    await page.locator('#tl-trace-button').click();
+    const pending = await captured;
+    const pendingProjection = pending.payload.projection || pending.payload;
+    expect(pending.status).toBe(200);
+    expect(pending.request).toMatchObject({ source_host_id: 'host-0001', destination_host_id: 'host-0075' });
+    expect(pendingProjection.path.status).toBe('modeled_l2_path');
+
+    await source.fill('host-0002 (host-0002)');
+    await expect(page.locator('#tl-caption')).toContainText('Host selection changed');
+    await expect(page.locator('#tl-focus-path')).toBeHidden();
+    await expect(page.locator('#tl-trace-status')).toHaveText('');
+    await expect(page.locator('#tl-svg .tl-on-path, #tl-svg .tl-path-edge')).toHaveCount(0);
+
+    const [staleResponse] = await Promise.all([
+      responsePromise,
+      Promise.resolve().then(() => releaseResolve()),
+    ]);
+    expect(staleResponse.status()).toBe(200);
+    await expect(page.locator('#tl-trace-button')).toBeEnabled();
+    await expect(page.locator('#tl-caption')).toContainText('Host selection changed');
+    await expect(page.locator('#tl-focus-path')).toBeHidden();
+    await expect(page.locator('#tl-trace-status')).not.toContainText('modeled_l2_path');
+    await expect(page.locator('#tl-svg .tl-on-path, #tl-svg .tl-path-edge')).toHaveCount(0);
+  } finally {
+    releaseResolve();
+    if (responsePromise) await responsePromise.catch(() => {});
+    await page.unroute('**/api/topology-layers', handler);
+  }
+
+  const recoveredResponse = page.waitForResponse((response) => response.url().endsWith('/api/topology-layers') && response.request().method() === 'POST');
+  await page.locator('#tl-trace-button').click();
+  const recovered = await recoveredResponse;
+  expect(recovered.status()).toBe(200);
+  const recoveredBody = await recovered.json();
+  const projection = recoveredBody.projection || recoveredBody;
+  expect(recovered.request().postDataJSON()).toMatchObject({ source_host_id: 'host-0002', destination_host_id: 'host-0075' });
+  expect(projection.path).toMatchObject({ status: 'modeled_l2_path' });
+  expect(projection.path.hops).toHaveLength(5);
+  await expect(page.locator('#tl-trace-status')).toContainText('modeled_l2_path');
+  await expect(page.locator('#tl-svg .tl-on-path')).toHaveCount(5);
+  await expect(page.locator('#tl-focus-path')).toBeVisible();
+});
