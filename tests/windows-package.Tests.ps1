@@ -101,6 +101,27 @@ try {
     & $testPackage -PackageDirectory $signedFixture -RequireSigned -ExpectedSignerThumbprint $thumb -SignToolPath $signTool | Out-Null
     Assert-Fails { & $testPackage -PackageDirectory $signedFixture -RequireSigned -ExpectedSignerThumbprint ('0' * 40) -SignToolPath $signTool } 'wrong signer accepted'
 
+    $alteredSigner = Join-Path $temp 'altered-manifest-signer'
+    Copy-Item $signedFixture $alteredSigner -Recurse
+    $alteredManifestPath = Join-Path $alteredSigner 'manifest.json'
+    $alteredManifest = Get-Content -LiteralPath $alteredManifestPath -Raw | ConvertFrom-Json
+    $alteredManifest.signer_thumbprint = '0' * 40
+    [IO.File]::WriteAllText($alteredManifestPath, ($alteredManifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+    Assert-Fails { & $testPackage -PackageDirectory $alteredSigner -RequireSigned -ExpectedSignerThumbprint $thumb -SignToolPath $signTool } 'altered manifest signer accepted'
+
+    $alteredFileHash = Join-Path $temp 'altered-manifest-hash'
+    Copy-Item $signedFixture $alteredFileHash -Recurse
+    $alteredManifestPath = Join-Path $alteredFileHash 'manifest.json'
+    $alteredManifest = Get-Content -LiteralPath $alteredManifestPath -Raw | ConvertFrom-Json
+    $alteredManifest.files[0].sha256 = '0' * 64
+    [IO.File]::WriteAllText($alteredManifestPath, ($alteredManifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+    Assert-Fails { & $testPackage -PackageDirectory $alteredFileHash -RequireSigned -ExpectedSignerThumbprint $thumb -SignToolPath $signTool } 'altered manifest file hash accepted'
+
+    $alteredSums = Join-Path $temp 'altered-sha256sums'
+    Copy-Item $signedFixture $alteredSums -Recurse
+    [IO.File]::WriteAllText((Join-Path $alteredSums 'SHA256SUMS'), ('0' * 64) + "  graphlayer-engine.exe`n", [Text.UTF8Encoding]::new($false))
+    Assert-Fails { & $testPackage -PackageDirectory $alteredSums -RequireSigned -ExpectedSignerThumbprint $thumb -SignToolPath $signTool } 'altered SHA256SUMS accepted'
+
     $preSigned = Join-Path $temp 'pre-signed-package'
     & $newPackage -InputDirectory $signedFixture -OutputDirectory $preSigned -PackageKind Signed -SigningMode PreSigned -CertificateThumbprint $thumb -SignToolPath $signTool -SourceRevision ('b' * 40) | Out-Null
     & $testPackage -PackageDirectory $preSigned -RequireSigned -ExpectedSignerThumbprint $thumb -SignToolPath $signTool | Out-Null

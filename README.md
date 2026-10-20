@@ -34,6 +34,15 @@ experimental vendor and graph libraries remain frozen outside this runtime.
 See the
 [Rust worker and packaging guide](docs/RUST_WORKER.md) for builds and tests.
 
+## Code signing policy
+
+Windows CI downloads are explicitly unsigned development builds. SignPath
+Foundation is the selected route for preparing OSS release signing, subject to
+eligibility and owner approval; no signing service or certificate is provisioned
+yet. See the [Windows signing policy](docs/WINDOWS_SIGNING.md) and
+[SignPath onboarding draft](docs/SIGNPATH_ONBOARDING.md) for the current status,
+release gates and remaining license, eligibility and role decisions.
+
 Private configuration collections can be inventoried and checked with the
 [local corpus runner](docs/PRIVATE_CORPUS.md). Keep customer files outside the
 checkout; public CI uses synthetic and sanitized released fixtures.

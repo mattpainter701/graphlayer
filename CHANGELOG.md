@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Prepare an opt-in SignPath OSS release workflow with matching application/worker PE metadata, exact-source CI gates, pinned signing output verification and signed-package smoke tests. Activation remains pending project licensing, provider eligibility and signing identity onboarding.
 - Add Windows package manifests and explicit development/signed package validation. Require an approved certificate, timestamped embedded signatures on both executables, a pinned signer and post-signing checksums for signed packages; label unsigned CI bundles as development artifacts.
 
 - Explore an explicitly synthetic 1,000-host lab across ten networks with host/Layer 2, Layer 3 and zone maps, bounded host pages, search and drill-down. Trace explicit same-VLAN switch paths and show when routing is required.

@@ -190,6 +190,23 @@ jobs:
         with:
           go-version-file: platform/go.mod
 
+      - name: Prepare and test Windows release version resources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rc = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter rc.exe -Recurse |
+            Where-Object { $_.FullName -match '\\x64\\rc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          $cvtres = Get-ChildItem 'C:/Program Files/Microsoft Visual Studio' -Filter cvtres.exe -Recurse |
+            Where-Object { $_.FullName -match '\\Hostx64\\x64\\cvtres\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $rc -or -not $cvtres) { throw 'Microsoft resource compiler tools are required.' }
+          ./tests/windows-version-resources.Tests.ps1 -RcPath $rc -CvtresPath $cvtres
+          ./tests/windows-signing-input.Tests.ps1
+          $resources = Join-Path $env:RUNNER_TEMP 'graphlayer-ci-version-resources'
+          ./scripts/windows/New-GraphLayerVersionResources.ps1 -Version '0.1.0' -RcPath $rc -CvtresPath $cvtres -OutputDirectory $resources
+          Copy-Item -LiteralPath (Join-Path $resources 'graphlayer-investigate.syso') -Destination platform/cmd/graphlayer-investigate/graphlayer-version.syso
+          $workerResource = Join-Path $resources 'graphlayer-engine.res'
+          "GRAPHLAYER_VERSION_RESOURCE=$workerResource" >> $env:GITHUB_ENV
+
       - uses: ./.github/actions/build-rust-engine
 
       - name: Test native Rust filesystem and worker contracts
@@ -211,10 +228,13 @@ jobs:
       - name: Package native Windows application and required Rust engine
         shell: pwsh
         run: |
+          cargo rustc --locked --release -p graphlayer-engine --bin graphlayer-engine -- -C "link-arg=$env:GRAPHLAYER_VERSION_RESOURCE"
+          if ($LASTEXITCODE -ne 0) { throw 'Rust worker resource linking failed.' }
           New-Item -ItemType Directory -Path native-input | Out-Null
           go -C platform build -trimpath -o ../native-input/graphlayer-investigate.exe ./cmd/graphlayer-investigate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item -LiteralPath $env:GRAPHLAYER_ENGINE -Destination native-input/graphlayer-engine.exe
+          ./tests/windows-signing-input.Tests.ps1 -ReleaseInputDirectory native-input -Version '0.1.0'
           ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -InputDirectory native-input -OutputDirectory native-bundle -PackageKind Development -SourceRevision (git rev-parse HEAD)
           ./scripts/windows/Test-GraphLayerWindowsPackage.ps1 -PackageDirectory native-bundle
           ./scripts/windows/Test-GraphLayerWorker.ps1 -PackageDirectory native-bundle -PackageKind Development

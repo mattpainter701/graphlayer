@@ -1,0 +1,170 @@
+name: Sign Windows release (SignPath)
+
+# Opt-in preparation only. Do not enable the environment until Foundation
+# eligibility, licensing, identity and the signing policy have been approved.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing vX.Y.Z tag pointing to the current green main commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: graphlayer-windows-signing
+  cancel-in-progress: false
+
+jobs:
+  sign-windows:
+    if: github.repository == 'mattpainter701/graphlayer' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    environment: windows-signing
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate approved configuration and exact release source
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SIGNPATH_APPROVED: ${{ vars.SIGNPATH_APPROVED }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          SIGNPATH_CERTIFICATE_THUMBPRINT: ${{ vars.SIGNPATH_CERTIFICATE_THUMBPRINT }}
+          TOKEN_CONFIGURED: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SIGNPATH_APPROVED -cne 'true' -or $env:TOKEN_CONFIGURED -ne 'true') {
+            throw 'SignPath eligibility, onboarding, environment approval and token configuration must be complete.'
+          }
+          foreach ($name in @('SIGNPATH_ORGANIZATION_ID', 'SIGNPATH_PROJECT_SLUG', 'SIGNPATH_SIGNING_POLICY_SLUG', 'SIGNPATH_ARTIFACT_CONFIGURATION_SLUG')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing signing configuration: $name" }
+          }
+          if ($env:SIGNPATH_CERTIFICATE_THUMBPRINT -notmatch '^[0-9A-Fa-f]{40}$') { throw 'An independently approved signing certificate thumbprint is required.' }
+          if ($env:RELEASE_TAG -cnotmatch '^v(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})$') { throw 'Release tag must be vX.Y.Z.' }
+          $version = $env:RELEASE_TAG.Substring(1)
+          foreach ($part in $version.Split('.')) { if ([int]$part -gt 65535) { throw 'Version component exceeds PE metadata limits.' } }
+          if (-not (Test-Path -LiteralPath LICENSE -PathType Leaf)) { throw 'An owner-approved project LICENSE is required before signing.' }
+          $tagRevision = git rev-parse --verify "refs/tags/$($env:RELEASE_TAG)^{commit}"
+          if ($LASTEXITCODE -ne 0 -or $tagRevision -cne $env:GITHUB_SHA) { throw 'Release tag must point to this exact main workflow commit.' }
+          $headRevision = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $headRevision -cne $env:GITHUB_SHA) { throw 'Unexpected checked-out source revision.' }
+          # Require the existing full PR/main verification matrix at this exact SHA.
+          # The signing job itself is intentionally not part of this prerequisite.
+          $checkJson = gh api "repos/$env:GITHUB_REPOSITORY/commits/$env:GITHUB_SHA/check-runs?per_page=100&filter=latest"
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect release source checks.' }
+          $checks = ($checkJson | ConvertFrom-Json).check_runs
+          $required = @('vet-supported', 'bench', 'qa', 'rust-core', 'test', 'fuzz', 'rust-boundary', 'python-test', 'rust-container', 'browser-e2e', 'connector-go', 'connector-e2e', 'windows-native-go')
+          foreach ($name in $required) {
+            $matches = @($checks | Where-Object { $_.name -ceq $name -and $_.app.slug -eq 'github-actions' })
+            if ($matches.Count -ne 1 -or $matches[0].status -ne 'completed' -or $matches[0].conclusion -ne 'success') {
+              throw "Release source is missing a successful final-SHA check: $name"
+            }
+          }
+          "GRAPHLAYER_RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "GRAPHLAYER_RELEASE_TAG=$env:RELEASE_TAG" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: platform/go.mod
+          cache: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Prepare matching product metadata for both executables
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rc = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter rc.exe -Recurse |
+            Where-Object { $_.FullName -match '\\x64\\rc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          $cvtres = Get-ChildItem 'C:/Program Files/Microsoft Visual Studio' -Filter cvtres.exe -Recurse |
+            Where-Object { $_.FullName -match '\\Hostx64\\x64\\cvtres\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $rc -or -not $cvtres) { throw 'Microsoft resource compiler tools are required.' }
+          $resources = Join-Path $env:RUNNER_TEMP 'graphlayer-version-resources'
+          ./scripts/windows/New-GraphLayerVersionResources.ps1 -Version $env:GRAPHLAYER_RELEASE_VERSION -RcPath $rc -CvtresPath $cvtres -OutputDirectory $resources
+          Copy-Item -LiteralPath (Join-Path $resources 'graphlayer-investigate.syso') -Destination platform/cmd/graphlayer-investigate/graphlayer-version.syso
+          $workerResource = Join-Path $resources 'graphlayer-engine.res'
+          "GRAPHLAYER_VERSION_RESOURCE=$workerResource" >> $env:GITHUB_ENV
+
+      - name: Build both executables from source without binary caches
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo rustc --locked --release -p graphlayer-engine --bin graphlayer-engine -- -C "link-arg=$env:GRAPHLAYER_VERSION_RESOURCE"
+          if ($LASTEXITCODE -ne 0) { throw 'Rust release build failed.' }
+          New-Item -ItemType Directory -Path signing-input | Out-Null
+          go -C platform build -trimpath -o ../signing-input/graphlayer-investigate.exe ./cmd/graphlayer-investigate
+          if ($LASTEXITCODE -ne 0) { throw 'Application release build failed.' }
+          Copy-Item -LiteralPath target/release/graphlayer-engine.exe -Destination signing-input/graphlayer-engine.exe
+          ./scripts/windows/Test-GraphLayerSigningInput.ps1 -InputDirectory signing-input -Version $env:GRAPHLAYER_RELEASE_VERSION
+
+      - name: Upload exact unsigned signing input
+        id: unsigned
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: graphlayer-windows-amd64-signing-input
+          path: signing-input/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Request manually approved SignPath signing
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+          output-artifact-directory: signing-returned
+          parameters: |
+            version: ${{ toJSON(env.GRAPHLAYER_RELEASE_VERSION) }}
+
+      - name: Verify returned identity and package signed bytes
+        env:
+          EXPECTED_SIGNER: ${{ vars.SIGNPATH_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows/Test-GraphLayerSigningInput.ps1 -InputDirectory signing-returned -Version $env:GRAPHLAYER_RELEASE_VERSION
+          $signTool = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter signtool.exe -Recurse |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -PackageKind Signed -SigningMode PreSigned -InputDirectory signing-returned -OutputDirectory signed-bundle -CertificateThumbprint $env:EXPECTED_SIGNER -SignToolPath $signTool -SourceRevision $env:GITHUB_SHA
+          ./scripts/windows/Test-GraphLayerWindowsPackage.ps1 -PackageDirectory signed-bundle -RequireSigned -ExpectedSignerThumbprint $env:EXPECTED_SIGNER -SignToolPath $signTool
+          ./scripts/windows/Test-GraphLayerWorker.ps1 -PackageDirectory signed-bundle -PackageKind Signed -ExpectedSignerThumbprint $env:EXPECTED_SIGNER -SignToolPath $signTool
+
+      - name: Smoke test exact signed application and sibling worker
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GRAPHLAYER_ENGINE = $null
+          $data = Join-Path $env:RUNNER_TEMP 'graphlayer-signed-smoke'
+          $app = (Resolve-Path signed-bundle/graphlayer-investigate.exe).Path
+          $process = Start-Process -FilePath $app -ArgumentList @('--listen', '127.0.0.1:8091', '--data-dir', ('"{0}"' -f $data)) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'signed-smoke.stdout') -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'signed-smoke.stderr')
+          try {
+            python e2e/container-smoke.py
+            if ($LASTEXITCODE -ne 0) { throw 'Signed application and sibling worker smoke failed.' }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
+          }
+
+      - name: Upload verified signed package for release review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: graphlayer-windows-amd64-${{ env.GRAPHLAYER_RELEASE_TAG }}-signed
+          path: signed-bundle/
+          if-no-files-found: error
+          retention-days: 30

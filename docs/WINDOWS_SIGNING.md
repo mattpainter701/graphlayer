@@ -26,7 +26,7 @@ Sign every shipped executable component, including the application and worker. U
 
 ## Package workflow
 
-The Windows package builder is planned as `scripts/windows/New-GraphLayerWindowsPackage.ps1`. Its current interface is:
+The Windows package builder is `scripts/windows/New-GraphLayerWindowsPackage.ps1`. Its interface is:
 
 ```powershell
 & .\scripts\windows\New-GraphLayerWindowsPackage.ps1 `
@@ -75,6 +75,48 @@ Then probe the exact worker through its existing one-shot protocol:
 This bounded probe asks `path.is_asa_vendor` about `cisco-asa`, with no configuration or customer input. It verifies the package first, then directly launches its exact worker; there is no alternate engine or fallback. `-PackageKind Development` is reserved for explicitly unsigned development packages on hosts that permit them, including CI. It does not establish Smart App Control compatibility.
 
 Also launch the exact packaged application under the unchanged Smart App Control policy, import the built-in mixed-vendor sample and complete the topology investigation workflow. For a block, correlate fresh 3077 and 3089 events and retain the policy ID, status, VerificationError, and signer details. A signed package is considered validated only after the worker starts successfully under that policy.
+
+## SignPath preparation
+
+The owner selected the free SignPath Foundation route. The
+[onboarding draft](SIGNPATH_ONBOARDING.md) records prerequisites and an application
+description for review. No application or agreement has been submitted. The
+project license remains undecided, and GraphLayer's firewall and network analysis
+must receive an explicit eligibility assessment under the Foundation's published
+security-tool exclusion. Selecting a provider does not establish acceptance.
+
+The opt-in `.github/workflows/sign-windows.yml` dispatch is restricted to this
+repository's `main` branch and the `windows-signing` environment. It requires the
+environment's approval flag, configured identifiers/token, a pinned certificate,
+a project `LICENSE`, and an existing numeric `vX.Y.Z` tag pointing to the exact
+workflow SHA. Each of the thirteen existing CI checks must have succeeded at
+that SHA. Configure environment reviewers and restrict deployment branches to
+`main` during onboarding. SignPath's own origin policy and manual approval are
+required in addition to the GitHub environment controls.
+
+Both executables are built from source on a fresh GitHub-hosted Windows runner
+without binary caches. A Microsoft resource compiler helper embeds matching
+GraphLayer product/version metadata; normal Windows CI compiles and verifies
+these resources and validates metadata in the actual application and Rust
+worker. The signing workflow uploads exactly the two PE files and passes the
+uploaded artifact ID to the pinned SignPath action. Configure the reviewed
+[`windows-amd64` artifact configuration](../config/signpath/graphlayer-windows.xml)
+to sign both files and restrict product/version metadata.
+
+Returned binaries must pass exact-file and metadata checks, embedded signature,
+timestamp and pinned signer verification, post-signing package hashes, the real
+worker protocol probe, and a packaged application import smoke test. Only then
+does the workflow upload a `-signed` review artifact. It has no release-write
+permission and does not publish a GitHub release. The unsigned input artifact is
+explicitly named `signing-input`, not a signed package. No credentials are used
+by pull-request builds. Until onboarding is complete, ordinary CI produces
+development packages and exercises preparation contracts without calling
+SignPath.
+
+The dispatch and hosted smoke test have not yet run against SignPath. They
+cannot be described as end-to-end signing validation until an accepted project,
+real signing policy and certificate exist. Hosted signature checks also do not
+replace the unchanged-policy native acceptance test described above.
 
 ## Microsoft documentation
 
