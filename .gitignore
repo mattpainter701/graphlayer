@@ -68,6 +68,11 @@ sample_data/
 /target/
 /dist/
 /native-bundle/
+/native-input/
+/signing-input/
+/signing-returned/
+/signed-bundle/
+*.syso
 
 # Raw configuration collections and generated reports stay outside source control.
 /configs/

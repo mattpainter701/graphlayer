@@ -2,7 +2,7 @@ name: Test & Coverage
 
 on:
   push:
-    branches: [main, codex/repository-privacy]
+    branches: [main, codex/repository-privacy, codex/windows-worker-release-recovery]
   pull_request:
     branches: [main]
 
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +52,7 @@ jobs:
           path: platform/coverage.out
 
   python-test:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,7 +68,7 @@ jobs:
           python -m pytest tests/ -v
 
   browser-e2e:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -106,7 +106,7 @@ jobs:
           retention-days: 7
 
   connector-go:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -120,7 +120,7 @@ jobs:
         run: go test -race -timeout 3m ./connectors/...
 
   connector-e2e:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       GRAPHLAYER_TEST_SSH_HOST: 127.0.0.1
@@ -201,7 +201,33 @@ jobs:
           go-version-file: platform/go.mod
           cache: ${{ runner.environment != 'self-hosted' }}
 
+      - name: Prepare matching application and Rust worker version resources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $versions = @(Select-String -LiteralPath 'crates/graphlayer-engine/Cargo.toml' -Pattern '^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*$')
+          if ($versions.Count -ne 1) { throw 'The worker must declare one X.Y.Z package version.' }
+          $version = $versions[0].Matches[0].Groups[1].Value
+          $rc = Get-ChildItem -LiteralPath 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter rc.exe -Recurse -File |
+            Where-Object { $_.FullName -match '\\x64\\rc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          $cvtres = Get-ChildItem -LiteralPath 'C:/Program Files/Microsoft Visual Studio' -Filter cvtres.exe -Recurse -File |
+            Where-Object { $_.FullName -match '\\Hostx64\\x64\\cvtres\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $rc -or -not $cvtres) { throw 'Microsoft resource compiler tools are required.' }
+          $resources = Join-Path $env:RUNNER_TEMP 'graphlayer-ci-version-resources'
+          ./scripts/windows/New-GraphLayerVersionResources.ps1 -Version $version -RcPath $rc -CvtresPath $cvtres -OutputDirectory $resources
+          Copy-Item -LiteralPath (Join-Path $resources 'graphlayer-investigate.syso') -Destination platform/cmd/graphlayer-investigate/graphlayer-version.syso
+          "GRAPHLAYER_VERSION_RESOURCE=$(Join-Path $resources 'graphlayer-engine.res')" >> $env:GITHUB_ENV
+          "GRAPHLAYER_PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+          "GRAPHLAYER_RC_PATH=$rc" >> $env:GITHUB_ENV
+          "GRAPHLAYER_CVTRES_PATH=$cvtres" >> $env:GITHUB_ENV
+
       - uses: ./.github/actions/build-rust-engine
+
+      - name: Verify actual Rust worker and application PE resource contracts
+        shell: pwsh
+        run: |
+          ./tests/windows-version-resources.Tests.ps1 -RcPath $env:GRAPHLAYER_RC_PATH -CvtresPath $env:GRAPHLAYER_CVTRES_PATH -RustWorkerPath $env:GRAPHLAYER_ENGINE -Version $env:GRAPHLAYER_PACKAGE_VERSION
+          ./tests/windows-signing-input.Tests.ps1
 
       - name: Test native Rust filesystem and worker contracts
         run: cargo test --locked --release --workspace --lib --bins
@@ -210,21 +236,29 @@ jobs:
         working-directory: platform
         run: go test ./vendors/cisco/asa ./firewall ./policy ./investigation ./cmd/graphlayer-investigate ./pathanalysis ./networkpath ./rustengine
 
-      - name: Package native Windows application and required Rust engine
+      - name: Verify Windows package signing contracts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path native-bundle | Out-Null
-          go -C platform build -trimpath -o ../native-bundle/graphlayer-investigate.exe ./cmd/graphlayer-investigate
+          $signTool = Get-ChildItem -LiteralPath 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter signtool.exe -Recurse -File |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signTool) { throw 'The Microsoft Windows SDK SignTool is required.' }
+          ./tests/windows-package.Tests.ps1 -SignToolPath $signTool
+
+      - name: Package explicitly unsigned Windows development application and Rust worker
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path native-input | Out-Null
+          go -C platform build -trimpath -o ../native-input/graphlayer-investigate.exe ./cmd/graphlayer-investigate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item -LiteralPath $env:GRAPHLAYER_ENGINE -Destination native-bundle/graphlayer-engine.exe
-          Get-ChildItem -LiteralPath native-bundle -Filter '*.exe' | ForEach-Object {
-            $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$digest  $($_.Name)"
-          } | Set-Content -LiteralPath native-bundle/SHA256SUMS -Encoding utf8
-      - name: Upload native Windows application bundle
+          Copy-Item -LiteralPath $env:GRAPHLAYER_ENGINE -Destination native-input/graphlayer-engine.exe
+          ./tests/windows-signing-input.Tests.ps1 -ReleaseInputDirectory native-input -Version $env:GRAPHLAYER_PACKAGE_VERSION
+          ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -InputDirectory native-input -OutputDirectory native-bundle -PackageKind Development -SourceRevision (git rev-parse HEAD)
+          ./scripts/windows/Test-GraphLayerWindowsPackage.ps1 -PackageDirectory native-bundle
+          ./scripts/windows/Test-GraphLayerWorker.ps1 -PackageDirectory native-bundle -PackageKind Development
+      - name: Upload explicitly unsigned development bundle
         uses: ./.github/actions/archive-ci-artifact
         with:
-          name: graphlayer-investigate-windows-amd64
+          name: graphlayer-investigate-windows-amd64-development
           path: native-bundle/
 
       - uses: actions/setup-python@v5
