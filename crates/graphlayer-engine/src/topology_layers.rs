@@ -12,6 +12,21 @@ const SOURCE_LIMIT: usize = 4 << 20;
 fn hash(text: &str) -> String {
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
+fn subnet_parts(value: &str) -> Option<(u32, u32)> {
+    let (address, bits) = value.split_once('/')?;
+    let address = address.parse::<Ipv4Addr>().ok()?;
+    let bits = bits.parse::<u32>().ok()?;
+    if bits > 32 || !address.is_private() {
+        return None;
+    }
+    let mask = if bits == 0 {
+        0
+    } else {
+        u32::MAX << (32 - bits)
+    };
+    let prefix = u32::from(address);
+    (prefix & mask == prefix).then_some((prefix, mask))
+}
 fn only(value: &Value, allowed: &[&str]) -> bool {
     value
         .as_object()
@@ -280,6 +295,25 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
     {
         return Err("dataset_limit".into());
     }
+    let mut zone_ids = HashSet::new();
+    for zone in zones {
+        let zone = zone.as_str().ok_or("invalid_zone")?;
+        if zone.is_empty() || zone.len() > 80 || !zone_ids.insert(zone) {
+            return Err("invalid_zone".into());
+        }
+    }
+    let mut subnet_index = HashMap::new();
+    for network in networks {
+        let id = network["id"].as_str().ok_or("invalid_network")?;
+        let subnet = network["subnet"].as_str().ok_or("invalid_network")?;
+        let zone = network["zone"].as_str().ok_or("invalid_network")?;
+        let (prefix, mask) = subnet_parts(subnet).ok_or("invalid_network")?;
+        if !zone_ids.contains(zone)
+            || subnet_index.insert(id, (subnet, zone, prefix, mask)).is_some()
+        {
+            return Err("invalid_network".into());
+        }
+    }
     let bytes = serde_json::to_vec(&d["sources"]).map_err(|_| "invalid_dataset")?;
     if bytes.len() > SOURCE_LIMIT {
         return Err("source_limit".into());
@@ -352,6 +386,15 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
         let parsed = ip.parse::<Ipv4Addr>().map_err(|_| "invalid_host_ip")?;
         if !parsed.is_private() || !ips.insert(ip.to_owned()) {
             return Err("invalid_host_ip".into());
+        }
+        let network = h["network_id"].as_str().ok_or("invalid_host_network")?;
+        let (subnet, zone, prefix, mask) = subnet_index.get(network).ok_or("invalid_host_network")?;
+        if h["role"] != "host"
+            || h["subnet"] != *subnet
+            || h["zone"] != *zone
+            || u32::from(parsed) & *mask != *prefix
+        {
+            return Err("invalid_host_network".into());
         }
         let mac = h["mac"].as_str().ok_or("invalid_dataset")?;
         if mac.split(':').any(|part| part.len() != 2) {

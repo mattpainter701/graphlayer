@@ -126,7 +126,15 @@
       const routers = nodes.filter((item) => /router/.test(str(item.role, '').toLowerCase()));
       const networks = nodes.filter((item) => ['network', 'subnet'].includes(typeOf(item)));
       const placeGrid = (items, y, columns, rowGap) => items.forEach((item, i) => { const row = Math.floor(i / columns); const col = i % columns; const rowCount = Math.min(columns, items.length - row * columns); positions.set(idOf(item), { x: width * (col + 1) / (rowCount + 1), y: y + row * rowGap }); });
-      placeGrid(firewalls, 85, 4, 90); placeGrid(routers, 205, 5, 94); placeGrid(networks, 410, 5, 96);
+      placeGrid(firewalls, 75, 4, 90);
+      networks.forEach((network, i) => {
+        const column = i % 5; const row = Math.floor(i / 5);
+        const columns = Math.min(5, networks.length - row * 5);
+        const x = width * (column + 1) / (columns + 1); const y = 200 + row * 230;
+        positions.set(idOf(network), { x, y: y + 100 });
+        const gateway = routers.find((item) => item.network_id === idOf(network));
+        if (gateway) positions.set(idOf(gateway), { x, y });
+      });
       const remaining = nodes.filter((item) => !positions.has(idOf(item))); placeGrid(remaining, 320, 5, 90);
       return positions;
     }

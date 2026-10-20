@@ -142,6 +142,7 @@ test('network map scales through real Rust projections, evidence, tracing, and e
     expect(reference.ref).toBe(`${source.id}:${source.sha256.slice(0, 12)}:L${reference.line}`);
   }
   await expect(page.locator('#tl-svg .tl-node')).toHaveCount(4);
+  await page.locator('#tl-graph').screenshot({ path: path.join(screenshotRoot, 'topology-layers-zones-graph.png') });
   await page.getByRole('button', { name: 'zone: engineering' }).click();
   await expect(page.locator('#tl-tab-l3')).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#tl-zone')).toHaveValue('engineering');
@@ -216,6 +217,8 @@ test('network map scales through real Rust projections, evidence, tracing, and e
   await page.locator('#tl-trace-status .tl-hop-source').first().click();
   await expect(page.locator('#tl-source-body')).toContainText('host-0001');
   await expect(page.locator('#tl-svg .tl-on-path')).toHaveCount(5);
+  await page.locator('#tl-graph').screenshot({ path: path.join(screenshotRoot, 'topology-layers-l2-path.png') });
+  await page.locator('.tl-trace').screenshot({ path: path.join(screenshotRoot, 'topology-layers-l2-ports.png') });
 
   await page.locator('#tl-network').fill('net-02');
   await page.locator('#tl-network').dispatchEvent('change');

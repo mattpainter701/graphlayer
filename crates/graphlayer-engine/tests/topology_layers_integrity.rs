@@ -58,6 +58,23 @@ fn host_mac_addresses_are_unicast_and_compared_as_bytes() {
 }
 
 #[test]
+fn zones_and_subnet_membership_cannot_be_replaced_by_unrelated_labels() {
+    let original = dataset();
+    for zones in [
+        json!([null]),
+        json!(["unrelated"]),
+        json!(["engineering", "engineering"]),
+    ] {
+        let mut bad = original.clone();
+        bad["zones"] = zones;
+        assert!(project_layers(json!({"dataset":bad,"view":"zone"})).is_err());
+    }
+    let mut outside = original.clone();
+    outside["hosts"][0]["ip"] = json!("10.99.0.1");
+    assert!(project_layers(json!({"dataset":outside,"view":"l2"})).is_err());
+}
+
+#[test]
 fn filters_and_selected_path_keep_inventory_and_evidence_ownership() {
     let original = dataset();
     let late =
