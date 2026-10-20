@@ -22,6 +22,7 @@ import (
 
 	"github.com/mattpainter701/graphlayer/platform/firewall"
 	"github.com/mattpainter701/graphlayer/platform/policy"
+	"github.com/mattpainter701/graphlayer/platform/rustengine"
 )
 
 //go:embed web/*
@@ -137,6 +138,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"/app.js":       "text/javascript; charset=utf-8",
 		"/shell.js":     "text/javascript; charset=utf-8",
 		"/topology.js":  "text/javascript; charset=utf-8",
+		"/d3.min.js":    "text/javascript; charset=utf-8",
 		"/style.css":    "text/css; charset=utf-8",
 		"/shell.css":    "text/css; charset=utf-8",
 		"/topology.css": "text/css; charset=utf-8",
@@ -184,6 +186,14 @@ func (a *App) trustedRequest(r *http.Request) bool {
 
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) == 2 && parts[1] == "topology-view" {
+		if r.Method != http.MethodPost {
+			methodError(w)
+		} else {
+			a.projectTopology(w, r)
+		}
+		return
+	}
 	if a.workspaceAPI(w, r, parts) || a.batchImportAPI(w, r, parts) {
 		return
 	}
@@ -304,6 +314,92 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiError(w, 404, "not_found", "This resource is unavailable.")
+}
+
+// Topology views are disposable projections. Saved requests, source evidence and
+// investigation identities are never rewritten by presentation preferences.
+type topologyViewRequest struct {
+	Request         NetworkRequest    `json:"request"`
+	ExplorationID   string            `json:"exploration_id,omitempty"`
+	InvestigationID string            `json:"investigation_id,omitempty"`
+	BranchIndex     int               `json:"branch_index,omitempty"`
+	ReturnIndex     int               `json:"return_index,omitempty"`
+	Roles           map[string]string `json:"roles,omitempty"`
+}
+
+func (a *App) projectTopology(w http.ResponseWriter, r *http.Request) {
+	var view topologyViewRequest
+	if !decodeJSON(w, r, &view) {
+		return
+	}
+	if view.ExplorationID != "" && view.InvestigationID != "" || view.BranchIndex < 0 || view.ReturnIndex < 0 || len(view.Roles) > 18 {
+		apiError(w, 400, "invalid_topology_view", "Use one saved investigation and bounded presentation preferences.")
+		return
+	}
+	var result any
+	if view.ExplorationID != "" {
+		if !validID(view.ExplorationID) {
+			apiError(w, 400, "invalid_topology_view", "Use a saved exploration identity.")
+			return
+		}
+		saved, err := a.store.NetworkExploration(view.ExplorationID)
+		if err != nil {
+			apiError(w, 404, "investigation_not_found", "The selected exploration is unavailable.")
+			return
+		}
+		view.Request, result = saved.Request, saved.Result
+	} else if view.InvestigationID != "" {
+		if !validID(view.InvestigationID) {
+			apiError(w, 400, "invalid_topology_view", "Use a saved investigation identity.")
+			return
+		}
+		saved, err := a.store.NetworkInvestigation(view.InvestigationID)
+		if err != nil {
+			apiError(w, 404, "investigation_not_found", "The selected investigation is unavailable.")
+			return
+		}
+		view.Request, result = saved.Request, saved.Result
+	}
+	if len(view.Request.Nodes) == 0 || len(view.Request.Nodes) > 16 || len(view.Request.Links) > 32 {
+		apiError(w, 400, "invalid_topology_view", "Use 1–16 snapshot-pinned devices and at most 32 links.")
+		return
+	}
+	// Only server-owned sanitized snapshots enter the worker. Clients submit
+	// snapshot references, never replacement configs, evidence or traffic counters.
+	nodes := make([]map[string]any, 0, len(view.Request.Nodes))
+	for _, ref := range view.Request.Nodes {
+		if !validID(ref.SnapshotID) || !validNetworkNodeID(ref.NodeID) {
+			apiError(w, 400, "invalid_topology_view", "Select a saved snapshot and a valid ID for every device.")
+			return
+		}
+		snapshot, err := a.store.Snapshot(ref.SnapshotID)
+		if err != nil {
+			apiError(w, 404, "snapshot_not_found", "A selected snapshot is unavailable.")
+			return
+		}
+		nodes = append(nodes, map[string]any{"id": ref.NodeID, "scope": pathInput(snapshot, "", policy.Flow{}).Scope, "config": snapshot.Config})
+	}
+	input := map[string]any{
+		"request": map[string]any{"nodes": nodes, "links": view.Request.Links, "source": view.Request.Source, "destination": view.Request.Destination, "flow": view.Request.Flow},
+		"result":  result, "branch_index": view.BranchIndex, "return_index": view.ReturnIndex, "roles": view.Roles,
+	}
+	if view.Roles == nil {
+		input["roles"] = map[string]string{}
+	}
+	var projection map[string]json.RawMessage
+	err := rustengine.Call(r.Context(), "project_topology", input, &projection)
+	if analysisUnavailable(w, err) {
+		return
+	}
+	if err != nil {
+		apiError(w, 400, "invalid_topology_view", "The topology draft cannot be projected. Review device IDs, links and view selections.")
+		return
+	}
+	if len(projection["topology"]) == 0 || bytes.Equal(projection["topology"], []byte("null")) {
+		apiError(w, 503, "analysis_engine_unavailable", "The topology projection is unavailable. Check the required Rust worker.")
+		return
+	}
+	writeJSON(w, 200, projection)
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {

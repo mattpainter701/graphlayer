@@ -353,6 +353,14 @@
       "reason": "Preserve Go network DTO signatures and dispatch multi-firewall path and exploration to Rust.",
       "sha256": "d1f09374bb99e909a4ab15f0c9b3705b154467f19d74bbfd48cbfacd99990b29",
       "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/investigation/server.go",
+      "category": "transport_adapter",
+      "owner": "GraphLayer topology workspace maintainers",
+      "reason": "Existing local HTTP/storage compatibility layer resolves immutable snapshot and saved-result references and calls Rust project_topology; no topology inference, parser, routing or graph construction is implemented in Go.",
+      "sha256": "02f7ddcfecc56fe5f3805f9bdf221d2901854a5c1d3f58c5160ae6e2239c81eb",
+      "expires": "2027-01-15"
     }
   ],
   "new_file_roots": [

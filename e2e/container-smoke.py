@@ -27,6 +27,7 @@ for asset, content_type in [
     ("app.js", "text/javascript"),
     ("shell.js", "text/javascript"),
     ("topology.js", "text/javascript"),
+    ("d3.min.js", "text/javascript"),
     ("style.css", "text/css"),
     ("shell.css", "text/css"),
     ("topology.css", "text/css"),

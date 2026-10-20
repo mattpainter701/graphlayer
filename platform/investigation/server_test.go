@@ -123,7 +123,7 @@ func TestHTTPStaticAssetAllowlist(t *testing.T) {
 
 func TestHTTPImportEvaluateHistoryAndSecurityHeaders(t *testing.T) {
 	b, _ := newTestBrowser(t)
-	for _, path := range []string{"/", "/assets/app.js", "/assets/style.css", "/assets/shell.js", "/assets/shell.css", "/assets/topology.js", "/assets/topology.css"} {
+	for _, path := range []string{"/", "/assets/app.js", "/assets/style.css", "/assets/shell.js", "/assets/shell.css", "/assets/topology.js", "/assets/topology.css", "/assets/d3.min.js"} {
 		resp, err := b.request("GET", path, nil, false)
 		if err != nil {
 			t.Fatal(err)

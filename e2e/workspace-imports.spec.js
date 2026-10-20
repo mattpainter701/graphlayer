@@ -76,7 +76,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await expect(page.locator('#workspace-title')).toHaveText('Enterprise network operations');
   await page.getByRole('link', { name: 'Sources & imports' }).click();
   await expect(page).toHaveURL(/#imports$/);
-  await expect(page.locator('[data-app-page="imports"] h1')).toBeInViewport();
+  await expect(page.locator('.app-page[data-app-page="imports"] h1')).toBeInViewport();
 
   const beforeSite = await workspace(page);
   if (!beforeSite.workspace.sites.some((site) => site.name === 'Chicago DC')) {
@@ -99,7 +99,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   const unpublished = await page.request.get('/api/snapshots').then((response) => response.json());
   expect(unpublished.snapshots.map((item) => item.id)).toEqual(before.snapshots.map((item) => item.id));
   await fs.mkdir(screenshots, { recursive: true });
-  await page.locator('[data-app-page="imports"]').screenshot({ path: path.join(screenshots, 'workspace-imports-preview.png') });
+  await page.locator('.app-page[data-app-page="imports"]').screenshot({ path: path.join(screenshots, 'workspace-imports-preview.png') });
   await expectResponsive(page, [320,390,768]);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('#batch-site-select').selectOption(site.id);
@@ -111,13 +111,14 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await expect(page.locator('#active-set-members .dataset-member')).toHaveCount(4);
 
   await fs.mkdir(screenshots, { recursive: true });
-  await page.locator('[data-app-page="workspace"]').screenshot({ path: path.join(screenshots, 'workspace-imports-desktop.png') });
+  await page.locator('.app-page[data-app-page="workspace"]').screenshot({ path: path.join(screenshots, 'workspace-imports-desktop.png') });
   await page.locator('#active-set-open-network').click();
-  await expect(page.locator('[data-app-page="topology"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="topology"]')).toBeVisible();
   await expect(page.locator('.nav-item[href="#network-path"]')).toHaveClass(/active/);
   await expect(page.locator('.network-node-row')).toHaveCount(4);
   await expect(page.locator('#topology-stage')).toBeVisible();
   await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(4);
+  await expect(page.locator('#exploration-topology .topology-node[data-role="firewall"]')).toHaveCount(4);
   await expect(page.locator('#topology-caption')).toContainText(/Declared topology draft.*analysis not run/i);
   expect(await page.locator('.network-snapshot-id').evaluateAll((inputs) => inputs.map((input) => input.value))).toEqual(set.members.map((member) => member.snapshot_id));
   await expect(page.locator('.network-link-row')).toHaveCount(0);
@@ -127,8 +128,15 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   expect(draftSnapshot).toBeTruthy();
   expect(draftSnapshot.path.interfaces.length).toBeGreaterThan(0);
   expect(draftSnapshot.path.routes.length).toBeGreaterThan(0);
+  await page.locator('#topology-device-list .topology-device[data-node-id="device1"]').click();
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshot.hostname);
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshotId);
+  for (const group of ['topology', 'configuration', 'path', 'evidence']) {
+    const section = page.locator(`#topology-inspector details[data-group="${group}"]`);
+    await expect(section).toBeVisible();
+    await section.locator('summary').click();
+    await expect(section).toHaveAttribute('open', '');
+  }
   await expect(page.locator('#topology-inspector')).toContainText(`Interfaces ${draftSnapshot.path.interfaces.length} · routes ${draftSnapshot.path.routes.length} · ASA NAT rules ${draftSnapshot.path.nat_rules.length}`);
   const draftEvidence = page.locator('#topology-inspector .topology-source-button').first();
   await expect(draftEvidence).toBeVisible();
@@ -190,19 +198,19 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
 test('direct inventory and objects routes keep one navigation selection and preserve the import draft through history', async ({ page }) => {
   await page.goto('/#policy-inventory');
   await expect(page).toHaveURL(/#policy-inventory$/);
-  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="investigation"]')).toBeVisible();
   await expect(page.locator('.nav-item.active')).toHaveCount(1);
   await expect(page.locator('.nav-item.active')).toHaveAttribute('href', '#policy-inventory');
 
   await page.goto('/#objects');
   await expect(page).toHaveURL(/#objects$/);
-  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="investigation"]')).toBeVisible();
   await expect(page.locator('.nav-item.active')).toHaveCount(1);
   await expect(page.locator('.nav-item.active')).toHaveAttribute('href', '#objects');
   await expect(page.locator('#objects')).toBeVisible();
 
   await page.getByRole('link', { name: 'Sources & imports' }).click();
-  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="imports"]')).toBeVisible();
   await page.locator('#batch-load-sample').click();
   await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
   await page.locator('#batch-set-name').fill('Draft retained across routes');
@@ -212,23 +220,23 @@ test('direct inventory and objects routes keep one navigation selection and pres
   await expect(page.locator('.nav-item.active')).toHaveCount(1);
   await page.goBack();
   await expect(page).toHaveURL(/#imports$/);
-  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="imports"]')).toBeVisible();
   await expect(page.locator('#batch-set-name')).toHaveValue('Draft retained across routes');
   await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
   await expect(page.locator('.nav-item.active')).toHaveCount(1);
 
   await page.goForward();
   await expect(page).toHaveURL(/#policy-inventory$/);
-  await expect(page.locator('[data-app-page="investigation"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="investigation"]')).toBeVisible();
   await expect(page.locator('.nav-item.active')).toHaveCount(1);
   await page.goBack();
   await expect(page.locator('#batch-set-name')).toHaveValue('Draft retained across routes');
   await expect(page.locator('#batch-items .batch-item')).toHaveCount(4);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('link', { name: 'Workspace home', exact: true }).click();
-  await expect(page.locator('[data-app-page="workspace"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="workspace"]')).toBeVisible();
   await page.getByRole('link', { name: 'Sources & imports', exact: true }).click();
-  await expect(page.locator('[data-app-page="imports"]')).toBeVisible();
+  await expect(page.locator('.app-page[data-app-page="imports"]')).toBeVisible();
   await expect(page.locator('#batch-set-name')).toHaveValue('Draft retained across routes');
 });
 
