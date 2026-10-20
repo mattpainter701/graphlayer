@@ -42,7 +42,15 @@ fn thousand_host_projection_budget() {
         let directory = std::path::PathBuf::from(directory);
         assert!(directory.is_absolute());
         std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("synthetic-topology-lab.json"), serde_json::to_vec_pretty(&dataset).unwrap()).unwrap();
-        std::fs::write(directory.join("projection-measurements.json"), serde_json::to_vec_pretty(&measurements).unwrap()).unwrap();
+        std::fs::write(
+            directory.join("synthetic-topology-lab.json"),
+            serde_json::to_vec_pretty(&dataset).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("projection-measurements.json"),
+            serde_json::to_vec_pretty(&measurements).unwrap(),
+        )
+        .unwrap();
     }
 }
