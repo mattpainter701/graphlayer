@@ -63,6 +63,7 @@
       });
 
       document.title = `GraphLayer · ${titles[page]}`;
+      document.body.dataset.appPage = page;
 
       if (anchorFrame) cancelAnimationFrame(anchorFrame);
       if (route.anchor) {

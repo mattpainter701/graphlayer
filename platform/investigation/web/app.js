@@ -7,6 +7,11 @@
   const objectPageSize = 50;
   const apiRoot = '/api';
   const networkSnapshotRequests = new Map();
+  const topologyViews = new Map();
+  const topologyRoles = new Map();
+  let topologySequence = 0;
+  let topologyAbort = null;
+  let topologyDetail = null;
 
   function navigateAppPage(page, anchor) {
     document.dispatchEvent(new CustomEvent('graphlayer:navigate', { detail: { page, anchor } }));
@@ -47,6 +52,7 @@
         invalid_path: 'Use a supported ingress interface and a concrete IPv4 flow with valid protocol/port values.',
         path_unavailable: 'This snapshot does not include a usable routing and NAT model. Reimport the configuration after checking its supported path settings.',
         invalid_network_path: 'Check that each device has a unique ID and snapshot, that every supplied link and endpoint uses a modeled interface, and that the flow is a concrete IPv4 tuple.',
+        invalid_topology_view: 'This topology draft could not be displayed. Review its device IDs, snapshot selections and interface links.',
         path_too_large: 'The path investigation exceeds the local artifact budget. No partial result was saved.',
         invalid_import: 'Provide a supported firewall configuration and a display name of at most 128 characters.',
         import_failed: 'The configuration could not be imported. Earlier snapshots are unchanged. Use ASA running-config, PAN-OS set-format or FortiOS single-VDOM CLI configuration.',
@@ -808,20 +814,73 @@
 
   function clearExplorationResult() { state.networkExploration = null; if ($('exploration-result')) $('exploration-result').hidden = true; }
 
-  function notifyTopology(request, exploration = null, branchIndex = 0, returnIndex = 0, investigation = null) {
-    const snapshots = (request.nodes || []).map((node) => ({ node_id: node.node_id, snapshot: state.networkSnapshots.get(node.snapshot_id) || state.snapshots.find((item) => item.id === node.snapshot_id) }));
-    document.dispatchEvent(new CustomEvent('graphlayer:topology-updated', { detail: { mode: exploration ? 'result' : investigation ? 'trace' : 'draft', request, exploration, investigation, branchIndex, returnIndex, snapshots } }));
+  function topologyRoleKey(nodeId, payload) {
+    const device = (payload.nodes || []).find((item) => item.node_id === nodeId);
+    if (device) return `${device.snapshot_id}:${nodeId}`;
+    if (nodeId === '@query-source') return `query-source:${payload.flow && payload.flow.source || ''}`;
+    if (nodeId === '@query-destination') return `query-destination:${payload.flow && payload.flow.destination || ''}`;
+    return '';
+  }
+
+  async function notifyTopology(payload, exploration = null, branchIndex = 0, returnIndex = 0, investigation = null) {
+    const sequence = ++topologySequence;
+    if (topologyAbort) topologyAbort.abort();
+    topologyAbort = new AbortController();
+    const detail = { mode: exploration ? 'result' : investigation ? 'trace' : 'draft', request: payload, exploration, investigation, branchIndex, returnIndex, snapshots: [] };
+    topologyDetail = detail;
+    const signalStatus = (status, message) => document.dispatchEvent(new CustomEvent('graphlayer:topology-status', { detail: { status, message } }));
+    // Incomplete form rows stay editable. Only selected snapshot references and
+    // complete declared links are submitted for the disposable view projection.
+    const nodes = (payload.nodes || []).filter((item) => item.node_id && /^[a-f0-9]{64}$/.test(item.snapshot_id || ''));
+    const selected = new Set(nodes.map((item) => item.node_id));
+    const links = (payload.links || []).filter((item) => item.a && item.b && selected.has(item.a.node_id) && selected.has(item.b.node_id) && item.a.interface && item.b.interface);
+    const endpoint = (value) => value && selected.has(value.node_id) && value.interface ? value : { node_id: '', interface: '' };
+    const viewRequest = { ...payload, nodes, links, source: endpoint(payload.source), destination: endpoint(payload.destination) };
+    if (!nodes.length) {
+      detail.topology = { nodes: [], links: [], facets: {}, traffic: { available: false } };
+      document.dispatchEvent(new CustomEvent('graphlayer:topology-updated', { detail }));
+      signalStatus('incomplete', 'Choose configuration snapshots to build a topology view.');
+      return;
+    }
+    const roleIDs = [...selected];
+    if (viewRequest.source.node_id && payload.flow && payload.flow.source) roleIDs.push('@query-source');
+    if (viewRequest.destination.node_id && payload.flow && payload.flow.destination) roleIDs.push('@query-destination');
+    const roles = Object.fromEntries(roleIDs.flatMap((id) => {
+      const role = topologyRoles.get(topologyRoleKey(id, viewRequest));
+      return role ? [[id, role]] : [];
+    }));
+    const body = { request: viewRequest, roles, branch_index: branchIndex, return_index: returnIndex };
+    if (exploration) body.exploration_id = exploration.id;
+    if (investigation) body.investigation_id = investigation.id;
+    const key = networkRequestJSON(body);
+    signalStatus('loading', 'Preparing topology from saved configuration evidence…');
+    try {
+      await Promise.all(nodes.map((item) => networkSnapshot(item.snapshot_id)));
+      if (sequence !== topologySequence) return;
+      let projection = topologyViews.get(key);
+      if (!projection) {
+        projection = await request('/topology-view', { method: 'POST', body: JSON.stringify(body), signal: topologyAbort.signal });
+        if (sequence !== topologySequence) return;
+        if (!projection.topology || !Array.isArray(projection.topology.nodes) || !Array.isArray(projection.topology.links)) throw new Error('The topology projection was incomplete.');
+        topologyViews.set(key, projection);
+        if (topologyViews.size > 24) topologyViews.delete(topologyViews.keys().next().value);
+      }
+      if (sequence !== topologySequence) return;
+      detail.snapshots = nodes.map((item) => ({ node_id: item.node_id, snapshot: state.networkSnapshots.get(item.snapshot_id) }));
+      detail.topology = projection.topology;
+      document.dispatchEvent(new CustomEvent('graphlayer:topology-updated', { detail }));
+    } catch (error) {
+      if (sequence === topologySequence) signalStatus('error', error.message);
+    }
   }
 
   function renderDeclaredTopology() {
     const request = networkPayload();
-    renderExplorationTopology({ request }, null, null);
     notifyTopology(request);
     const submitted = networkRequestJSON(request);
     const missing = [...new Set((request.nodes || []).map((node) => node.snapshot_id).filter((id) => id && !state.networkSnapshots.has(id)))];
     if (missing.length) Promise.all(missing.map(networkSnapshot)).then(() => {
       if (!state.networkExploration && !state.networkInvestigation && networkRequestJSON(networkPayload()) === submitted) {
-        renderExplorationTopology({ request }, null, null);
         notifyTopology(request);
       }
     }).catch((error) => { if (networkRequestJSON(networkPayload()) === submitted) showToast(error.message, 'error'); });
@@ -986,39 +1045,8 @@
     const fill = (id, values, fallback) => { const list = $(id); list.replaceChildren(); (Array.isArray(values) && values.length ? values : [fallback]).forEach((value) => list.append(el('li', '', boundedPathText(value, 1200)))); };
     fill('network-reasons', [...(result.reasons || []), ...((result.forward && result.forward.reasons) || []), ...((result.return && result.return.reasons) || [])], 'No reason details were returned.');
     fill('network-assumptions', result.assumptions, 'No additional assumptions were returned.');
-    renderExplorationTopology(investigation, result, { direction: result.return, disposition: result.return && result.return.disposition });
     notifyTopology(investigation.request || {}, null, 0, 0, investigation);
     refreshControls();
-  }
-
-  function renderExplorationTopology(exploration, branch, returnCandidate) {
-    // This traversal places declared nodes on the canvas. Only server results supply path overlays.
-    const svg = $('exploration-topology'); svg.replaceChildren();
-    const request = exploration.request || {}; const nodes = request.nodes || []; const links = request.links || [];
-    const forward = branch && branch.forward && branch.forward.hops || []; const returns = returnCandidate && returnCandidate.direction && returnCandidate.direction.hops || [];
-    const edgeKey = (link) => { if (!link || !link.a || !link.b) return ''; const endpoint = (value) => `${value.node_id}\u0000${String(value.interface || '').toLowerCase()}`; return [endpoint(link.a), endpoint(link.b)].sort().join('\u0001'); };
-    const edgeDirection = (link, fromNode) => link && link.a && link.a.node_id === fromNode ? [link.a, link.b] : [link && link.b, link && link.a];
-    const adjacency = new Map(nodes.map((node) => [node.node_id, []]));
-    links.forEach((link) => { if (!link.a || !link.b) return; if (adjacency.has(link.a.node_id) && adjacency.has(link.b.node_id)) { adjacency.get(link.a.node_id).push(link.b.node_id); adjacency.get(link.b.node_id).push(link.a.node_id); } });
-    const source = request.source && request.source.node_id; const destination = request.destination && request.destination.node_id; const layerByNode = new Map();
-    if (adjacency.has(source)) { layerByNode.set(source, 0); const queue = [source]; while (queue.length) { const current = queue.shift(); adjacency.get(current).forEach((peer) => { if (!layerByNode.has(peer)) { layerByNode.set(peer, layerByNode.get(current) + 1); queue.push(peer); } }); } }
-    let maxLayer = Math.max(0, ...layerByNode.values()); nodes.forEach((node) => { if (!layerByNode.has(node.node_id)) layerByNode.set(node.node_id, maxLayer + 1); });
-    if (destination && layerByNode.has(destination)) { const dLayer = layerByNode.get(destination); if (dLayer < maxLayer) { nodes.filter((node) => layerByNode.get(node.node_id) > dLayer).forEach((node) => layerByNode.set(node.node_id, layerByNode.get(node.node_id) + 1)); layerByNode.set(destination, maxLayer); } }
-    maxLayer = Math.max(1, ...layerByNode.values()); const byLayer = new Map(); nodes.forEach((node) => { const layer = layerByNode.get(node.node_id) || 0; if (!byLayer.has(layer)) byLayer.set(layer, []); byLayer.get(layer).push(node); });
-    const maxLayerNodes = Math.max(1, ...[...byLayer.values()].map((members) => members.length)); const svgWidth = Math.max(450, maxLayer * 150 + 150); const svgHeight = Math.max(320, maxLayerNodes * 140 + 40); svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
-    const positions = new Map(); byLayer.forEach((members, layer) => members.forEach((node, index) => { const y = members.length === 1 ? svgHeight / 2 : 35 + index * ((svgHeight - 110) / (members.length - 1)); positions.set(node.node_id, { x: node.node_id === destination ? svgWidth - 75 : 75 + layer * ((svgWidth - 150) / maxLayer), y }); }));
-    const ns = 'http://www.w3.org/2000/svg'; const makeLine = (x1, y1, x2, y2, cls, title, arrow = '') => { const item = document.createElementNS(ns, 'line'); item.setAttribute('x1', x1); item.setAttribute('y1', y1); item.setAttribute('x2', x2); item.setAttribute('y2', y2); item.setAttribute('class', cls); if (arrow) item.setAttribute('marker-end', `url(#explore-arrow-${arrow})`); const tip = document.createElementNS(ns, 'title'); tip.textContent = title; item.append(tip); svg.append(item); };
-    const defs = document.createElementNS(ns, 'defs'); [['forward','#43865c'],['return','#567da5'],['blocked','#b54e55'],['unknown','#c08b32']].forEach(([id,color]) => { const marker = document.createElementNS(ns,'marker'); marker.setAttribute('id',`explore-arrow-${id}`); marker.setAttribute('viewBox','0 0 10 10'); marker.setAttribute('refX','8'); marker.setAttribute('refY','5'); marker.setAttribute('markerWidth','5'); marker.setAttribute('markerHeight','5'); marker.setAttribute('orient','auto-start-reverse'); const path = document.createElementNS(ns,'path'); path.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); path.setAttribute('fill',color); marker.append(path); defs.append(marker); }); svg.append(defs);
-    const edgeClass = (status, direction) => { const value = String(status || 'unknown').toLowerCase(); return `topology-edge topology-${direction} topology-state-${value.replace(/[^a-z0-9-]/g, '-')}`; };
-    const drawPathEdges = (hops, direction, status) => (hops || []).forEach((hop) => { if (!hop.link) return; const key = edgeKey(hop.link); const selected = links.find((link) => edgeKey(link) === key); if (!selected) return; const [from, to] = edgeDirection(selected, hop.node_id); const a = from && positions.get(from.node_id); const b = to && positions.get(to.node_id); const canonicalA = selected.a && positions.get(selected.a.node_id); const canonicalB = selected.b && positions.get(selected.b.node_id); if (!a || !b || !canonicalA || !canonicalB) return; const dx = b.x - a.x; const dy = b.y - a.y; const length = Math.max(1, Math.hypot(dx, dy)); const canonicalLength = Math.max(1, Math.hypot(canonicalB.x - canonicalA.x, canonicalB.y - canonicalA.y)); const offset = direction === 'forward' ? -5 : 5; const ox = -(canonicalB.y - canonicalA.y) / canonicalLength * offset; const oy = (canonicalB.x - canonicalA.x) / canonicalLength * offset; const trim = 28; const value = String(status || 'unknown').toLowerCase(); const arrow = value === 'blocked' ? 'blocked' : ['unknown','indeterminate','unresolved','not_evaluated'].includes(value) ? 'unknown' : direction; makeLine(a.x + dx / length * trim + ox, a.y + dy / length * trim + oy, b.x - dx / length * trim + ox, b.y - dy / length * trim + oy, edgeClass(status, direction), `Selected ${direction} path · ${from.node_id} (${from.interface}) → ${to.node_id} (${to.interface}) · ${status || 'unknown'}`, arrow); });
-    links.forEach((link) => { const a = positions.get(link.a.node_id); const b = positions.get(link.b.node_id); if (!a || !b) return; makeLine(a.x, a.y, b.x, b.y, 'topology-edge', `Operator supplied link ${link.a.node_id} ${link.a.interface} ↔ ${link.b.node_id} ${link.b.interface}`); });
-    drawPathEdges(forward, 'forward', branch && branch.forward && branch.forward.disposition); drawPathEdges(returns, 'return', returnCandidate && returnCandidate.disposition);
-    const hitsByNode = new Map(); const addHits = (hops, direction) => (hops || []).forEach((hop, index) => { if (!hitsByNode.has(hop.node_id)) hitsByNode.set(hop.node_id, []); hitsByNode.get(hop.node_id).push({ hop, direction, index }); }); addHits(forward, 'forward'); addHits(returns, 'return');
-    const statusClass = (value) => String(value || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    const displayNode = (value) => value.length > 12 ? `${value.slice(0, 9)}…` : value;
-    nodes.forEach((node) => { const pos = positions.get(node.node_id); const hits = hitsByNode.get(node.node_id) || []; const hit = hits[0]; const hopStatus = hit && hit.hop.path && hit.hop.path.disposition || 'unknown'; const directions = [...new Set(hits.map((item) => item.direction))]; const group = document.createElementNS(ns, 'g'); group.setAttribute('class', `topology-node ${directions.map((direction) => `topology-${direction}`).join(' ')} topology-state-${statusClass(hopStatus)}`); group.setAttribute('tabindex', '0'); group.setAttribute('role', 'button'); group.setAttribute('aria-label', `${node.node_id}, operator supplied topology node${hits.length ? `, selected ${directions.join(' and ')} hop${hits.length === 1 ? ` ${hit.index + 1}` : 's'}${hopStatus ? `, status ${hopStatus}` : ''}` : ', not in selected branch'}`); group.dataset.nodeId = node.node_id; const circle = document.createElementNS(ns, 'circle'); circle.setAttribute('cx', pos.x); circle.setAttribute('cy', pos.y); circle.setAttribute('r', '25'); const label = document.createElementNS(ns, 'text'); label.setAttribute('x', pos.x); label.setAttribute('y', pos.y + 43); label.textContent = displayNode(node.node_id); const title = document.createElementNS(ns, 'title'); title.textContent = node.node_id; label.append(title); const status = document.createElementNS(ns, 'text'); status.setAttribute('x', pos.x); status.setAttribute('y', pos.y + 59); status.setAttribute('class', 'topology-node-status'); status.textContent = hits.length ? directions.join(' + ') : 'declared'; const glyph = document.createElementNS(ns, 'path'); glyph.setAttribute('class', 'topology-device-glyph'); glyph.setAttribute('aria-hidden', 'true'); glyph.setAttribute('d', `M ${pos.x - 11} ${pos.y - 9} h 22 v 18 h -22 z M ${pos.x - 7} ${pos.y - 3} h 14 M ${pos.x - 7} ${pos.y + 3} h 3 m 4 0 h 3`); group.append(circle, glyph, label, status); svg.append(group); });
-    const list = $('exploration-topology-list'); list.replaceChildren(); nodes.forEach((node) => { const button = el('button', 'topology-list-node', node.node_id); button.type = 'button'; button.dataset.nodeId = node.node_id; const hits = hitsByNode.get(node.node_id) || []; button.setAttribute('aria-label', `${node.node_id}${hits.length ? `, ${[...new Set(hits.map((item) => item.direction))].join(' and ')} hop${hits.length === 1 ? ` ${hits[0].index + 1}` : 's'}` : ', declared node without selected hop'}`); list.append(button); });
-    links.forEach((link) => list.append(el('span', 'topology-list-link', `${link.a.node_id} (${link.a.interface}) ↔ ${link.b.node_id} (${link.b.interface})`)));
   }
 
   function renderNetworkExploration(exploration) {
@@ -1041,7 +1069,6 @@
       renderNetworkHops($('exploration-return-hops'), candidate ? `Return candidate ${Number(returnSelect.value) + 1} · ${candidate.disposition || 'indeterminate'}` : 'Return candidate', candidate && candidate.direction && candidate.direction.hops, exploration);
       const fill = (id, values, fallback) => { const list = $(id); list.replaceChildren(); (values && values.length ? values : [fallback]).forEach((value) => list.append(el('li', '', boundedPathText(value, 1200)))); };
       fill('exploration-reasons', [...(result.reasons || []), ...(selectedBranch && selectedBranch.reasons || []), ...(selectedBranch && selectedBranch.forward && selectedBranch.forward.reasons || []), ...(candidate && candidate.reasons || []), ...(candidate && candidate.direction && candidate.direction.reasons || [])], 'No reason details were returned.'); fill('exploration-assumptions', [...(result.assumptions || []), ...(result.truncated ? ['Some branches were omitted because the exploration was truncated.'] : [])], 'No additional assumptions were returned.');
-      renderExplorationTopology(exploration, selectedBranch, candidate);
       notifyTopology(exploration.request || {}, exploration, Number(branchSelect.value) || 0, Number(returnSelect.value) || 0);
     };
     const rebuildReturns = () => { const candidates = candidatesForBranch(); returnSelect.replaceChildren(...(candidates.length ? candidates.map((candidate, index) => new Option(`Return ${index + 1} · ${pathLabel(candidate.direction && candidate.direction.hops)} · session ${candidate.session_status || 'unknown'}${candidate.asymmetric ? ' · asymmetric' : ''}`, String(index))) : [new Option('No return candidate', '')])); if (candidates.length) returnSelect.value = '0'; draw(); };
@@ -1798,6 +1825,17 @@
   }
 
   function wireEvents() {
+    document.addEventListener('graphlayer:topology-role', (event) => {
+      const annotation = event.detail || {};
+      if (!topologyDetail || typeof annotation.node_id !== 'string') return;
+      if (annotation.role !== null && !['firewall', 'router', 'switch', 'host', 'server', 'network'].includes(annotation.role)) return;
+      const key = topologyRoleKey(annotation.node_id, topologyDetail.request);
+      if (!key) return;
+      if (annotation.role === null) topologyRoles.delete(key);
+      else topologyRoles.set(key, annotation.role);
+      if (topologyRoles.size > 128) topologyRoles.delete(topologyRoles.keys().next().value);
+      notifyTopology(topologyDetail.request, topologyDetail.exploration, topologyDetail.branchIndex, topologyDetail.returnIndex, topologyDetail.investigation);
+    });
     document.addEventListener('graphlayer:open-network-evidence', (event) => openTopologyEvidence(event.detail));
     $('workspace-refresh').addEventListener('click', refreshWorkspaceView);
     $('workspace-rename').addEventListener('click', renameWorkspace);

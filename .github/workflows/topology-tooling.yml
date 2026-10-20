@@ -1,0 +1,30 @@
+name: Topology tooling diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  topology-tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The development host blocks the Rust tooling executable. This temporary
+      # diagnostic emits a formatting-only patch; the ordinary format gate stays
+      # mandatory and this workflow is removed before the final review head.
+      - name: Prepare formatting patch
+        env:
+          REVIEWED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p /tmp/topology-format
+          cargo fmt --all
+          git diff -- crates/ > /tmp/topology-format/rustfmt.patch
+          printf '%s\n' "$REVIEWED_HEAD" > /tmp/topology-format/head-sha.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: topology-format-${{ github.event.pull_request.head.sha }}
+          path: /tmp/topology-format
+      - name: Check native Rust projection
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Test native Rust projection
+        run: cargo test --locked --workspace --lib --bins

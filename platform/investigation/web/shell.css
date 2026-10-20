@@ -37,6 +37,35 @@
 .page-topology .network-panel { margin-top: 0; }
 .page-topology .exploration-visual { width: 100%; }
 
+/* Keep the map primary; configuration forms and detailed traces live below it. */
+body[data-app-page="topology"] .main { max-width: none; padding-right: 24px; padding-left: 24px; }
+.page-topology .topology-page-heading { padding: 22px 0 10px; margin: 0; }
+.page-topology .topology-page-heading h1 { font-size: 26px; letter-spacing: -.035em; }
+.page-topology .network-panel { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.page-topology .network-panel > .panel-heading { display: none; }
+.page-topology .network-actions { margin: 0 0 10px; gap: 8px; flex-wrap: wrap; }
+.page-topology .network-actions .button { min-height: 34px; font-size: 11px; }
+.page-topology #network-status { flex-basis: 100%; font-size: 11px; color: #65758b; }
+.page-topology .network-boundary { margin: 0 0 10px; padding: 7px 10px; border-radius: 6px; font-size: 11px; background: #edf3f9; color: #536982; border-color: #b6c9dd; }
+.network-setup { margin-top: 16px; padding: 0 16px 16px; border: 1px solid #dbe3ed; border-radius: 10px; background: #fff; }
+.network-setup > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; min-height: 48px; color: #243a55; font-size: 13px; font-weight: 650; cursor: pointer; list-style: none; }
+.network-setup > summary::before { content: '+'; display: inline-grid; width: 20px; height: 20px; place-items: center; border: 1px solid #d5dfeb; border-radius: 5px; color: #597591; }
+.network-setup[open] > summary::before { content: '−'; }
+.network-setup-hint { color: #8190a2; font-size: 11px; font-weight: 400; }
+.network-setup .network-layout { margin-top: 0; }
+.page-topology .flow-footer { padding: 12px 0; }
+.page-topology .flow-footer .button { min-height: 38px; font-size: 12px; }
+.page-topology .network-result, .page-topology .exploration-result { padding: 20px; border-radius: 10px; background: #fff; }
+.page-topology .history-panel { margin-top: 0; }
+
+@media (max-width: 600px) {
+  body[data-app-page="topology"] .main { padding-right: 12px; padding-left: 12px; }
+  .page-topology .network-actions .button { flex: 1 1 130px; }
+  .network-setup { padding-right: 10px; padding-left: 10px; }
+  .network-setup-hint { flex-basis: 100%; margin-left: 28px; padding-bottom: 8px; }
+  .page-topology .network-result, .page-topology .exploration-result { padding: 12px; }
+}
+
 /* Source lines stay available over every route as a dismissible evidence drawer. */
 #source-lines.source-view {
   position: fixed;

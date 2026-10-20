@@ -34,7 +34,9 @@ async function loadSample(page, mutate) {
   await expect(page.locator('#network-flow-destination')).toHaveValue('203.0.113.15');
   await expect(page.locator('#network-explore')).toBeEnabled();
   await expect(page.locator('#topology-stage')).toBeVisible();
-  await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(4);
+  await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(6);
+  await expect(page.locator('#exploration-topology .topology-node')).toHaveCount(6);
+  await expect(page.locator('#exploration-topology .topology-node[data-role="firewall"]')).toHaveCount(4);
   await expect(page.locator('#topology-caption')).toContainText(/Declared topology draft.*analysis not run/i);
 }
 
@@ -198,6 +200,12 @@ test('topology workspace searches and inspects a branch device, controls the can
   await expect(page.locator('#topology-inspector')).toContainText(snapshot.vendor);
   await expect(page.locator('#topology-inspector')).toContainText(northSnapshotId);
   await expect(page.locator('#topology-inspector')).toContainText(/selected path context/i);
+  for (const group of ['topology', 'configuration', 'path', 'evidence']) {
+    const section = page.locator(`#topology-inspector details[data-group="${group}"]`);
+    await expect(section).toBeVisible();
+    await section.locator('summary').click();
+    await expect(section).toHaveAttribute('open', '');
+  }
   await expect(page.locator('#topology-zoom')).toHaveText('150%');
   await page.locator('#topology-fit').click();
   await expect(page.locator('#topology-zoom')).toHaveText('100%');
