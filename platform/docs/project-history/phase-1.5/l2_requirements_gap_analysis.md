@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The multi-vendor support task plan has **significant gaps** for L2-specific requirements. While the plan covers basic operational commands (MAC tables, VLANs, interfaces), it **misses critical L2 security control operational data** and **L2-specific parsers** needed for the reference Layer-2 MVP.
+The multi-vendor support task plan has **significant gaps** for L2-specific requirements. While the plan covers basic operational commands (MAC tables, VLANs, interfaces), it **misses critical L2 security control operational data** and **L2-specific parsers** needed for the reference tool Layer-2 MVP.
 
 ---
 

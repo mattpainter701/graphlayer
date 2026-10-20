@@ -31,7 +31,7 @@
 - Matches how network engineers think: "What devices are on this network?"
 - Enables network-centric filtering: "Show me all assets in the DMZ"
 - Supports security zone visualization
-- Aligns with industry standards (Cisco Cyber Vision, reference, Skybox)
+- Aligns with industry standards (Cisco Cyber Vision, reference tool, Skybox)
 
 ### ❌ The Wrong Way (Previous Assumption)
 
@@ -219,7 +219,7 @@
 
 ## 🏆 Competitive Analysis
 
-| Feature | Cisco Cyber Vision | reference | Skybox | **GraphLayer** |
+| Feature | Cisco Cyber Vision | reference tool | Skybox | **GraphLayer** |
 |---------|-------------------|--------|--------|----------------|
 | Multi-vendor support | ✅ | ✅ | ✅ | ✅ |
 | Containerized | ❌ | ❌ | ❌ | ✅ |

@@ -334,32 +334,600 @@
       "path": "platform/firewall/parsers.go",
       "category": "transport_adapter",
       "owner": "GraphLayer Rust migration maintainers (PR #21)",
-      "reason": "Preserve exported parser signatures and public sample assets while delegating all canonical parsing to Rust.",
-      "sha256": "b520325a92d77be02bb61ba0e4cc16589ee429fbdf57f8a11d9fd3b758cec877",
+      "reason": "Preserve exported parser signatures and public sample assets while delegating all canonical parsing to Rust. Source-only repository namespace cleanup preserves existing behavior.",
+      "sha256": "7b82b42b582d8114ba3ee82563888476e9a7d6dc48fe92d898dcfad368081e44",
       "expires": "2027-01-15"
     },
     {
       "path": "platform/pathanalysis/engine.go",
       "category": "transport_adapter",
       "owner": "GraphLayer Rust migration maintainers (PR #21)",
-      "reason": "Preserve Go path DTO signatures and dispatch policy, routing, NAT, return and exploration to Rust.",
-      "sha256": "90e6a63a936059c00a99a8882cc941c044ea3089e74ecfc371eaf04b849379c2",
+      "reason": "Preserve Go path DTO signatures and dispatch policy, routing, NAT, return and exploration to Rust. Source-only repository namespace cleanup preserves existing behavior.",
+      "sha256": "e48d060dda65fd116f4060c9475755d8c8f9d52c71015314a2e7f9d804c81978",
       "expires": "2027-01-15"
     },
     {
       "path": "platform/networkpath/engine.go",
       "category": "transport_adapter",
       "owner": "GraphLayer Rust migration maintainers (PR #21)",
-      "reason": "Preserve Go network DTO signatures and dispatch multi-firewall path and exploration to Rust.",
-      "sha256": "d1f09374bb99e909a4ab15f0c9b3705b154467f19d74bbfd48cbfacd99990b29",
+      "reason": "Preserve Go network DTO signatures and dispatch multi-firewall path and exploration to Rust. Source-only repository namespace cleanup preserves existing behavior.",
+      "sha256": "7a20257536177805fa1ef2da7a1029ba9123d19d9ffed778445277d050bff616",
       "expires": "2027-01-15"
     },
     {
       "path": "platform/investigation/server.go",
       "category": "transport_adapter",
       "owner": "GraphLayer topology workspace maintainers",
-      "reason": "Existing local HTTP/storage compatibility layer resolves immutable snapshot and saved-result references and transports Rust project_topology and topology.layer_sample/project_layers requests. Rust owns auxiliary validation, aggregation, evidence and L2 traversal; no network decisions are implemented in Go.",
-      "sha256": "27843988525d43e5fce2a0d49d263dba2e11bca7abc45a5150a9a5f9ddfa2316",
+      "reason": "Existing local HTTP/storage compatibility layer resolves immutable snapshot and saved-result references and transports Rust project_topology and topology.layer_sample/project_layers requests. Rust owns auxiliary validation, aggregation, evidence and L2 traversal; no network decisions are implemented in Go. Source-only repository namespace cleanup preserves the existing behavior.",
+      "sha256": "d2372359bebf48b0d22a54fc73d1ad76ca4f0a1893eeb2a860f2d3c354cc2433",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/connectors/fileshare_connector.py",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "ea1094135d1ff3828765b8512c2a207bbe7965f7f5086c8433a0f757cd065d93",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/connectors/solarwinds_ncm_connector.py",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "247fdf40435bde2d2c93f3614749eb644ee73648fa9fea1c155989ace2ffc85a",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/correlation/conflict.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "9de76d333c82cfa90773a2404fb9a7eb5f4bf5b3200136825e86461520788900",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/correlation/dedup.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "c7181a5b4c9c8931fab1d1e6fc102c63c8ad1abe902ae98a247cef9daec9f047",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/correlation/engine.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "d5dbe3874c908f55fc5ba20760a22ef0edce428b5e298915ad09f0b238af1fa4",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/correlation/link_correlation.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "94cfa94742b291969e6de7017f958dcdbe6e9f7f560718965b7d9eea6424b3f9",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/correlation/types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "6486fcbc45da240c1d69dc9401f3a9a433bd0aa2491194ac9f292035ec984c95",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/firewall/asa_path_parser.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "b1d8a902fe3566618e1b798fd160ea48394bf5bf8c0d055c49db4a7953ba40f7",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/firewall/dispatch.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "a12f269ffc122a46cb00d29a01c4cf5b6f0c9f99f85f87392d66fbdc68611a78",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/firewall/path_types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "c53b71388325ad216665b873f5bf5ca965228750b3f140a54a1028cc8ba49385",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/firewall/types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "49e380e1afb86d03585cfd045620bf55151a977b8949d8f03199ad9fb8af4c90",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/graph/builder.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "449a51c5d94a589db3566532f7b39ec2eb40932415085074cfd500e34ec47d17",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/graph/types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "9853ed9a7491e2bc11ddd48282c177e09e81babb37d7c9fafb2fd0f69ecda8a5",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/intelligence/boundary_detection.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "0576394eb447b1d0fcbb89f54892440e8985e5e77c34d066dcbbd9f28c85e474",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/intelligence/implicit_links.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "0ad975e49ec56235ea74a666ee0609f6e0b97069efb9179d39b08f3050d9c120",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/intelligence/inference_engine.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "df5b038a787a4fe8baa0610077fe706f4f54482614d2ff70ac513931d479d75c",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/intelligence/inference_types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "9415a2a2b47c98ac200fbd8c6e3a16c2416a49b1ee00108d0b1dd8b68c20e19f",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/intelligence/l2_inference.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "942cf71ff83f8ecd68dc282d7bfd4c3856178cad68f0ee9c2daddca543a85ddf",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/intelligence/l3_inference.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "0334b55639cc0995fb936444f79e995c3b789bdd3ffd3370a4ea951a9738635b",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/intelligence/subnet_discovery.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "ef4f3069373c4e3513cce0f72dca580953bdbc75fdf3881a9f5cd49154a9fb37",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/investigation/inventory_validation.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "18990c42a5a3f99c9c8feddf7e6125bc5715a5cb0fe1f38bfad6e01ae985480f",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/investigation/path_validation.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "b06797bb532fc185cf07ec4da25c78f9d3d57c4e1df58e40a9b80a47545ea1b0",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/networkpath/exploration_types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "5da537765f401f6f05aa684aea57caa9512f7f90567ea880249e9972f12cbab6",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/networkpath/types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "988273f5014f391e28e12c6364f91bab2555d3cb8a46ca878c9bdd1313737895",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/connectors/api/api_connector.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "8664d7856544af874045a03c5f0523ff0773bf6d123f4f3d68133b51e45f19c3",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/connectors/api/panos_appid_collector.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "c86886016a9fe3227bb4940c93bc029e814b73c78638c64ccd66a60897c75605",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/connectors/base/base_connector.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "a7ca446d63076e17b6ba78f6eb9220cd08486e87b98e5b5e32761985bcd3e1a7",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/connectors/ssh/fortigate_isdb_collector.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "31704d576e5e789dca6a899b7288de8abee96e8bb507efd5f70bf396f584fc47",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/connectors/ssh/ssh_connector.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "1fd9a1afdad34b1fc095bdc490c06863e6a983d90573cfb04dc1056fa01a6464",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/decision/l2_decision_engine.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "f6923bcd3f74b5997e7520210a4e7a09ad12698ba09179a4a33b1b5153651132",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/decision/l3_decision_engine.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "13f053f3ab91494cb2b3b459811aac401cd4a182e0e655d574b5ca3f47f3eb5c",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/decision/l4_firewall_decision_engine.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "cca6eba57d9070defe8ded10d63a42bb29d5fdbec444a293e1eded5998d02d09",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/integration/parser_bridge.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "aea346c65e0dbb517908d8c7db85805577e7577d8db68286e6c4a6f68605edf0",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/orchestration/scoring/scoring.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "1a9a64ed22e6aa73ee2ee1ba8b97ba28b67ba687d6d8d19c5905833198d78a93",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/pathanalysis/types.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "22dd2d5e29a5399b20e0df12697b7fbdd7b679b4451c69884030a2eb9a2465c7",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/policy/evaluate.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "2db0ec17311d305df76021cda301defcb9c45f0e811f781062fd73f77ae05288",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/scoring/confidence_engine.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "d236aa93bf061d981aee73d36c7d861e8494c25606b114a3d80b1dc64708ad51",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/arista/eos/arista_eos_config_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "f1c1d8957da045882ac46af7fdd16adcfdcc97399751072e54eab938f3114a2b",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/arista/eos/arista_eos_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "240f1e70c858682779f3530aac7617e06af72817ada09990c5e67da42d5742b3",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/arista/eos/arista_eos_operational_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "1b842e43e8dc954e05e8cf59e8cd96a581abf4cf3e5adafdc0e2626501c72be7",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/arista/eos/arista_eos_processor.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "110e976e954a3d602baceb50f0be626f3a979fb1a3918642ffa764138390cc4c",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/arista/eos/arista_eos_routing_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "b7ea56ecb68aa504c4a53716a85261ece0a0bb641742edfbbb108634e0b350bc",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/aruba/aoscx/aruba_aoscx_config_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "af70e0affdce7ef6b7025a725c3a04a5c0d03dca6e9004b3a3d3a65f184d649b",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/aruba/aoscx/aruba_aoscx_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "f5398a13436327ab02a98df3c4bf548a8b3d6c23a766adc3bd3af048f24900c0",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/aruba/aoscx/aruba_aoscx_operational_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "75434a4a148876b9f0ac2dce8ae880e82fc3ba72c50eb0b1d3f6f2e8d0e1c4a5",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/asa/cisco_asa_routing_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "3e62d7b1df3cee5415893f4b9ff486270db9de3ad080083dd51815e80ea12733",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/asa/cisco_asa_routing_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "e88996bc28cf10ee5054e0a9f0c11c8a6eb835fef9e7ceb7f90b1cd8fb4e725e",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/asa/config_parser.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "87e81a0cc8c4bfad9fa2b285d3dff54bc5fc6b5b1c6f08e4d45405c4865c38d9",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/asa/service_parser.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "8a11c37ed10a600bf51e85efff72b73d691f2a9f1de1869f08636576d4f54475",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/ios/cisco_ios_config_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "f6608dac7d85f0056d94240cf277a090258b55bef36debd55bea05c845e5e521",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/ios/cisco_ios_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "fa3c0bbc7535fb8d418c884813e29becfaadea8c932f2b86e1710e3ffb280517",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/ios/cisco_ios_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "bc481d826e5298900d1308c19888b1a3a7c7ada12ba20a1e8230d812cd3e4b63",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/ios/cisco_ios_processor.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "ae2227bdd4f0b082f14726e34175aeeb09f10df584d9c6f27bbafa1f832a37e4",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/ios/cisco_ios_routing_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "5643483c6f8f2b646962a3483c142dce0e913fa2b22b410b03bd5b7962837aa4",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/ios/cisco_ios_routing_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "d0870d9f346a7a7023b385ff37a31c54a16920298e331a6f186d05fc5b87d56e",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/cisco/nxos/cisco_nxos_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "08e1daade458681962720e9a2531c03ea8198ffdeb73b2ce24d80b40f0619863",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/dell/os10/dell_os10_config_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "7b6ce3b1edc7935af5168b9b34952af8a75cd23a88263b56a2e72b0b9166ebc2",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/dell/os10/dell_os10_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "f48ebb0135912263b6d4f1abb819e2a4f2ee9e2db12c93ad8f9dfb1ede10143c",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/dell/os10/dell_os10_operational_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "3e9369643ee0eb74a8c0e96cfc11945c9bf5e7473d213740336aaace6937ca3c",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/dell/os10/dell_os10_processor.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "3147d21f5c4d2b68c1985f7fc8152e79a0bd6d7b883b9ca2b3c5546fb282c00b",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/dell/os10/dell_os10_routing_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "0991f83eab281a3acb101a83ab0cb8ca532cac3c17839b01d57deedc2c2f9e1a",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/fortinet/fortigate/fortinet_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "0d481d3d09ab5f4cadec7f6de87fdb571489d5d41efdb4f1dede6be1cd66ceb5",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/fortinet/fortigate/fortinet_routing_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "520c65b1af2b9beb0bb4f8ef2cd06b26aa824881a9d6488cf3fa6d8528907cb6",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/fortinet/fortigate/fortinet_routing_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "86cadaa93b1e7c92fcae9492f7f9eeb04310c9085aa8b9346e1c017031643365",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/juniper/junos/juniper_junos_config_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "f086d94c7bdd6f05f8ef889e4f3e2c19337629385faef91c19c5229e589a417a",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/juniper/junos/juniper_junos_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "a97906f4b1a3c6fda0d6c27b986b8711bad74bfe67909d75ba86fa3969a7f405",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/juniper/junos/juniper_junos_operational_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "0e88aee1c45f123e41969a7354dc6e8a6aff02e49bd061691309177c7c2c95d2",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/paloalto/firewall/paloalto_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "b14dc2214cc73a2199ad5699967e30048e87c27364d0e4c468433b51966cb0aa",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/paloalto/firewall/paloalto_routing_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "80ca9e6f5b965a24c7b5b58af2d5f6983525ea035efef44806821503048ad392",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/paloalto/firewall/paloalto_routing_parsers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "ae49ec1998979b5967e2f5cc58a3302caa3df02cb0ec9081b402697f77830320",
+      "expires": "2027-01-15"
+    },
+    {
+      "path": "platform/vendors/paloalto/panorama/panorama_mappers.go",
+      "category": "security_fix",
+      "owner": "GraphLayer repository privacy maintainers",
+      "reason": "Remove prohibited repository identities from imports, symbols, serialized legacy catalog keys and comments. This source-only namespace cleanup adds no domain algorithms; the remaining implementation stays frozen pending Rust migration.",
+      "sha256": "15519a778090789119f39fe9d92921a6457a444debba34129435b119cedb8c45",
       "expires": "2027-01-15"
     }
   ],

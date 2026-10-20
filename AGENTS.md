@@ -26,6 +26,27 @@
   uncommitted work requires a clear handoff. Do not repurpose another task's
   worktree or discard its changes.
 
+## Repository privacy
+
+- Customer configuration collections, raw imports and private collection reports
+  must remain outside every Git worktree. Only reviewed synthetic fixtures may
+  be committed. Never publish corpus filenames, source text, credentials or
+  unredacted parser/process output in Git, CI, pull requests or artifacts.
+- Prohibited repository identities are represented by fingerprints in
+  `config/repository-privacy.json`; do not put their wording in source, paths,
+  test fixtures, documentation or commit messages.
+- Before committing from a clean-history clone, run
+  `python scripts/check-repository-privacy.py --history` and, when
+  the local corpus is available, repeat with `--private-corpus` pointing outside
+  the checkout. The command emits aggregate counts only. CI repeats the tracked
+  tree, staged index and current-revision ancestry scan. Never push from an old contaminated
+  clone. These checks do not prove cleanup of other refs or hosted LFS storage.
+- A detected exposure requires a local audit of all refs, configuration-byte
+  fingerprints and LFS pointers. Keep remediation reports outside Git. Do not
+  claim a complete purge until published refs, hosted caches/LFS and affected
+  clones have been addressed. Coordinate destructive history rewrites and
+  preserve unrelated working files before changing repository history.
+
 ## Language boundary
 
 - Rust owns domain behavior: vendor parsing and connectors, graph and topology

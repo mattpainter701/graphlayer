@@ -184,11 +184,11 @@ Asset/vuln data: RunZero, Claroty, ForeScout, Nozomi, Tenable
 
 **Acceptance:** A topology export includes confidence scores. An analyst can filter to "high confidence only" and trust the results.
 
-### Sprint 10 — reference Comparison Harness
-**Goal:** Objective, automated comparison showing where GraphLayer beats reference.
+### Sprint 10 — reference tool Comparison Harness
+**Goal:** Objective, automated comparison showing where GraphLayer beats reference tool.
 
 **Tasks:**
-- Build reference-compatible input format: translate GraphLayer topology to reference comparison format
+- Build reference tool-compatible input format: translate GraphLayer topology to reference tool comparison format
 - Implement comparison metrics:
   - Device count and accuracy (matched devices / total devices)
   - Link accuracy (matched links / total links)
@@ -200,7 +200,7 @@ Asset/vuln data: RunZero, Claroty, ForeScout, Nozomi, Tenable
 - Run comparison on each release, include in release notes
 - Document methodology so results are reproducible
 
-**Acceptance:** Each release includes a comparison report quantifying improvement over reference.
+**Acceptance:** Each release includes a comparison report quantifying improvement over reference tool.
 
 ### Sprint 11 — Graph Intelligence & Topology Inference
 **Goal:** Fill in gaps — infer what isn't explicitly configured.
@@ -267,7 +267,7 @@ Asset/vuln data: RunZero, Claroty, ForeScout, Nozomi, Tenable
 
 ## Strategic benchmark
 `reference` is a benchmark, not the ceiling. GraphLayer should be better by being:
-- more complete across vendors (Cisco, Palo Alto, Fortinet, Juniper, Aruba, Dell, Check Point, Arista vs reference's narrower coverage)
+- more complete across vendors (Cisco, Palo Alto, Fortinet, Juniper, Aruba, Dell, Check Point, Arista vs reference tool's narrower coverage)
 - better at topology inference and gap-filling
 - better at evidence, provenance, and confidence scoring
 - better at central orchestration and multi-source correlation
@@ -294,7 +294,7 @@ Use the Docker dev/test server for:
 - Parser regression checks against sample configs
 - Graph generation and topology sanity tests
 - Full pipeline integration tests
-- reference comparison runs
+- reference tool comparison runs
 - Performance benchmarks
 
 Validation should answer:
@@ -309,8 +309,8 @@ Validation should answer:
 2. Expand connector coverage (ServiceNow, NetBox, cloud APIs)
 3. Add vendor parsers (Arista, Dell, Check Point)
 4. Build cross-source correlation and deduplication
-5. Ship reference comparison harness with quantified superiority
+5. Ship reference tool comparison harness with quantified superiority
 6. Polish graph output and analyst workflows
 
 ## Success definition
-GraphLayer is successful when it can ingest data from 8+ diverse sources, parse 8+ vendor formats, and produce topology graphs that are measurably more complete, more accurate, and more useful than reference — with evidence and confidence scores backing every claim.
+GraphLayer is successful when it can ingest data from 8+ diverse sources, parse 8+ vendor formats, and produce topology graphs that are measurably more complete, more accurate, and more useful than reference tool — with evidence and confidence scores backing every claim.

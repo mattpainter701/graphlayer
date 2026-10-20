@@ -290,7 +290,7 @@ The NXOS mappers follow the pattern established by the existing Cisco IOS mapper
 
 ```go
 import (
-    "GraphLayer.io/parsers/cisco"
+    "github.com/mattpainter701/graphlayer/parsers/cisco"
     "github.com/mattpainter701/graphlayer/platform/core-share/models"
 )
 

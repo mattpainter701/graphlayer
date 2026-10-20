@@ -43,7 +43,7 @@ type DeviceMetrics struct {
 	GraphLayerCount int `json:"graphlayer_count"`
 
 	// reference device count
-	referenceCount int `json:"reference_count"`
+	ReferenceCount int `json:"reference_count"`
 
 	// MatchedDevices is the number of devices found by both tools.
 	MatchedDevices int `json:"matched_devices"`
@@ -83,7 +83,7 @@ type LinkMetrics struct {
 	GraphLayerCount int `json:"graphlayer_count"`
 
 	// reference link count
-	referenceCount int `json:"reference_count"`
+	ReferenceCount int `json:"reference_count"`
 
 	// MatchedLinks is links found by both tools.
 	MatchedLinks int `json:"matched_links"`
@@ -118,14 +118,14 @@ type VendorCoverage struct {
 	// GraphLayerVendors lists unique vendor names in GraphLayer output.
 	GraphLayerVendors []string `json:"graphlayer_vendors"`
 
-	// referenceVendors lists unique vendor names in reference output.
-	referenceVendors []string `json:"reference_vendors"`
+	// ReferenceVendors lists unique vendor names in reference output.
+	ReferenceVendors []string `json:"reference_vendors"`
 
 	// GraphLayerVendorCount is the number of unique vendors in GraphLayer.
 	GraphLayerVendorCount int `json:"graphlayer_vendor_count"`
 
-	// referenceVendorCount is the number of unique vendors in reference.
-	referenceVendorCount int `json:"reference_vendor_count"`
+	// ReferenceVendorCount is the number of unique vendors in reference.
+	ReferenceVendorCount int `json:"reference_vendor_count"`
 
 	// ExtraVendors is vendors covered by GraphLayer but NOT reference.
 	ExtraVendors []string `json:"extra_vendors"`
@@ -142,26 +142,26 @@ type EvidenceQuality struct {
 	// GraphLayerAvgEvidence is the mean evidence count per device.
 	GraphLayerAvgEvidence float64 `json:"graphlayer_avg_evidence"`
 
-	// referenceAvgEvidence is the mean evidence count per device.
-	referenceAvgEvidence float64 `json:"reference_avg_evidence"`
+	// ReferenceAvgEvidence is the mean evidence count per device.
+	ReferenceAvgEvidence float64 `json:"reference_avg_evidence"`
 
 	// GraphLayerRecordsWithEvidence is count of devices with at least one source.
 	GraphLayerRecordsWithEvidence int `json:"graphlayer_records_with_evidence"`
 
-	// referenceRecordsWithEvidence is count of devices with at least one source.
-	referenceRecordsWithEvidence int `json:"reference_records_with_evidence"`
+	// ReferenceRecordsWithEvidence is count of devices with at least one source.
+	ReferenceRecordsWithEvidence int `json:"reference_records_with_evidence"`
 
 	// GraphLayerEvidenceRatio is records_with_evidence / total_devices.
 	GraphLayerEvidenceRatio float64 `json:"graphlayer_evidence_ratio"`
 
-	// referenceEvidenceRatio is records_with_evidence / total_devices.
-	referenceEvidenceRatio float64 `json:"reference_evidence_ratio"`
+	// ReferenceEvidenceRatio is records_with_evidence / total_devices.
+	ReferenceEvidenceRatio float64 `json:"reference_evidence_ratio"`
 
 	// GraphLayerAvgConfidence is the mean confidence across all devices.
 	GraphLayerAvgConfidence float64 `json:"graphlayer_avg_confidence"`
 
-	// referenceAvgConfidence is the mean confidence across all devices.
-	referenceAvgConfidence float64 `json:"reference_avg_confidence"`
+	// ReferenceAvgConfidence is the mean confidence across all devices.
+	ReferenceAvgConfidence float64 `json:"reference_avg_confidence"`
 
 	// EvidenceQualityScore is graphlayer_ratio / max(1, reference_ratio).
 	EvidenceQualityScore float64 `json:"evidence_quality_score"`
@@ -173,26 +173,26 @@ type FalsePositiveAnalysis struct {
 	// NOT validated by reference and have low evidence.
 	GraphLayerFalsePositiveDevices int `json:"graphlayer_false_positive_devices"`
 
-	// referenceFalsePositiveDevices is devices in reference NOT validated by GraphLayer.
-	referenceFalsePositiveDevices int `json:"reference_false_positive_devices"`
+	// ReferenceFalsePositiveDevices is devices in reference NOT validated by GraphLayer.
+	ReferenceFalsePositiveDevices int `json:"reference_false_positive_devices"`
 
 	// GraphLayerFalsePositiveLinks is links in GraphLayer NOT validated by reference.
 	GraphLayerFalsePositiveLinks int `json:"graphlayer_false_positive_links"`
 
-	// referenceFalsePositiveLinks is links in reference NOT validated by GraphLayer.
-	referenceFalsePositiveLinks int `json:"reference_false_positive_links"`
+	// ReferenceFalsePositiveLinks is links in reference NOT validated by GraphLayer.
+	ReferenceFalsePositiveLinks int `json:"reference_false_positive_links"`
 
 	// GraphLayerFPRate is false_positive_devices / total_graphlayer_devices.
 	GraphLayerFPRate float64 `json:"graphlayer_fp_rate"`
 
-	// referenceFPRate is false_positive_devices / total_reference_devices.
-	referenceFPRate float64 `json:"reference_fp_rate"`
+	// ReferenceFPRate is false_positive_devices / total_reference_devices.
+	ReferenceFPRate float64 `json:"reference_fp_rate"`
 
 	// GraphLayerLowConfidenceUnmatched is unmatched GraphLayer devices with < 0.3 confidence.
 	GraphLayerLowConfidenceUnmatched int `json:"graphlayer_low_confidence_unmatched"`
 
-	// referenceLowConfidenceUnmatched is unmatched reference devices with < 0.3 confidence.
-	referenceLowConfidenceUnmatched int `json:"reference_low_confidence_unmatched"`
+	// ReferenceLowConfidenceUnmatched is unmatched reference devices with < 0.3 confidence.
+	ReferenceLowConfidenceUnmatched int `json:"reference_low_confidence_unmatched"`
 }
 
 // VendorBreakdown provides per-vendor comparison details.
@@ -201,12 +201,12 @@ type VendorBreakdown struct {
 
 	// Device counts
 	GraphLayerDevices int `json:"graphlayer_devices"`
-	referenceDevices     int `json:"reference_devices"`
+	ReferenceDevices     int `json:"reference_devices"`
 	MatchedDevices    int `json:"matched_devices"`
 
 	// Link counts
 	GraphLayerLinks int `json:"graphlayer_links"`
-	referenceLinks     int `json:"reference_links"`
+	ReferenceLinks     int `json:"reference_links"`
 	MatchedLinks    int `json:"matched_links"`
 
 	// Accuracy scores
@@ -223,7 +223,7 @@ type VendorBreakdown struct {
 // ====================================================================
 
 // CompareTopologies runs the full comparison between GraphLayer and reference exports.
-func CompareTopologies(graphLayer, reference *referenceTopology) *ComparisonMetrics {
+func CompareTopologies(graphLayer, reference *ReferenceExportTopology) *ComparisonMetrics {
 	m := &ComparisonMetrics{
 		PerVendor: make(map[string]VendorBreakdown),
 	}
@@ -261,15 +261,15 @@ func CompareTopologies(graphLayer, reference *referenceTopology) *ComparisonMetr
 // Device Comparison
 // ====================================================================
 
-func compareDevices(gl, np []referenceDevice) DeviceMetrics {
+func compareDevices(gl, reference []ReferenceDevice) DeviceMetrics {
 	dm := DeviceMetrics{
 		GraphLayerCount: len(gl),
-		referenceCount:     len(np),
+		ReferenceCount:     len(reference),
 	}
 
 	// Build index sets
 	glIndex := deviceIndex(gl)
-	npIndex := deviceIndex(np)
+	referenceIndex := deviceIndex(reference)
 
 	// Match devices: try exact ID match first, then fuzzy
 	matched := make([]string, 0)
@@ -277,16 +277,16 @@ func compareDevices(gl, np []referenceDevice) DeviceMetrics {
 	missing := make([]string, 0)
 
 	for _, d := range gl {
-		if _, ok := npIndex[d.ID]; ok {
+		if _, ok := referenceIndex[d.ID]; ok {
 			matched = append(matched, d.ID)
-		} else if fuzzyMatch(d, np) != "" {
+		} else if fuzzyMatch(d, reference) != "" {
 			matched = append(matched, d.ID)
 		} else {
 			extra = append(extra, d.ID)
 		}
 	}
 
-	for _, d := range np {
+	for _, d := range reference {
 		if _, ok := glIndex[d.ID]; !ok && fuzzyMatch(d, gl) == "" {
 			missing = append(missing, d.ID)
 		}
@@ -304,8 +304,8 @@ func compareDevices(gl, np []referenceDevice) DeviceMetrics {
 	if totalUnique > 0 {
 		dm.DeviceAccuracy = float64(dm.MatchedDevices) / float64(totalUnique)
 	}
-	if dm.referenceCount > 0 {
-		dm.DeviceRecall = float64(dm.MatchedDevices) / float64(dm.referenceCount)
+	if dm.ReferenceCount > 0 {
+		dm.DeviceRecall = float64(dm.MatchedDevices) / float64(dm.ReferenceCount)
 	}
 	if dm.GraphLayerCount > 0 {
 		dm.DevicePrecision = float64(dm.MatchedDevices) / float64(dm.GraphLayerCount)
@@ -319,7 +319,7 @@ func compareDevices(gl, np []referenceDevice) DeviceMetrics {
 
 // fuzzyMatch tries to match a device when exact ID fails.
 // Falls back to ManagementIP then Hostname.
-func fuzzyMatch(d referenceDevice, candidates []referenceDevice) string {
+func fuzzyMatch(d ReferenceDevice, candidates []ReferenceDevice) string {
 	if d.ManagementIP != "" {
 		for _, c := range candidates {
 			if c.ManagementIP == d.ManagementIP && c.ID != d.ID {
@@ -341,26 +341,26 @@ func fuzzyMatch(d referenceDevice, candidates []referenceDevice) string {
 // Link Comparison
 // ====================================================================
 
-func compareLinks(gl, np []referenceLink) LinkMetrics {
+func compareLinks(gl, reference []ReferenceLink) LinkMetrics {
 	lm := LinkMetrics{
 		GraphLayerCount: len(gl),
-		referenceCount:     len(np),
+		ReferenceCount:     len(reference),
 	}
 
-	npIndex := linkIndex(np)
+	referenceIndex := linkIndex(reference)
 	glIDs := linkIDSet(gl)
 
 	matched := make(map[string]bool)
 	for _, l := range gl {
-		if _, ok := npIndex[l.ID]; ok {
+		if _, ok := referenceIndex[l.ID]; ok {
 			matched[l.ID] = true
-		} else if linkFuzzyMatch(l, np) {
+		} else if linkFuzzyMatch(l, reference) {
 			matched[l.ID] = true
 		}
 	}
 
 	// Count matched in reference too
-	for _, l := range np {
+	for _, l := range reference {
 		if _, ok := linkFuzzyMatchSet(l, gl); ok {
 			// already counted
 		}
@@ -369,13 +369,13 @@ func compareLinks(gl, np []referenceLink) LinkMetrics {
 	lm.MatchedLinks = len(matched)
 	lm.ExtraLinks = len(glIDs) - len(matched)
 
-	npMatched := 0
-	for _, l := range np {
+	referenceMatched := 0
+	for _, l := range reference {
 		if _, ok := matched[l.ID]; ok || linkFuzzyMatch(l, gl) {
-			npMatched++
+			referenceMatched++
 		}
 	}
-	lm.MissingLinks = len(np) - npMatched
+	lm.MissingLinks = len(reference) - referenceMatched
 
 	// Count L2/L3 breakdown
 	for _, l := range gl {
@@ -394,8 +394,8 @@ func compareLinks(gl, np []referenceLink) LinkMetrics {
 	if totalUnique > 0 {
 		lm.LinkAccuracy = float64(lm.MatchedLinks) / float64(totalUnique)
 	}
-	if lm.referenceCount > 0 {
-		lm.LinkRecall = float64(lm.MatchedLinks) / float64(lm.referenceCount)
+	if lm.ReferenceCount > 0 {
+		lm.LinkRecall = float64(lm.MatchedLinks) / float64(lm.ReferenceCount)
 	}
 	if lm.GraphLayerCount > 0 {
 		lm.LinkPrecision = float64(lm.MatchedLinks) / float64(lm.GraphLayerCount)
@@ -407,7 +407,7 @@ func compareLinks(gl, np []referenceLink) LinkMetrics {
 	return lm
 }
 
-func linkFuzzyMatch(l referenceLink, candidates []referenceLink) bool {
+func linkFuzzyMatch(l ReferenceLink, candidates []ReferenceLink) bool {
 	for _, c := range candidates {
 		if l.FromDevice == c.FromDevice && l.ToDevice == c.ToDevice {
 			if portsMatch(l.FromPort, c.FromPort) || portsMatch(l.ToPort, c.ToPort) {
@@ -424,7 +424,7 @@ func linkFuzzyMatch(l referenceLink, candidates []referenceLink) bool {
 	return false
 }
 
-func linkFuzzyMatchSet(l referenceLink, candidates []referenceLink) (string, bool) {
+func linkFuzzyMatchSet(l ReferenceLink, candidates []ReferenceLink) (string, bool) {
 	for _, c := range candidates {
 		if l.FromDevice == c.FromDevice && l.ToDevice == c.ToDevice {
 			if portsMatch(l.FromPort, c.FromPort) || portsMatch(l.ToPort, c.ToPort) {
@@ -484,44 +484,44 @@ func normalizePort(port string) string {
 // Vendor Coverage
 // ====================================================================
 
-func compareVendors(glDevices, npDevices []referenceDevice) VendorCoverage {
+func compareVendors(glDevices, referenceDevices []ReferenceDevice) VendorCoverage {
 	vc := VendorCoverage{}
 	glVendors := make(map[string]bool)
-	npVendors := make(map[string]bool)
+	referenceVendors := make(map[string]bool)
 
 	for _, d := range glDevices {
 		if d.Vendor != "" {
 			glVendors[d.Vendor] = true
 		}
 	}
-	for _, d := range npDevices {
+	for _, d := range referenceDevices {
 		if d.Vendor != "" {
-			npVendors[d.Vendor] = true
+			referenceVendors[d.Vendor] = true
 		}
 	}
 
 	vc.GraphLayerVendors = sortedKeys(glVendors)
 	vc.GraphLayerVendorCount = len(glVendors)
-	vc.referenceVendors = sortedKeys(npVendors)
-	vc.referenceVendorCount = len(npVendors)
+	vc.ReferenceVendors = sortedKeys(referenceVendors)
+	vc.ReferenceVendorCount = len(referenceVendors)
 
 	// Extra vendors
 	for v := range glVendors {
-		if !npVendors[v] {
+		if !referenceVendors[v] {
 			vc.ExtraVendors = append(vc.ExtraVendors, v)
 		}
 	}
 
 	// Missing vendors
-	for v := range npVendors {
+	for v := range referenceVendors {
 		if !glVendors[v] {
 			vc.MissingVendors = append(vc.MissingVendors, v)
 		}
 	}
 
 	maxVendors := vc.GraphLayerVendorCount
-	if vc.referenceVendorCount > maxVendors {
-		maxVendors = vc.referenceVendorCount
+	if vc.ReferenceVendorCount > maxVendors {
+		maxVendors = vc.ReferenceVendorCount
 	}
 	if maxVendors > 0 {
 		vc.VendorBreadthScore = float64(vc.GraphLayerVendorCount) / float64(maxVendors)
@@ -534,7 +534,7 @@ func compareVendors(glDevices, npDevices []referenceDevice) VendorCoverage {
 // Evidence Quality
 // ====================================================================
 
-func compareEvidence(glDevices, npDevices []referenceDevice) EvidenceQuality {
+func compareEvidence(glDevices, referenceDevices []ReferenceDevice) EvidenceQuality {
 	eq := EvidenceQuality{}
 
 	if len(glDevices) > 0 {
@@ -553,23 +553,23 @@ func compareEvidence(glDevices, npDevices []referenceDevice) EvidenceQuality {
 		eq.GraphLayerAvgConfidence = sumConf / float64(len(glDevices))
 	}
 
-	if len(npDevices) > 0 {
+	if len(referenceDevices) > 0 {
 		var sumEvidence, sumConf float64
 		withEvidence := 0
-		for _, d := range npDevices {
+		for _, d := range referenceDevices {
 			sumEvidence += float64(d.EvidenceCount)
 			sumConf += d.Confidence
 			if d.EvidenceCount > 0 {
 				withEvidence++
 			}
 		}
-		eq.referenceAvgEvidence = sumEvidence / float64(len(npDevices))
-		eq.referenceRecordsWithEvidence = withEvidence
-		eq.referenceEvidenceRatio = float64(withEvidence) / float64(len(npDevices))
-		eq.referenceAvgConfidence = sumConf / float64(len(npDevices))
+		eq.ReferenceAvgEvidence = sumEvidence / float64(len(referenceDevices))
+		eq.ReferenceRecordsWithEvidence = withEvidence
+		eq.ReferenceEvidenceRatio = float64(withEvidence) / float64(len(referenceDevices))
+		eq.ReferenceAvgConfidence = sumConf / float64(len(referenceDevices))
 	}
 
-	denom := eq.referenceEvidenceRatio
+	denom := eq.ReferenceEvidenceRatio
 	if denom == 0 {
 		denom = 1.0
 	}
@@ -583,26 +583,26 @@ func compareEvidence(glDevices, npDevices []referenceDevice) EvidenceQuality {
 // ====================================================================
 
 func analyzeFalsePositives(
-	glDevices, npDevices []referenceDevice,
-	glLinks, npLinks []referenceLink,
+	glDevices, referenceDevices []ReferenceDevice,
+	glLinks, referenceLinks []ReferenceLink,
 	dm DeviceMetrics, lm LinkMetrics,
 ) FalsePositiveAnalysis {
 	fp := FalsePositiveAnalysis{}
 
 	// Devices: unmatched GraphLayer devices = potential false positives
 	fp.GraphLayerFalsePositiveDevices = dm.ExtraDevices
-	fp.referenceFalsePositiveDevices = dm.MissingDevices
+	fp.ReferenceFalsePositiveDevices = dm.MissingDevices
 
 	// Links: unmatched links = potential false positives
 	fp.GraphLayerFalsePositiveLinks = lm.ExtraLinks
-	fp.referenceFalsePositiveLinks = lm.MissingLinks
+	fp.ReferenceFalsePositiveLinks = lm.MissingLinks
 
 	// FP rates
 	if len(glDevices) > 0 {
 		fp.GraphLayerFPRate = float64(fp.GraphLayerFalsePositiveDevices) / float64(len(glDevices))
 	}
-	if len(npDevices) > 0 {
-		fp.referenceFPRate = float64(fp.referenceFalsePositiveDevices) / float64(len(npDevices))
+	if len(referenceDevices) > 0 {
+		fp.ReferenceFPRate = float64(fp.ReferenceFalsePositiveDevices) / float64(len(referenceDevices))
 	}
 
 	// Low-confidence unmatched
@@ -620,7 +620,7 @@ func analyzeFalsePositives(
 			}
 		}
 	}
-	for _, d := range npDevices {
+	for _, d := range referenceDevices {
 		if d.Confidence < 0.3 {
 			found := false
 			for _, id := range dm.MatchedDeviceIDs {
@@ -630,7 +630,7 @@ func analyzeFalsePositives(
 				}
 			}
 			if !found {
-				fp.referenceLowConfidenceUnmatched++
+				fp.ReferenceLowConfidenceUnmatched++
 			}
 		}
 	}
@@ -643,15 +643,15 @@ func analyzeFalsePositives(
 // ====================================================================
 
 func computeVendorBreakdowns(
-	glDevices, npDevices []referenceDevice,
-	glLinks, npLinks []referenceLink,
+	glDevices, referenceDevices []ReferenceDevice,
+	glLinks, referenceLinks []ReferenceLink,
 ) map[string]VendorBreakdown {
 	breakdowns := make(map[string]VendorBreakdown)
 	allVendors := make(map[string]bool)
 
 	// Index devices by vendor
-	glByVendor := make(map[string][]referenceDevice)
-	npByVendor := make(map[string][]referenceDevice)
+	glByVendor := make(map[string][]ReferenceDevice)
+	referenceByVendor := make(map[string][]ReferenceDevice)
 
 	for _, d := range glDevices {
 		v := d.Vendor
@@ -661,35 +661,35 @@ func computeVendorBreakdowns(
 		allVendors[v] = true
 		glByVendor[v] = append(glByVendor[v], d)
 	}
-	for _, d := range npDevices {
+	for _, d := range referenceDevices {
 		v := d.Vendor
 		if v == "" {
 			v = "unknown"
 		}
 		allVendors[v] = true
-		npByVendor[v] = append(npByVendor[v], d)
+		referenceByVendor[v] = append(referenceByVendor[v], d)
 	}
 
 	for vendor := range allVendors {
 		vb := VendorBreakdown{Vendor: vendor}
 		glDevs := glByVendor[vendor]
-		npDevs := npByVendor[vendor]
+		referenceDevs := referenceByVendor[vendor]
 
 		vb.GraphLayerDevices = len(glDevs)
-		vb.referenceDevices = len(npDevs)
+		vb.ReferenceDevices = len(referenceDevs)
 
 		// Match devices for this vendor
-		npIndex := deviceIndex(npDevs)
+		referenceIndex := deviceIndex(referenceDevs)
 		matched := 0
 		for _, d := range glDevs {
-			if _, ok := npIndex[d.ID]; ok || fuzzyMatch(d, npDevs) != "" {
+			if _, ok := referenceIndex[d.ID]; ok || fuzzyMatch(d, referenceDevs) != "" {
 				matched++
 			}
 		}
 		vb.MatchedDevices = matched
 
 		// Accuracy
-		total := vb.GraphLayerDevices + vb.referenceDevices - matched
+		total := vb.GraphLayerDevices + vb.ReferenceDevices - matched
 		if total > 0 {
 			vb.DeviceAccuracy = float64(matched) / float64(total)
 		}
@@ -715,13 +715,13 @@ func computeVendorBreakdowns(
 				vb.GraphLayerLinks++
 			}
 		}
-		npDevSet := make(map[string]bool)
-		for _, d := range npDevs {
-			npDevSet[d.ID] = true
+		referenceDevSet := make(map[string]bool)
+		for _, d := range referenceDevs {
+			referenceDevSet[d.ID] = true
 		}
-		for _, l := range npLinks {
-			if npDevSet[l.FromDevice] || npDevSet[l.ToDevice] {
-				vb.referenceLinks++
+		for _, l := range referenceLinks {
+			if referenceDevSet[l.FromDevice] || referenceDevSet[l.ToDevice] {
+				vb.ReferenceLinks++
 			}
 		}
 
@@ -766,15 +766,15 @@ func computeOverallScore(m *ComparisonMetrics) float64 {
 // Index helpers
 // ====================================================================
 
-func deviceIndex(devices []referenceDevice) map[string]referenceDevice {
-	m := make(map[string]referenceDevice, len(devices))
+func deviceIndex(devices []ReferenceDevice) map[string]ReferenceDevice {
+	m := make(map[string]ReferenceDevice, len(devices))
 	for _, d := range devices {
 		m[d.ID] = d
 	}
 	return m
 }
 
-func deviceIDSet(devices []referenceDevice) map[string]bool {
+func deviceIDSet(devices []ReferenceDevice) map[string]bool {
 	m := make(map[string]bool, len(devices))
 	for _, d := range devices {
 		m[d.ID] = true
@@ -782,15 +782,15 @@ func deviceIDSet(devices []referenceDevice) map[string]bool {
 	return m
 }
 
-func linkIndex(links []referenceLink) map[string]referenceLink {
-	m := make(map[string]referenceLink, len(links))
+func linkIndex(links []ReferenceLink) map[string]ReferenceLink {
+	m := make(map[string]ReferenceLink, len(links))
 	for _, l := range links {
 		m[l.ID] = l
 	}
 	return m
 }
 
-func linkIDSet(links []referenceLink) map[string]bool {
+func linkIDSet(links []ReferenceLink) map[string]bool {
 	m := make(map[string]bool, len(links))
 	for _, l := range links {
 		m[l.ID] = true

@@ -15,7 +15,7 @@ import (
 // Test: reference format round-trip
 // ====================================================================
 
-func TestreferenceFormatRoundTrip(t *testing.T) {
+func TestReferenceFormatRoundTrip(t *testing.T) {
 	ref := NewSmallReferenceTopology()
 
 	// Marshal to JSON
@@ -25,7 +25,7 @@ func TestreferenceFormatRoundTrip(t *testing.T) {
 	}
 
 	// Unmarshal back
-	var roundtrip referenceTopology
+	var roundtrip ReferenceExportTopology
 	if err := json.Unmarshal(data, &roundtrip); err != nil {
 		t.Fatalf("failed to unmarshal topology: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestCompareExtraDevice(t *testing.T) {
 
 	// GraphLayer has an extra device reference doesn't
 	gl := ref.Topology
-	gl.Devices = append(gl.Devices, referenceDevice{
+	gl.Devices = append(gl.Devices, ReferenceDevice{
 		ID:              "hostname:extra-switch-03",
 		Hostname:        "extra-switch-03",
 		Vendor:          "cisco",
@@ -91,15 +91,15 @@ func TestCompareExtraDevice(t *testing.T) {
 		Confidence:      0.70,
 	})
 
-	np := ref.Topology // reference has only 3
+	reference := ref.Topology // reference has only 3
 
-	metrics := CompareTopologies(&gl, &np)
+	metrics := CompareTopologies(&gl, &reference)
 
 	if metrics.DeviceMetrics.GraphLayerCount != 4 {
 		t.Errorf("expected gl count 4, got %d", metrics.DeviceMetrics.GraphLayerCount)
 	}
-	if metrics.DeviceMetrics.referenceCount != 3 {
-		t.Errorf("expected np count 3, got %d", metrics.DeviceMetrics.referenceCount)
+	if metrics.DeviceMetrics.ReferenceCount != 3 {
+		t.Errorf("expected reference count 3, got %d", metrics.DeviceMetrics.ReferenceCount)
 	}
 	if metrics.DeviceMetrics.ExtraDevices != 1 {
 		t.Errorf("expected 1 extra device, got %d", metrics.DeviceMetrics.ExtraDevices)
@@ -123,15 +123,15 @@ func TestCompareMissingDevice(t *testing.T) {
 	ref := NewSmallReferenceTopology()
 
 	// GraphLayer missed a device
-	gl := referenceTopology{
+	gl := ReferenceExportTopology{
 		Metadata: ref.Topology.Metadata,
 		Devices:  ref.Topology.Devices[:2], // only 2 devices
 		Links:    ref.Topology.Links[:0],   // no links for now
 	}
 
-	np := ref.Topology // reference has 3
+	reference := ref.Topology // reference has 3
 
-	metrics := CompareTopologies(&gl, &np)
+	metrics := CompareTopologies(&gl, &reference)
 
 	if metrics.DeviceMetrics.GraphLayerCount != 2 {
 		t.Errorf("expected gl count 2, got %d", metrics.DeviceMetrics.GraphLayerCount)
@@ -153,10 +153,10 @@ func TestLinkFuzzyMatching(t *testing.T) {
 
 	// Slightly different port name (should still match via fuzzy)
 	gl := ref.Topology
-	np := referenceTopology{
+	reference := ReferenceExportTopology{
 		Metadata: ref.Topology.Metadata,
 		Devices:  ref.Topology.Devices,
-		Links: []referenceLink{
+		Links: []ReferenceLink{
 			{
 				ID: "l2link:reference-version",
 				FromDevice: "hostname:switch-01",
@@ -169,7 +169,7 @@ func TestLinkFuzzyMatching(t *testing.T) {
 		},
 	}
 
-	metrics := CompareTopologies(&gl, &np)
+	metrics := CompareTopologies(&gl, &reference)
 
 	// Fuzzy matching should find this link
 	if metrics.LinkMetrics.MatchedLinks < 1 {
@@ -185,19 +185,19 @@ func TestVendorCoverage(t *testing.T) {
 	ref := NewMultiVendorReferenceTopology()
 
 	// reference only supports 4 vendors
-	npDevices := make([]referenceDevice, 0)
+	referenceDevices := make([]ReferenceDevice, 0)
 	for _, d := range ref.Topology.Devices {
 		if d.Vendor == "cisco" || d.Vendor == "arista" || d.Vendor == "paloalto" || d.Vendor == "juniper" {
-			npDevices = append(npDevices, d)
+			referenceDevices = append(referenceDevices, d)
 		}
 	}
-	np := referenceTopology{
+	reference := ReferenceExportTopology{
 		Metadata: ref.Topology.Metadata,
-		Devices:  npDevices,
+		Devices:  referenceDevices,
 		Links:    ref.Topology.Links,
 	}
 
-	metrics := CompareTopologies(&ref.Topology, &np)
+	metrics := CompareTopologies(&ref.Topology, &reference)
 
 	if metrics.VendorCoverage.GraphLayerVendorCount <= 4 {
 		t.Errorf("expected GraphLayer to cover more than 4 vendors, got %d", metrics.VendorCoverage.GraphLayerVendorCount)
@@ -236,7 +236,7 @@ func TestFalsePositiveAnalysis(t *testing.T) {
 
 	// GraphLayer double-counts two devices and adds a spurious link
 	gl := ref.Topology
-	gl.Devices = append(gl.Devices, referenceDevice{
+	gl.Devices = append(gl.Devices, ReferenceDevice{
 		ID:              "hostname:spurious-device",
 		Hostname:        "spurious-device",
 		Vendor:          "unknown",
@@ -246,7 +246,7 @@ func TestFalsePositiveAnalysis(t *testing.T) {
 		EvidenceCount:   0,
 		Confidence:      0.10,
 	})
-	gl.Links = append(gl.Links, referenceLink{
+	gl.Links = append(gl.Links, ReferenceLink{
 		ID:         "l2link:spurious-link",
 		FromDevice: "hostname:spurious-device",
 		FromPort:   "eth0",
@@ -256,9 +256,9 @@ func TestFalsePositiveAnalysis(t *testing.T) {
 		Confidence: 0.05,
 	})
 
-	np := ref.Topology
+	reference := ref.Topology
 
-	metrics := CompareTopologies(&gl, &np)
+	metrics := CompareTopologies(&gl, &reference)
 
 	if metrics.FalsePositives.GraphLayerFalsePositiveDevices < 1 {
 		t.Errorf("expected >= 1 FP devices, got %d", metrics.FalsePositives.GraphLayerFalsePositiveDevices)
@@ -344,9 +344,9 @@ func TestPerVendorBreakdown(t *testing.T) {
 	}
 
 	for vendor, vb := range metrics.PerVendor {
-		if vb.GraphLayerDevices != vb.referenceDevices {
-			t.Errorf("vendor %s: device count mismatch (GL=%d, np=%d)",
-				vendor, vb.GraphLayerDevices, vb.referenceDevices)
+		if vb.GraphLayerDevices != vb.ReferenceDevices {
+			t.Errorf("vendor %s: device count mismatch (GL=%d, reference=%d)",
+				vendor, vb.GraphLayerDevices, vb.ReferenceDevices)
 		}
 		if vb.DeviceAccuracy != 1.0 {
 			t.Errorf("vendor %s: expected device accuracy 1.0, got %.4f", vendor, vb.DeviceAccuracy)
@@ -411,7 +411,7 @@ func TestDeviceIDGeneration(t *testing.T) {
 // Test: GraphLayer → reference translation
 // ====================================================================
 
-func TestTranslateAssetsToreference(t *testing.T) {
+func TestTranslateAssetsToReference(t *testing.T) {
 	// Create mock assets
 	assets := []models.AssetNode{
 		{
@@ -432,7 +432,7 @@ func TestTranslateAssetsToreference(t *testing.T) {
 		},
 	}
 
-	devices := TranslateAssetsToreference(assets)
+	devices := TranslateAssetsToReference(assets)
 	if len(devices) != 1 {
 		t.Fatalf("expected 1 device, got %d", len(devices))
 	}
@@ -460,8 +460,8 @@ func TestTranslateAssetsToreference(t *testing.T) {
 // ====================================================================
 
 func TestCompareEmptyTopologies(t *testing.T) {
-	empty := &referenceTopology{
-		Metadata: referenceMetadata{
+	empty := &ReferenceExportTopology{
+		Metadata: ReferenceMetadata{
 			Source:       "test",
 			TotalDevices: 0,
 			TotalLinks:   0,
@@ -483,14 +483,14 @@ func TestCompareEmptyTopologies(t *testing.T) {
 // ====================================================================
 
 func TestFuzzyDeviceMatchingByIP(t *testing.T) {
-	glDevices := []referenceDevice{
+	glDevices := []ReferenceDevice{
 		{ID: "hostname:switch-01", Hostname: "switch-01", ManagementIP: "10.0.0.1", Vendor: "cisco"},
 	}
-	npDevices := []referenceDevice{
+	referenceDevices := []ReferenceDevice{
 		{ID: "serial:DIFFERENT-ID", Hostname: "switch-old-name", ManagementIP: "10.0.0.1", Vendor: "cisco"},
 	}
 
-	dm := compareDevices(glDevices, npDevices)
+	dm := compareDevices(glDevices, referenceDevices)
 
 	if dm.MatchedDevices != 1 {
 		t.Errorf("fuzzy IP matching failed: expected 1 matched, got %d", dm.MatchedDevices)
@@ -498,14 +498,14 @@ func TestFuzzyDeviceMatchingByIP(t *testing.T) {
 }
 
 func TestFuzzyDeviceMatchingByHostname(t *testing.T) {
-	glDevices := []referenceDevice{
+	glDevices := []ReferenceDevice{
 		{ID: "ip:10.0.0.1", Hostname: "core-switch-01", Vendor: "cisco"},
 	}
-	npDevices := []referenceDevice{
+	referenceDevices := []ReferenceDevice{
 		{ID: "ip:192.168.1.1", Hostname: "core-switch-01", Vendor: "cisco"},
 	}
 
-	dm := compareDevices(glDevices, npDevices)
+	dm := compareDevices(glDevices, referenceDevices)
 
 	if dm.MatchedDevices != 1 {
 		t.Errorf("fuzzy hostname matching failed: expected 1 matched, got %d", dm.MatchedDevices)

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/graph"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/graph"
 )
 
 func executeGraphStats(args []string) (*bytes.Buffer, error) {

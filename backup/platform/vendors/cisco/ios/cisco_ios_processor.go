@@ -10,7 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 	helper "github.com/mattpainter701/graphlayer/platform/core/helpers"
 	docinterfaces "github.com/mattpainter701/graphlayer/platform/core/interfaces"
 	connectorInterfaces "github.com/mattpainter701/graphlayer/platform/core/interfaces/connectors"
@@ -382,7 +382,7 @@ func (p *CiscoIOSProcessor) collectFDBEntries() ([]models.CiscoFDBEntry, error) 
 	// TODO: Implement real FDB collection via:
 	// - CLI: "show mac address-table"
 	// - SNMP: dot1dTpFdbTable / dot1qTpFdbTable
-	// - API: Claroty CDT, xDome, asset-source, Cisco DNA Center
+	// - API: Claroty CDT, xDome, industrial threat intelligence providers, Cisco DNA Center
 	// - Telemetry: Streaming telemetry subscriptions
 	
 	// Example stub implementation:

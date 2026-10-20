@@ -7,7 +7,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/diff"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/diff"
 )
 
 func main() {

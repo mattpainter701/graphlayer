@@ -10,7 +10,7 @@ import (
 
 // L2DecisionEngine implements Layer 2 reachability determination logic.
 // It produces Allowed/Conditional/Blocked outcomes with evidence-based reasoning
-// per the reference L2 project requirements.
+// per the reference topology requirements.
 //
 // Decision criteria:
 // - Allowed: High confidence + authenticated + DHCP bound

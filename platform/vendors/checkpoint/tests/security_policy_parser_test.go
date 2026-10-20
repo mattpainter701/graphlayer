@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/vendors/checkpoint/parsers"
+	"github.com/mattpainter701/graphlayer/platform/vendors/checkpoint/parsers"
 )
 
 func TestParseCheckPointPolicy(t *testing.T) {

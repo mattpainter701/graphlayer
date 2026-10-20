@@ -33,12 +33,15 @@ platform/reference/
 │   └── download_appid.py             # App-ID downloader script
 └── data/                              # Static reference files
     ├── iana_protocol_numbers.txt     # IANA protocols (335 lines)
-    ├── iana_service_names_port_numbers.txt  # IANA services (24,862 lines)
-    ├── ieee_802_numbers.csv          # IEEE EtherTypes (229 lines)
     ├── cisco_default_services.txt    # Cisco-specific services
     ├── palo_alto_app_id.json         # Palo Alto App-ID cache
     └── fortinet_isdb.json            # Fortinet ISDB cache
 ```
+
+The obsolete unembedded service-registry and EtherType snapshots have been
+removed. The current loader uses the reviewed inputs under `iana/data/` and
+the documented built-in fallbacks.
+External registry collections and generated reports belong outside the checkout.
 
 ---
 

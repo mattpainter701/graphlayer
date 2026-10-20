@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/vendors/aruba"
+	"github.com/mattpainter701/graphlayer/platform/vendors/aruba"
 )
 
 // Aruba AOS-CX Configuration Parser

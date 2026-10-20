@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/topology"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/topology"
 )
 
 func TestFindOrphanNodes_NoOrphans(t *testing.T) {

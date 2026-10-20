@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/topology"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/topology"
 )
 
 // FindOrphanNodes returns a slice of node IDs that have zero incident edges

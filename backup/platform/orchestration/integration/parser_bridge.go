@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/orchestrator"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/orchestrator"
 )
 
 // ParserBridge connects connectors to parsers

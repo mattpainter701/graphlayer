@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/graph"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/graph"
 )
 
 // TopologyFilter represents filters for topology queries

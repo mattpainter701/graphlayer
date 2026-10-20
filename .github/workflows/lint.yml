@@ -2,7 +2,7 @@ name: Lint
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/repository-privacy]
   pull_request:
     branches: [main]
 

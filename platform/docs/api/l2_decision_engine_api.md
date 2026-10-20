@@ -8,7 +8,7 @@
 
 ## Overview
 
-The L2 Decision Engine provides reference-like Layer 2 reachability determination with evidence-based reasoning. It produces **Allowed**, **Conditional**, or **Blocked** outcomes with transparent reason codes for network threat simulation and security posture analysis.
+The L2 Decision Engine provides reference tool-like Layer 2 reachability determination with evidence-based reasoning. It produces **Allowed**, **Conditional**, or **Blocked** outcomes with transparent reason codes for network threat simulation and security posture analysis.
 
 ### Key Features
 

@@ -42,13 +42,13 @@ type EPSSDataItem struct {
 }
 
 // ====================================================================
-// Vuln GraphLayer Catalog
+// Vulnerability Catalog
 // ====================================================================
 
-// VulnGraphLayerDetailedCatalog carries enriched vulnerability data.
-type VulnGraphLayerDetailedCatalog struct {
+// VulnerabilityCatalogEntry carries enriched vulnerability data.
+type VulnerabilityCatalogEntry struct {
 	CVEName         string   `json:"cve_name" bson:"cve_name"`
-	GraphLayerScore     float64  `json:"GraphLayer_score" bson:"GraphLayer_score"`
+	VulnerabilityScore     float64  `json:"vulnerability_score" bson:"vulnerability_score"`
 	Tactics         []string `json:"tactics,omitempty" bson:"tactics,omitempty"`
 	Techniques      []string `json:"techniques,omitempty" bson:"techniques,omitempty"`
 	Remediation     string   `json:"remediation,omitempty" bson:"remediation,omitempty"`

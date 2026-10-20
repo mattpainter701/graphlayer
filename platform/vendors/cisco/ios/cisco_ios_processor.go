@@ -381,7 +381,7 @@ func (p *CiscoIOSProcessor) collectFDBEntries() ([]models.CiscoFDBEntry, error) 
 	// TODO: Implement real FDB collection via:
 	// - CLI: "show mac address-table"
 	// - SNMP: dot1dTpFdbTable / dot1qTpFdbTable
-	// - API: Claroty CDT, xDome, asset-source, Cisco DNA Center
+	// - API: Claroty CDT, xDome, industrial threat intelligence providers, Cisco DNA Center
 	// - Telemetry: Streaming telemetry subscriptions
 	
 	// Example stub implementation:

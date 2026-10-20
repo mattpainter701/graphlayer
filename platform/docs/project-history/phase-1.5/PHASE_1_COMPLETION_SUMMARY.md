@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Phase 1 focused on completing the Layer 2 foundation for the reference-like network mapping and threat simulation platform. The goal was to finish the remaining 40% of L2 work that was already 60% complete, providing full L2/L3/L4+ parsing and modeling capabilities with granular graph/map output.
+Phase 1 focused on completing the Layer 2 foundation for the reference tool-like network mapping and threat simulation platform. The goal was to finish the remaining 40% of L2 work that was already 60% complete, providing full L2/L3/L4+ parsing and modeling capabilities with granular graph/map output.
 
 ### What Was Accomplished
 
@@ -216,7 +216,7 @@ func computeSnippetHash(lines []string) string {
 **File**: `platform/orchestration/decision/l2_decision_engine.go`
 **Lines**: 600+ lines of decision logic
 
-**Purpose**: Implement reference-like L2 reachability decisions with evidence-based reasoning.
+**Purpose**: Implement reference tool-like L2 reachability decisions with evidence-based reasoning.
 
 #### 3.1 Core Decision Logic
 

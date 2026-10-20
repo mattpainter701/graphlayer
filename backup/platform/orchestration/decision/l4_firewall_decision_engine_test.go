@@ -3,10 +3,10 @@ package decision
 import (
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
-	asaparsers "github.com/mattpainter701/graphlayer/platform/platform/vendors/cisco/asa"
-	fortigateparsers "github.com/mattpainter701/graphlayer/platform/platform/vendors/fortinet/fortigate"
-	paloaltoparsers "github.com/mattpainter701/graphlayer/platform/platform/vendors/paloalto/firewall"
+	"github.com/mattpainter701/graphlayer/platform/models"
+	asaparsers "github.com/mattpainter701/graphlayer/platform/vendors/cisco/asa"
+	fortigateparsers "github.com/mattpainter701/graphlayer/platform/vendors/fortinet/fortigate"
+	paloaltoparsers "github.com/mattpainter701/graphlayer/platform/vendors/paloalto/firewall"
 	"github.com/stretchr/testify/assert"
 )
 

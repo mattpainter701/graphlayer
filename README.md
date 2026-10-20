@@ -1,5 +1,10 @@
 # GraphLayer
 
+Original GraphLayer project code is licensed under [Apache-2.0](LICENSE).
+Third-party components retain their own licenses and attribution notices.
+See the [repository privacy rules](docs/REPOSITORY_PRIVACY.md) before adding data
+or test fixtures.
+
 GraphLayer is a multi-vendor network topology graph engine. It ingests network
 device configurations and operational state, normalizes topology data, builds
 graph representations, and exports them for visualization and comparison.

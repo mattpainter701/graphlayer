@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/graph"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/graph"
 	"github.com/spf13/cobra"
 )
 

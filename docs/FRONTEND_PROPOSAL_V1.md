@@ -9,7 +9,7 @@
 
 ## 🎯 Executive Summary
 
-GraphLayer Frontend is a **high-performance, containerized** network topology visualization platform that transforms multi-vendor network data into actionable insights. Inspired by **Cisco Cyber Vision**, **reference**, **Skybox**, and **GraphLayer**, it provides real-time visibility into network topology, security posture, and connectivity paths.
+GraphLayer Frontend is a **high-performance, containerized** network topology visualization platform that transforms multi-vendor network data into actionable insights. Inspired by **Cisco Cyber Vision**, **reference tool**, **Skybox**, and **GraphLayer**, it provides real-time visibility into network topology, security posture, and connectivity paths.
 
 **Key Innovation:** Advanced path analysis powered by MCP (Model Context Protocol) servers, enabling AI-driven network reachability analysis, security policy validation, and attack path discovery.
 
@@ -35,7 +35,7 @@ GraphLayer Frontend is a **high-performance, containerized** network topology vi
 - Support passive monitoring for discovery
 - Show protocol-level details in node inspector
 
-### reference (Network Policy Viewer)
+### reference tool (Network Policy Viewer)
 **Strengths:**
 - Automated policy visualization
 - Offline analysis (no network impact)
@@ -1788,7 +1788,7 @@ spec:
 **Project Lead:** [Your Name]  
 **Email:** [your-email]  
 **GitHub:** https://github.com/mattpainter701/graphlayer  
-**Documentation:** https://docs.graphlayer.io
+**Documentation:** [Project documentation](../README.md)
 
 ---
 
@@ -2037,7 +2037,7 @@ docker-compose logs -f
 - Aligns with how network engineers think: "What devices are on this network?"
 - Enables network-centric queries: "Show me all assets in DMZ"
 - Supports security zone visualization
-- Matches industry standards (Cisco Cyber Vision, reference, Skybox)
+- Matches industry standards (Cisco Cyber Vision, reference tool, Skybox)
 
 ### ✅ Container-Native Architecture
 - **Frontend:** Next.js in Node Alpine (lightweight)
@@ -2068,7 +2068,7 @@ docker-compose logs -f
 - Verdict: Allow/Deny with reasoning
 
 ### ✅ Competitive Positioning
-| Feature | Cisco Cyber Vision | reference | Skybox | **GraphLayer** |
+| Feature | Cisco Cyber Vision | reference tool | Skybox | **GraphLayer** |
 |---------|-------------------|---------|---------|----------------|
 | Multi-vendor | ✅ | ✅ | ✅ | ✅ |
 | Containerized | ❌ | ❌ | ❌ | ✅ |

@@ -24,8 +24,8 @@ type ComparisonReport struct {
 	// GraphLayerVersion is the GraphLayer release version.
 	GraphLayerVersion string `json:"graphlayer_version"`
 
-	// referenceVersion is the reference version being compared against.
-	referenceVersion string `json:"reference_version"`
+	// ReferenceVersion is the reference version being compared against.
+	ReferenceVersion string `json:"reference_version"`
 
 	// Metrics holds the quantified comparison results.
 	Metrics *ComparisonMetrics `json:"metrics"`
@@ -39,14 +39,14 @@ type ComparisonReport struct {
 
 // GenerateReport creates a full comparison report from metrics.
 func GenerateReport(
-	title, glVersion, npVersion string,
+	title, glVersion, referenceVersion string,
 	metrics *ComparisonMetrics,
 ) *ComparisonReport {
 	r := &ComparisonReport{
 		Title:              title,
 		GeneratedAt:        time.Now(),
 		GraphLayerVersion:  glVersion,
-		referenceVersion:      npVersion,
+		ReferenceVersion:      referenceVersion,
 		Metrics:            metrics,
 		Summary:            generateSummary(metrics),
 		Recommendations:    generateRecommendations(metrics),
@@ -62,7 +62,7 @@ func (r *ComparisonReport) RenderMarkdown() string {
 	// Header
 	b.WriteString(fmt.Sprintf("# %s\n\n", r.Title))
 	b.WriteString(fmt.Sprintf("**Generated:** %s  \n", r.GeneratedAt.Format(time.RFC3339)))
-	b.WriteString(fmt.Sprintf("**GraphLayer:** %s  |  **reference:** %s\n\n", r.GraphLayerVersion, r.referenceVersion))
+	b.WriteString(fmt.Sprintf("**GraphLayer:** %s  |  **reference:** %s\n\n", r.GraphLayerVersion, r.ReferenceVersion))
 
 	// Executive summary
 	b.WriteString("## Executive Summary\n\n")
@@ -136,7 +136,7 @@ func renderDeviceTable(dm DeviceMetrics) string {
 	b.WriteString("| Metric | GraphLayer | reference | Delta |\n")
 	b.WriteString("|--------|-----------|--------|-------|\n")
 	b.WriteString(fmt.Sprintf("| Devices Discovered | %d | %d | %+d |\n",
-		dm.GraphLayerCount, dm.referenceCount, dm.GraphLayerCount-dm.referenceCount))
+		dm.GraphLayerCount, dm.ReferenceCount, dm.GraphLayerCount-dm.ReferenceCount))
 	b.WriteString(fmt.Sprintf("| Matched Devices | %d | %d | — |\n",
 		dm.MatchedDevices, dm.MatchedDevices))
 	b.WriteString(fmt.Sprintf("| Extra Devices (GL only) | %d | — | — |\n",
@@ -160,7 +160,7 @@ func renderLinkTable(lm LinkMetrics) string {
 	b.WriteString("| Metric | GraphLayer | reference | Delta |\n")
 	b.WriteString("|--------|-----------|--------|-------|\n")
 	b.WriteString(fmt.Sprintf("| Links Discovered | %d | %d | %+d |\n",
-		lm.GraphLayerCount, lm.referenceCount, lm.GraphLayerCount-lm.referenceCount))
+		lm.GraphLayerCount, lm.ReferenceCount, lm.GraphLayerCount-lm.ReferenceCount))
 	b.WriteString(fmt.Sprintf("| Matched Links | %d | %d | — |\n",
 		lm.MatchedLinks, lm.MatchedLinks))
 	b.WriteString(fmt.Sprintf("| Extra Links (GL only) | %d | — | — |\n",
@@ -190,7 +190,7 @@ func renderVendorTable(vc VendorCoverage) string {
 	b.WriteString(fmt.Sprintf("| GraphLayer Vendors | %d (%s) |\n",
 		vc.GraphLayerVendorCount, strings.Join(vc.GraphLayerVendors, ", ")))
 	b.WriteString(fmt.Sprintf("| reference Vendors | %d (%s) |\n",
-		vc.referenceVendorCount, strings.Join(vc.referenceVendors, ", ")))
+		vc.ReferenceVendorCount, strings.Join(vc.ReferenceVendors, ", ")))
 	if len(vc.ExtraVendors) > 0 {
 		b.WriteString(fmt.Sprintf("| **Extra Vendors (GL)** | **%s** |\n",
 			strings.Join(vc.ExtraVendors, ", ")))
@@ -210,13 +210,13 @@ func renderEvidenceTable(eq EvidenceQuality) string {
 	b.WriteString("| Metric | GraphLayer | reference |\n")
 	b.WriteString("|--------|-----------|--------|\n")
 	b.WriteString(fmt.Sprintf("| Avg Evidence/Device | %.2f | %.2f |\n",
-		eq.GraphLayerAvgEvidence, eq.referenceAvgEvidence))
+		eq.GraphLayerAvgEvidence, eq.ReferenceAvgEvidence))
 	b.WriteString(fmt.Sprintf("| Devices with Evidence | %d | %d |\n",
-		eq.GraphLayerRecordsWithEvidence, eq.referenceRecordsWithEvidence))
+		eq.GraphLayerRecordsWithEvidence, eq.ReferenceRecordsWithEvidence))
 	b.WriteString(fmt.Sprintf("| Evidence Ratio | %s | %s |\n",
-		FormatPct(eq.GraphLayerEvidenceRatio), FormatPct(eq.referenceEvidenceRatio)))
+		FormatPct(eq.GraphLayerEvidenceRatio), FormatPct(eq.ReferenceEvidenceRatio)))
 	b.WriteString(fmt.Sprintf("| Avg Confidence | %s | %s |\n",
-		FormatPct(eq.GraphLayerAvgConfidence), FormatPct(eq.referenceAvgConfidence)))
+		FormatPct(eq.GraphLayerAvgConfidence), FormatPct(eq.ReferenceAvgConfidence)))
 	b.WriteString(fmt.Sprintf("| **Evidence Quality Score** | **%s** | — |\n",
 		FormatPct(eq.EvidenceQualityScore)))
 	b.WriteString("\n")
@@ -228,13 +228,13 @@ func renderFPTable(fp FalsePositiveAnalysis) string {
 	b.WriteString("| Metric | GraphLayer | reference |\n")
 	b.WriteString("|--------|-----------|--------|\n")
 	b.WriteString(fmt.Sprintf("| Potential FP Devices | %d | %d |\n",
-		fp.GraphLayerFalsePositiveDevices, fp.referenceFalsePositiveDevices))
+		fp.GraphLayerFalsePositiveDevices, fp.ReferenceFalsePositiveDevices))
 	b.WriteString(fmt.Sprintf("| Potential FP Links | %d | %d |\n",
-		fp.GraphLayerFalsePositiveLinks, fp.referenceFalsePositiveLinks))
+		fp.GraphLayerFalsePositiveLinks, fp.ReferenceFalsePositiveLinks))
 	b.WriteString(fmt.Sprintf("| FP Rate (devices) | %s | %s |\n",
-		FormatPct(fp.GraphLayerFPRate), FormatPct(fp.referenceFPRate)))
+		FormatPct(fp.GraphLayerFPRate), FormatPct(fp.ReferenceFPRate)))
 	b.WriteString(fmt.Sprintf("| Low-Conf Unmatched | %d | %d |\n",
-		fp.GraphLayerLowConfidenceUnmatched, fp.referenceLowConfidenceUnmatched))
+		fp.GraphLayerLowConfidenceUnmatched, fp.ReferenceLowConfidenceUnmatched))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -245,9 +245,9 @@ func renderVendorBreakdownTable(vendors map[string]VendorBreakdown) string {
 	b.WriteString("|--------|-----------|---------------|---------|---------|----------|-------------|----------|----------|\n")
 	for _, vb := range sortedVendorBreakdowns(vendors) {
 		b.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %s | %d | %d | %.1f | %s |\n",
-			vb.Vendor, vb.GraphLayerDevices, vb.referenceDevices,
+			vb.Vendor, vb.GraphLayerDevices, vb.ReferenceDevices,
 			vb.MatchedDevices, FormatPct(vb.DeviceAccuracy),
-			vb.GraphLayerLinks, vb.referenceLinks,
+			vb.GraphLayerLinks, vb.ReferenceLinks,
 			vb.AvgEvidence, FormatPct(vb.AvgConf)))
 	}
 	b.WriteString("\n")
@@ -271,11 +271,11 @@ func generateSummary(m *ComparisonMetrics) string {
 				m.DeviceMetrics.F1Score*100))
 	}
 
-	if m.VendorCoverage.GraphLayerVendorCount > m.VendorCoverage.referenceVendorCount {
+	if m.VendorCoverage.GraphLayerVendorCount > m.VendorCoverage.ReferenceVendorCount {
 		parts = append(parts,
 			fmt.Sprintf("with broader vendor coverage (%d vs %d vendors)",
 				m.VendorCoverage.GraphLayerVendorCount,
-				m.VendorCoverage.referenceVendorCount))
+				m.VendorCoverage.ReferenceVendorCount))
 	}
 
 	if m.EvidenceQuality.EvidenceQualityScore > 1.0 {

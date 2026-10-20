@@ -568,7 +568,7 @@ See existing IOS parser documentation for details.
 ### Basic Usage
 
 ```go
-import "GraphLayer.io/parsers"
+import "github.com/mattpainter701/graphlayer/parsers"
 
 // Parse NXOS MAC table
 output := connector.ExecuteCommand(ctx, "show mac address-table", 15*time.Second)

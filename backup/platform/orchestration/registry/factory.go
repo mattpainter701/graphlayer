@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/api"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/base"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/ssh"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/types"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/api"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/base"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/ssh"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
 )
 
 // ConnectorFactory creates connectors based on device type and connection configuration

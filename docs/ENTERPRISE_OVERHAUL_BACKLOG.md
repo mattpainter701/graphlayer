@@ -130,7 +130,7 @@ The [local routing/NAT slice](ROUTING_NAT_INVESTIGATIONS.md) begins G07/G08/G11 
 | ID | Package / owner | Depends on | Acceptance |
 |---|---|---|---|
 | B01 | Pre-registered comparison protocol / QA/product | F09,F11 | Matched versions/licenses/data/hardware; independent truth; accuracy/coverage/time metrics frozen |
-| B02 | Real comparator imports/captures / domain/QA | B01 | Authorized reference/Batfish and enterprise comparator results; no synthetic self-comparison presented as proof |
+| B02 | Real comparator imports/captures / domain/QA | B01 | Authorized reference tool/Batfish and enterprise comparator results; no synthetic self-comparison presented as proof |
 | B03 | Analyst task study / design/QA | B02,O11 | Randomized/skill-stratified paired tasks; correct completion, time, wrong-action/setup costs |
 | B04 | Scale/freshness comparison / platform/QA | B02,O12 | p50/p95/p99/RSS/coverage; warm/cold and incremental runs; reproducible scripts/fixtures |
 | B05 | Capability and limitations release review / domain/security | B03,B04,O10 | Claims link to evidence; unknowns and unsupported features published; no unearned compliance claims |

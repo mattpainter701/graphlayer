@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/base"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/base"
 )
 
 // Test categorizeOutputError function

@@ -18,22 +18,22 @@ import (
 // reference-Compatible Format — the canonical comparison interchange
 // ====================================================================
 
-// referenceTopology is the reference-compatible topology representation.
+// ReferenceExportTopology is the reference-compatible topology representation.
 // Both GraphLayer and reference exports are normalized to this format
 // before comparison, ensuring fair, apples-to-apples evaluation.
-type referenceTopology struct {
+type ReferenceExportTopology struct {
 	// Metadata about this topology snapshot.
-	Metadata referenceMetadata `json:"metadata"`
+	Metadata ReferenceMetadata `json:"metadata"`
 
 	// Devices discovered in the topology.
-	Devices []referenceDevice `json:"devices"`
+	Devices []ReferenceDevice `json:"devices"`
 
 	// Links between devices.
-	Links []referenceLink `json:"links"`
+	Links []ReferenceLink `json:"links"`
 }
 
-// referenceMetadata carries provenance and generation info.
-type referenceMetadata struct {
+// ReferenceMetadata carries provenance and generation info.
+type ReferenceMetadata struct {
 	// Source is the tool that produced this topology (e.g., "graphlayer", "reference").
 	Source string `json:"source"`
 
@@ -56,8 +56,8 @@ type referenceMetadata struct {
 	Extra map[string]string `json:"extra,omitempty"`
 }
 
-// referenceDevice represents a single network device in the comparison format.
-type referenceDevice struct {
+// ReferenceDevice represents a single network device in the comparison format.
+type ReferenceDevice struct {
 	// ID is a unique identifier within this topology (e.g., management IP or serial).
 	ID string `json:"id"`
 
@@ -107,8 +107,8 @@ type referenceDevice struct {
 	Extra map[string]string `json:"extra,omitempty"`
 }
 
-// referenceLink represents a connection between two devices.
-type referenceLink struct {
+// ReferenceLink represents a connection between two devices.
+type ReferenceLink struct {
 	// ID is a unique identifier for this link.
 	ID string `json:"id"`
 
@@ -153,11 +153,11 @@ type TopoExport struct {
 	RoutingTable []models.RoutingEntry
 }
 
-// TranslateAssetsToreference converts GraphLayer AssetNodes into reference devices.
-func TranslateAssetsToreference(assets []models.AssetNode) []referenceDevice {
-	devices := make([]referenceDevice, 0, len(assets))
+// TranslateAssetsToReference converts GraphLayer AssetNodes into reference devices.
+func TranslateAssetsToReference(assets []models.AssetNode) []ReferenceDevice {
+	devices := make([]ReferenceDevice, 0, len(assets))
 	for _, a := range assets {
-		d := referenceDevice{
+		d := ReferenceDevice{
 			ID:              deviceID(a),
 			Hostname:        a.Hostname,
 			Vendor:          a.Vendor,
@@ -179,13 +179,13 @@ func TranslateAssetsToreference(assets []models.AssetNode) []referenceDevice {
 	return devices
 }
 
-// TranslateLinksToreference converts GraphLayer Links + L2Links into reference links.
-func TranslateLinksToreference(links []models.Link, l2Links []models.L2Link) []referenceLink {
-	referenceLinks := make([]referenceLink, 0)
+// TranslateLinksToReference converts GraphLayer Links + L2Links into reference links.
+func TranslateLinksToReference(links []models.Link, l2Links []models.L2Link) []ReferenceLink {
+	referenceLinks := make([]ReferenceLink, 0)
 
 	// Convert L3/L4 links
 	for _, l := range links {
-		nl := referenceLink{
+		nl := ReferenceLink{
 			ID:         linkID(l),
 			FromDevice: l.FromID,
 			FromPort:   l.Interface.Name,
@@ -204,7 +204,7 @@ func TranslateLinksToreference(links []models.Link, l2Links []models.L2Link) []r
 		if linkType == "" {
 			linkType = "l2"
 		}
-		nl := referenceLink{
+		nl := ReferenceLink{
 			ID:         l2LinkID(l),
 			FromDevice: l.FromDevice,
 			FromPort:   l.FromPort,

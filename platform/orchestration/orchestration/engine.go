@@ -3,7 +3,7 @@ package orchestration
 import (
 	"fmt"
 	"time"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/scoring"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/scoring"
 )
 
 // TopologyNode represents a network device in the topology

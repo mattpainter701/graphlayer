@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/orchestration"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/orchestration"
 )
 
 func TestQueryCommandJSONOutput(t *testing.T) {

@@ -28,20 +28,20 @@ func main() {
 	selfTest := flag.Bool("self-test", false, "Run self-test using built-in multi-vendor reference")
 	jsonOut := flag.Bool("json", false, "Output results as JSON instead of markdown")
 	glVersion := flag.String("gl-version", "dev", "GraphLayer version string")
-	npVersion := flag.String("np-version", "reference", "reference version string")
+	referenceVersion := flag.String("reference-version", "reference", "reference version string")
 	flag.Parse()
 
 	if *selfTest {
-		runSelfTest(*jsonOut, *glVersion, *npVersion)
+		runSelfTest(*jsonOut, *glVersion, *referenceVersion)
 		return
 	}
 
-	var glTopo, npTopo *comparison.referenceTopology
+	var glTopo, referenceTopo *comparison.ReferenceExportTopology
 
 	// Load GraphLayer topology
 	if *graphLayerPath != "" {
 		var err error
-		glTopo, err = loadreferenceTopology(*graphLayerPath)
+		glTopo, err = loadReferenceTopology(*graphLayerPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading GraphLayer topology: %v\n", err)
 			os.Exit(1)
@@ -62,7 +62,7 @@ func main() {
 	// Load reference topology
 	if *referencePath != "" {
 		var err error
-		npTopo, err = loadreferenceTopology(*referencePath)
+		referenceTopo, err = loadReferenceTopology(*referencePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading reference topology: %v\n", err)
 			os.Exit(1)
@@ -74,11 +74,11 @@ func main() {
 	}
 
 	// Run comparison
-	metrics := comparison.CompareTopologies(glTopo, npTopo)
+	metrics := comparison.CompareTopologies(glTopo, referenceTopo)
 	report := comparison.GenerateReport(
 		fmt.Sprintf("GraphLayer %s vs reference Comparison", *glVersion),
 		*glVersion,
-		*npVersion,
+		*referenceVersion,
 		metrics,
 	)
 
@@ -102,14 +102,14 @@ func main() {
 	}
 }
 
-func runSelfTest(jsonOut bool, glVersion, npVersion string) {
+func runSelfTest(jsonOut bool, glVersion, referenceVersion string) {
 	ref := comparison.NewMultiVendorReferenceTopology()
 
 	metrics := comparison.CompareTopologies(&ref.Topology, &ref.Topology)
 	report := comparison.GenerateReport(
 		fmt.Sprintf("GraphLayer %s vs reference — Self-Test", glVersion),
 		glVersion,
-		npVersion,
+		referenceVersion,
 		metrics,
 	)
 
@@ -121,12 +121,12 @@ func runSelfTest(jsonOut bool, glVersion, npVersion string) {
 	}
 }
 
-func loadreferenceTopology(path string) (*comparison.referenceTopology, error) {
+func loadReferenceTopology(path string) (*comparison.ReferenceExportTopology, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var topo comparison.referenceTopology
+	var topo comparison.ReferenceExportTopology
 	if err := json.Unmarshal(data, &topo); err != nil {
 		return nil, err
 	}

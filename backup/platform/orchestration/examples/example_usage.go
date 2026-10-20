@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/api"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/base"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/registry"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/connectors/ssh"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/types"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/api"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/base"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/registry"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/connectors/ssh"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/types"
 )
 
 // ExampleUsage demonstrates how to use the connector framework

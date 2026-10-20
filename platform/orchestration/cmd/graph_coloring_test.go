@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/graph"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/graph"
 )
 
 func TestRunColoring(t *testing.T) {

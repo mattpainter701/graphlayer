@@ -68,3 +68,13 @@ sample_data/
 /target/
 /dist/
 /native-bundle/
+
+# Raw configuration collections and generated reports stay outside source control.
+/configs/
+/corpus/
+/Customers/
+**/private-corpus/
+**/private_configs/
+**/customer_configs/
+**/raw_configs/
+coverage.out

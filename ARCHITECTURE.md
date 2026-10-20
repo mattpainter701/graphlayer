@@ -89,7 +89,7 @@ under a CI-enforced migration boundary, not a claim of a completed rewrite.
    vendor-specific color/shape hints, role annotations, and edge weighting.
 
 7. **Export**: The graph is serialized to standard formats (GraphML, GEXF,
-   Cytoscape JSON, D3 JSON) for visualization tools, and to reference format for
+   Cytoscape JSON, D3 JSON) for visualization tools, and to reference tool format for
    comparison against reference topologies.
 
 ## Key Design Decisions
@@ -112,7 +112,7 @@ device's configuration hasn't changed, reprocessing is skipped. Hash chains
 provide audit trails for configuration drift analysis.
 
 ### Comparison Engine
-The reference comparison harness lets operators validate GraphLayer output
+The reference tool comparison harness lets operators validate GraphLayer output
 against known-good reference topologies. Five metrics: device accuracy, link
 accuracy, attribute accuracy, false positive rate, and false negative rate.
 
@@ -140,7 +140,7 @@ accuracy, attribute accuracy, false positive rate, and false negative rate.
 - **Integration tests**: End-to-end connector→parser→correlate→infer→graph→export
 - **Fuzz tests**: Randomized config input to parsers to detect panics
 - **Benchmarks**: Go benchmark functions for parse throughput and graph build time
-- **Comparison harness**: reference diff against golden reference topologies
+- **Comparison harness**: reference tool diff against golden reference topologies
 
 ## Next Steps
 

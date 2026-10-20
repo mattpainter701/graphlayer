@@ -2,7 +2,7 @@ package firewall
 
 import (
 	"fmt"
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 	"log/slog"
 	"sort"
 	"strings"

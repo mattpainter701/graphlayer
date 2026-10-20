@@ -2,8 +2,8 @@ package aoscx
 
 import (
 	"fmt"
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
-	"github.com/mattpainter701/graphlayer/platform/platform/vendors/aruba"
+	"github.com/mattpainter701/graphlayer/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/vendors/aruba"
 	"log/slog"
 )
 

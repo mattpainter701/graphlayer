@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "window_length": 6,
+  "protected_digests": [
+    "e48f601c4be469881774547a4999a37efa653c1740948bfbd3c1fefc415b0139",
+    "70a025aa4fea6e9eb12345e0cd6bb576b706b765d0db5d4c88c86e6ad11c3852",
+    "8b60b1f81d189c0149d1c8452a182173fd3351a10878a10863e5bd252642cb31",
+    "dec3e364b3adb539e85d0a67503ae3e17eaec048703dda78c272e1027e56ba00"
+  ],
+  "blocked_path_components": [
+    "config_repo",
+    "private_corpus",
+    "customer_configs",
+    "customer_config",
+    "rawcustomer",
+    "raw_customer_configs",
+    "customers",
+    "sample_data",
+    "raw_configs",
+    "private_configs"
+  ],
+  "blocked_path_sequences": [
+    ["backup", "config"],
+    ["backup", "configs"]
+  ]
+}

@@ -1,8 +1,8 @@
-# GraphLayer reference Comparison Harness (Sprint 10)
+# GraphLayer reference tool Comparison Harness (Sprint 10)
 
 ## Overview
 
-The comparison harness provides objective, automated comparison between GraphLayer and reference topology outputs. It normalizes both outputs to a common format, computes quantified metrics across five dimensions, and generates markdown comparison reports suitable for release notes.
+The comparison harness provides objective, automated comparison between GraphLayer and reference tool topology outputs. It normalizes both outputs to a common format, computes quantified metrics across five dimensions, and generates markdown comparison reports suitable for release notes.
 
 ## Quick Start
 
@@ -41,10 +41,10 @@ platform/comparison/
 ### 1. Device Count & Accuracy
 - **Matched devices**: Found by both tools
 - **Extra devices**: GraphLayer-only (potential added value or false positives)
-- **Missing devices**: reference-only (parsing gaps)
+- **Missing devices**: reference tool-only (parsing gaps)
 - **Accuracy**: matched / total_unique_devices
 - **Precision**: matched / graphlayer_total
-- **Recall**: matched / reference_total
+- **Recall**: matched / reference tool_total
 - **F1 Score**: harmonic mean of precision and recall
 
 ### 2. Link Accuracy
@@ -54,15 +54,15 @@ platform/comparison/
 
 ### 3. Vendor Coverage Breadth
 - Count of unique vendor families covered by each tool
-- Extra vendors (GraphLayer covers, reference doesn't)
-- Missing vendors (reference covers, GraphLayer doesn't)
+- Extra vendors (GraphLayer covers, reference tool doesn't)
+- Missing vendors (reference tool covers, GraphLayer doesn't)
 - Vendor breadth score
 
 ### 4. Evidence Quality
 - Average evidence count per device
 - Evidence ratio (devices with provenance / total)
 - Average confidence score
-- Evidence quality score (GL ratio / reference ratio)
+- Evidence quality score (GL ratio / reference tool ratio)
 
 ### 5. False Positive Rate
 - Unmatched devices/links counted as potential false positives
@@ -107,7 +107,7 @@ Load from JSON:
 ref, err := comparison.LoadReferenceTopology("testdata/cisco-3-switch-l2.json")
 ```
 
-## reference-Compatible Format
+## reference tool-Compatible Format
 
 The interchange format normalizes both tools to a common schema:
 
@@ -149,22 +149,22 @@ The interchange format normalizes both tools to a common schema:
 }
 ```
 
-## Translation: GraphLayer → reference Format
+## Translation: GraphLayer → reference tool Format
 
 ```go
 import "github.com/mattpainter701/graphlayer/platform/comparison"
 
 // Convert GraphLayer assets to reference devices
-devices := comparison.TranslateAssetsToreference(assets)
+devices := comparison.TranslateAssetsToReference(assets)
 
 // Convert GraphLayer links to reference links
-links := comparison.TranslateLinksToreference(graphLinks, l2Links)
+links := comparison.TranslateLinksToReference(graphLinks, l2Links)
 ```
 
 ## Per-Release Workflow
 
-1. Export GraphLayer topology to reference-format JSON
-2. Export reference topology (or use reference)
+1. Export GraphLayer topology to reference tool-format JSON
+2. Export reference tool topology (or use reference)
 3. Run: `go run ./cmd/graphlayer-compare --graphlayer=gl.json --reference=np.json --report=release_comparison.md`
 4. Include report in release notes
 5. Archive report alongside release artifacts
@@ -180,7 +180,7 @@ links := comparison.TranslateLinksToreference(graphLinks, l2Links)
 ## Test Suite
 
 16 tests covering:
-- reference format round-trip
+- reference tool format round-trip
 - Identical topology comparison (100% match)
 - Extra/missing device detection
 - Link fuzzy matching (abbreviated port names)
@@ -192,7 +192,7 @@ links := comparison.TranslateLinksToreference(graphLinks, l2Links)
 - Per-vendor breakdown
 - Reference topology save/load
 - Device ID generation priority
-- GraphLayer→reference translation
+- GraphLayer→reference tool translation
 - Empty topology handling
 - Device fuzzy matching (IP, hostname)
 

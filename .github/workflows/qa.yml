@@ -2,7 +2,7 @@ name: QA Docker Stack
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/repository-privacy]
   pull_request:
     branches: [main]
   workflow_dispatch:

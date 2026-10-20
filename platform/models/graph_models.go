@@ -200,8 +200,8 @@ type VulnerabilityNode struct {
 	IsKEV                    bool         `json:"is_kev" bson:"is_kev"`
 	RansomwareCampaignStatus string       `json:"ransomware_campaign_status" bson:"ransomware_campaign_status"`
 
-	// Enhanced fields from vuln-GraphLayer API
-	VulnGraphLayerData     *VulnGraphLayerDetailedCatalog `json:"vuln_GraphLayer_data,omitempty" bson:"vuln_GraphLayer_data,omitempty"`
+	// Enhanced fields from external vulnerability catalog API
+	VulnerabilityCatalogData     *VulnerabilityCatalogEntry `json:"vulnerability_catalog_data,omitempty" bson:"vulnerability_catalog_data,omitempty"`
 	EnhancedSummary    string                     `json:"enhanced_summary,omitempty" bson:"enhanced_summary,omitempty"`
 	AttackComplexity   string                     `json:"attack_complexity,omitempty" bson:"attack_complexity,omitempty"`
 	AttackVector       string                     `json:"attack_vector,omitempty" bson:"attack_vector,omitempty"`
@@ -213,7 +213,7 @@ type VulnerabilityNode struct {
 	LastEnhanced       string                     `json:"last_enhanced,omitempty" bson:"last_enhanced,omitempty"`
 
 	// NEW: Digital Twin specific fields to be added
-	GraphLayerScore          float64 `json:"GraphLayer_score" bson:"GraphLayer_score"` // 0.0-1.0 percentage
+	VulnerabilityScore          float64 `json:"vulnerability_score" bson:"vulnerability_score"` // 0.0-1.0 percentage
 	CVECount             int64   `json:"cve_count" bson:"cve_count"`
 	AssetsAffected       int64   `json:"assets_affected" bson:"assets_affected"`
 	DataFreshness        string  `json:"data_freshness" bson:"data_freshness"`
@@ -635,13 +635,13 @@ func (n *NetworkNode) SetNetworkGroups(groups []string) {
 	n.AddressGroups = groups
 }
 
-func (v *VulnerabilityNode) GetGraphLayerScoreBadge() string {
+func (v *VulnerabilityNode) GetVulnerabilityScoreBadge() string {
 	switch {
-	case v.GraphLayerScore >= 0.9:
+	case v.VulnerabilityScore >= 0.9:
 		return "critical"
-	case v.GraphLayerScore >= 0.7:
+	case v.VulnerabilityScore >= 0.7:
 		return "high"
-	case v.GraphLayerScore >= 0.4:
+	case v.VulnerabilityScore >= 0.4:
 		return "medium"
 	default:
 		return "low"

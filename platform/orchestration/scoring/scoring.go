@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/models"
 )
 
 // DecayConfidence reduces the node's confidence score linearly over time.

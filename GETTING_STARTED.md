@@ -45,7 +45,7 @@ docker compose up -d
 This starts:
 - **graphlayer-core**: The Go platform (API server on :8080)
 - **graphlayer-connectors**: Python connector service (on :8081)
-- **graphlayer-reference**: reference-compatible comparison endpoint (on :8082)
+- **graphlayer-reference tool**: reference tool-compatible comparison endpoint (on :8082)
 
 ### Ingest a sample topology
 
@@ -75,7 +75,7 @@ curl http://localhost:8080/graph/d3 > topology.json
 | `scoring/` | Confidence scoring | `ConfidenceEngine` |
 | `intelligence/` | Topology inference | `InferenceEngine`, L2/L3 rules |
 | `graph/` | Graph construction | `GraphBuilder`, export formats |
-| `comparison/` | reference diff engine | `ComparisonEngine`, metrics |
+| `comparison/` | reference tool diff engine | `ComparisonEngine`, metrics |
 | `vendors/` | Vendor parsers | Cisco, Arista, Dell, Juniper, Palo Alto, Fortinet, Aruba |
 | `connectors/` | Python connectors | NetBox, ServiceNow, SolarWinds, Fileshare |
 | `reference/` | IANA/App-ID data | Protocol numbers, service ports |

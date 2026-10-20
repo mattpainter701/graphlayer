@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/models"
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/decision"
+	"github.com/mattpainter701/graphlayer/platform/models"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/decision"
 )
 
 // TestFullL2Pipeline tests the complete end-to-end L2 processing pipeline.

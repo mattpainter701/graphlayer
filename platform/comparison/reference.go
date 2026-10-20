@@ -24,7 +24,7 @@ type ReferenceTopology struct {
 	Description string `json:"description"`
 
 	// Topology is the known-good reference-format topology.
-	Topology referenceTopology `json:"topology"`
+	Topology ReferenceExportTopology `json:"topology"`
 
 	// ExpectedMetrics are the expected comparison results.
 	// Useful for regression testing.
@@ -62,12 +62,12 @@ func SaveReferenceTopology(path string, ref *ReferenceTopology) error {
 // ====================================================================
 
 // NewReferenceTopology creates a new reference topology with metadata.
-func NewReferenceTopology(name, description string, devices []referenceDevice, links []referenceLink) *ReferenceTopology {
+func NewReferenceTopology(name, description string, devices []ReferenceDevice, links []ReferenceLink) *ReferenceTopology {
 	return &ReferenceTopology{
 		Name:        name,
 		Description: description,
-		Topology: referenceTopology{
-			Metadata: referenceMetadata{
+		Topology: ReferenceExportTopology{
+			Metadata: ReferenceMetadata{
 				Source:      "reference",
 				Version:     "1.0",
 				GeneratedAt: time.Now(),
@@ -90,7 +90,7 @@ func NewReferenceTopology(name, description string, devices []referenceDevice, l
 //   - firewall-01 (Palo Alto PA-220)
 // With one L2 link between the switches.
 func NewSmallReferenceTopology() *ReferenceTopology {
-	devices := []referenceDevice{
+	devices := []ReferenceDevice{
 		{
 			ID:              "hostname:switch-01",
 			Hostname:        "switch-01",
@@ -144,7 +144,7 @@ func NewSmallReferenceTopology() *ReferenceTopology {
 		},
 	}
 
-	links := []referenceLink{
+	links := []ReferenceLink{
 		{
 			ID:            "l2link:switch-01|Gi1/0/1|switch-02|Et1",
 			FromDevice:    "hostname:switch-01",
@@ -172,7 +172,7 @@ func NewSmallReferenceTopology() *ReferenceTopology {
 // NewMultiVendorReferenceTopology creates a 7-device, multi-vendor topology
 // with Cisco, Arista, Dell, Palo Alto, Fortinet, and Juniper devices.
 func NewMultiVendorReferenceTopology() *ReferenceTopology {
-	devices := []referenceDevice{
+	devices := []ReferenceDevice{
 		{
 			ID:              "hostname:core-sw-01",
 			Hostname:        "core-sw-01",
@@ -294,7 +294,7 @@ func NewMultiVendorReferenceTopology() *ReferenceTopology {
 		},
 	}
 
-	links := []referenceLink{
+	links := []ReferenceLink{
 		{
 			ID: "l2link:core-sw|Eth1/1|dist-sw|Eth1",
 			FromDevice: "hostname:core-sw-01", FromPort: "Eth1/1",

@@ -2,7 +2,7 @@ name: Rust engine and architecture
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/repository-privacy]
   pull_request:
     branches: [main]
 
@@ -45,6 +45,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch only this revision's ancestry for the privacy audit
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            git fetch --no-tags --unshallow origin "$GITHUB_SHA"
+          fi
+      - name: Enforce repository privacy
+        run: python scripts/check-repository-privacy.py --history
       - name: Enforce Rust implementation ownership
         run: python scripts/check-rust-boundary.py
       - name: Test boundary ratchet

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mattpainter701/graphlayer/platform/platform/orchestration/orchestration"
+	"github.com/mattpainter701/graphlayer/platform/orchestration/orchestration"
 	"github.com/spf13/cobra"
 )
 

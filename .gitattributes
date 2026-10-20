@@ -1,8 +1,5 @@
-*.xml filter=lfs diff=lfs merge=lfs -text
-*.csv filter=lfs diff=lfs merge=lfs -text
-*.conf filter=lfs diff=lfs merge=lfs -text
-*.ini filter=lfs diff=lfs merge=lfs -text
-*.db filter=lfs diff=lfs merge=lfs -text
+# Repository inputs must remain directly reviewable. Keep raw collections and
+# database exports outside Git; the privacy guard rejects opaque LFS pointers.
 
 # Small, source-controlled configuration and IANA registry inputs must remain
 # ordinary text. A missing LFS object must not make test discovery or embed
