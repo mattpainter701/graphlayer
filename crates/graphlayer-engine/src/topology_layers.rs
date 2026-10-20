@@ -309,7 +309,9 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
         let zone = network["zone"].as_str().ok_or("invalid_network")?;
         let (prefix, mask) = subnet_parts(subnet).ok_or("invalid_network")?;
         if !zone_ids.contains(zone)
-            || subnet_index.insert(id, (subnet, zone, prefix, mask)).is_some()
+            || subnet_index
+                .insert(id, (subnet, zone, prefix, mask))
+                .is_some()
         {
             return Err("invalid_network".into());
         }
@@ -388,7 +390,8 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             return Err("invalid_host_ip".into());
         }
         let network = h["network_id"].as_str().ok_or("invalid_host_network")?;
-        let (subnet, zone, prefix, mask) = subnet_index.get(network).ok_or("invalid_host_network")?;
+        let (subnet, zone, prefix, mask) =
+            subnet_index.get(network).ok_or("invalid_host_network")?;
         if h["role"] != "host"
             || h["subnet"] != *subnet
             || h["zone"] != *zone
