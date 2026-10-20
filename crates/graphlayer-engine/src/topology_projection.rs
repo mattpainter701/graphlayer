@@ -52,15 +52,19 @@ fn known_evidence(config: &Value) -> HashMap<String, String> {
         })
         .collect()
 }
-fn interface_fact_supported(interface: &Value, evidence: &HashMap<String, String>) -> bool {
+fn interface_fact_supported(
+    interface: &Value,
+    evidence: &HashMap<String, String>,
+    vendor: &str,
+) -> bool {
     a(interface, "evidence_refs")
         .iter()
         .filter_map(Value::as_str)
         .any(|id| {
-            matches!(
-                evidence.get(id).map(String::as_str),
-                Some("interface" | "path_interface")
-            )
+            let kind = evidence.get(id).map(String::as_str);
+            matches!(kind, Some("interface" | "path_interface"))
+                || vendor == "fortinet-fortigate"
+                && matches!(kind, Some("configuration_entry" | "configuration_value"))
         })
 }
 fn tuple(value: &Value) -> Value {
@@ -447,7 +451,7 @@ pub fn project_topology(input: Value) -> Result<Value, String> {
             }
             let evidence = refs(snap, i, &evidence_ids);
             let addr = s(i, "address");
-            let interface_supported = interface_fact_supported(i, &evidence_ids);
+            let interface_supported = interface_fact_supported(i, &evidence_ids, vendor);
             let subnet_value = if interface_supported {
                 subnet(addr).unwrap_or_default()
             } else {
@@ -696,7 +700,8 @@ mod tests {
     #[test]
     fn facets_are_evidence_backed_and_subnet_is_normalized() {
         let mut sample = input();
-        let second = sample["request"]["nodes"][0]["config"]["path"]["interfaces"][0].clone();
+        let mut second = sample["request"]["nodes"][0]["config"]["path"]["interfaces"][0].clone();
+        second["name"] = json!("outside");
         sample["request"]["nodes"][0]["config"]["path"]["interfaces"]
             .as_array_mut()
             .unwrap()
@@ -764,6 +769,9 @@ mod tests {
         let config = &mut sample["request"]["nodes"][0]["config"];
         config["vendor"] = json!("fortinet-fortigate");
         config["context"] = json!("root");
+        // FortiOS preserves the first evidence kind recorded for a physical
+        // line; path interfaces therefore reference generic configuration IDs.
+        config["evidence"][0]["kind"] = json!("configuration_value");
         let top = project_topology(sample).unwrap();
         assert_eq!(
             top["topology"]["facets"]["vdom"]["values"][0]["value"],
@@ -773,6 +781,7 @@ mod tests {
             top["topology"]["nodes"][0]["interfaces"][0]["vdom_source"],
             "context"
         );
+        assert_eq!(top["topology"]["facets"]["subnet"]["available"], true);
     }
     #[test]
     fn declared_roles_are_validated_and_only_projection_fields_are_emitted() {
@@ -821,7 +830,10 @@ mod tests {
         let mut sample = input();
         let mut alias = sample["request"]["nodes"][0].clone();
         alias["id"] = json!("fw-alias");
-        sample["request"]["nodes"].as_array_mut().unwrap().push(alias);
+        sample["request"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(alias);
         assert!(project_topology(sample).is_err());
     }
     #[test]

@@ -115,6 +115,17 @@
     return values;
   }
   const svgElement = (tag, attrs = {}, parent) => { const element = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.entries(attrs).forEach(([key, value]) => { if (value !== undefined && value !== null) element.setAttribute(key, String(value)); }); if (parent) parent.append(element); return element; };
+  function fittedSvgLabel(element, value, maxWidth, minimumSize) {
+    const full = String(value ?? ''); element.textContent = full; element.setAttribute('aria-label',full);
+    const title = svgElement('title',{},element); title.textContent = full;
+    let size = Number(element.getAttribute('font-size')) || 16; const minimum = minimumSize || 11;
+    const measured = () => element.getComputedTextLength ? element.getComputedTextLength() : String(element.firstChild && element.firstChild.textContent || '').length * size * .58;
+    while (size > minimum && measured() > maxWidth) { size -= 1; element.setAttribute('font-size',size); element.style.fontSize = `${size}px`; }
+    if (measured() > maxWidth) {
+      let shown = full;
+      while (shown.length > 1) { shown = `${shown.slice(0,-2)}…`; element.firstChild.textContent = shown; if (measured() <= maxWidth) break; }
+    }
+  }
   function deviceIcon(kind, parent) {
     const icon = svgElement('g', { class: 'topology-device-icon', 'data-icon': kind, 'aria-hidden': 'true', transform: 'translate(0 0)' }, parent);
     const paths = {
@@ -152,7 +163,7 @@
     state.svg.replaceChildren(); state.svg.setAttribute('viewBox', `0 0 ${width} ${height}`); state.svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
     state.base = { x: 0, y: 0, width, height }; state.x = 0; state.y = 0; state.scale = 1;
     const defs = svgElement('defs', {}, state.svg);
-    [['forward','#27825f'],['return','#557eae'],['blocked','#bf5158'],['unknown','#c3913d']].forEach(([id,color]) => { const marker = svgElement('marker', { id: `topology-arrow-${id}`, viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto' }, defs); svgElement('path', { d: 'M0 0L10 5L0 10z', fill: color }, marker); });
+    [['forward','#27825f'],['return','#557eae'],['blocked','#bf5158'],['unknown','#c3913d']].forEach(([id,color]) => { const marker = svgElement('marker', { id: `topology-arrow-${id}`, viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '5', markerHeight: '5', markerUnits: 'userSpaceOnUse', orient: 'auto' }, defs); svgElement('path', { d: 'M0 0L10 5L0 10z', fill: color }, marker); });
     const linkLayer = svgElement('g', { class: 'topology-links' }, state.svg); const overlayLayer = svgElement('g', { class: 'topology-overlays' }, state.svg); const nodeLayer = svgElement('g', { class: 'topology-nodes' }, state.svg);
     const linkIndex = new Map(); const endpointLinks = new Map();
     links.forEach((link) => [link.a.node_id,link.b.node_id].forEach((id) => { if (!endpointLinks.has(id)) endpointLinks.set(id,[]); endpointLinks.get(id).push(link); }));
@@ -167,7 +178,7 @@
       const group = svgElement('g', { class: `topology-link${index === state.selectedLink ? ' topology-link-selected' : ''}`, 'data-link-index': index, 'data-provenance': link.provenance || 'declared_topology', 'data-synthetic': String(Boolean(link.synthetic)), tabindex: '0', role: 'button', 'aria-pressed': String(index === state.selectedLink), 'aria-label': `Link ${link.a.node_id} ${link.a.interface || 'port unavailable'} to ${link.b.node_id} ${link.b.interface || 'port unavailable'}` }, linkLayer); linkIndex.set(link, { path, reversePath, group, index });
       svgElement('path', { d: path, class: 'topology-link-line' }, group);
       const title = svgElement('title', {}, group); title.textContent = `${link.a.node_id} · ${link.a.interface || 'port unavailable'} ↔ ${link.b.node_id} · ${link.b.interface || 'port unavailable'}`;
-      const portLabel = (x, y, label, side, lane) => { const text = label || 'port unavailable'; const width = Math.min(98, Math.max(42, text.length * 5.1 + 12)); const lx = side < 0 ? x - width - 7 : x + 7; const ly = y - 9 + lane * 10; const pill = svgElement('g', { class: 'topology-port-label' }, group); svgElement('rect', { x: lx, y: ly, width, height: 18, rx: 6 }, pill); const t = svgElement('text', { x: lx + width / 2, y: ly + 12 }, pill); t.textContent = text.length > 15 ? `${text.slice(0,12)}…` : text; };
+      const portLabel = (x, y, label, side, lane) => { const text = label || 'port unavailable'; const width = Math.min(112, Math.max(48, text.length * 6.1 + 14)); const lx = side < 0 ? x - width - 7 : x + 7; const ly = y - 11 + lane * 12; const pill = svgElement('g', { class: 'topology-port-label', 'aria-label': text }, group); const title = svgElement('title',{},pill); title.textContent = text; svgElement('rect', { x: lx, y: ly, width, height: 22, rx: 7 }, pill); const t = svgElement('text', { x: lx + width / 2, y: ly + 15 }, pill); t.textContent = text.length > 17 ? `${text.slice(0,14)}…` : text; };
       portLabel(sx, sy, link.a.interface, sameColumn || direction > 0 ? 1 : -1, -1); portLabel(ex, ey, link.b.interface, sameColumn || direction < 0 ? 1 : -1, 1);
     });
     function overlay(hops, direction, status) {
@@ -182,13 +193,15 @@
     nodes.forEach((item) => {
       const pos = positions.get(item.node_id); if (!pos) return; const projected = getProjectedNode(item); const annotationKey = roleAnnotationKey(item.node_id); const override = state.roleAnnotations && state.roleAnnotations[annotationKey]; const role = normalizedRole(override || projected.icon || projected.role || projected.device_role); const icon = override ? role : normalizedRole(projected.icon || role); const roleSource = override ? 'display_annotation' : projected.role_source || 'unspecified'; const found = hits.get(item.node_id) || []; const directions = [...new Set(found.map((entry) => entry.direction))];
       const facetData = Object.fromEntries(['zone','subnet','vrf','vdom'].map((field) => [field,projectedFacetValues(item,field).join(',')]));
-      const group = svgElement('g', { class: `topology-node topology-${role} topology-${icon} ${directions.map((value) => `topology-${value}`).join(' ')}`, 'data-node-id': item.node_id, 'data-role': role, 'data-icon': icon, 'data-role-source': roleSource, 'data-zone': facetData.zone, 'data-subnet': facetData.subnet, 'data-vrf': facetData.vrf, 'data-vdom': facetData.vdom, tabindex: '0', role: 'button', 'aria-pressed': String(state.selected === item.node_id), 'aria-label': `${item.node_id}, ${role === 'device' ? 'device type unspecified' : role}${roleSource === 'display_annotation' ? ', display annotation' : ''}${directions.length ? `, selected ${directions.join(' and ')} path` : ', no selected path overlay'}` }, nodeLayer);
+      const snapshot = getSnapshot(item.node_id); const hostname = projected.hostname || snapshot && snapshot.hostname; const primaryLabel = String(projected.label || item.node_id); const accessibleLabel = `${primaryLabel}${hostname && hostname !== primaryLabel ? `, ${hostname}` : ''}, ${role === 'device' ? 'device type unspecified' : role}${roleSource === 'display_annotation' ? ', display annotation' : ''}${directions.length ? `, selected ${directions.join(' and ')} path` : ', no selected path overlay'}`;
+      const group = svgElement('g', { class: `topology-node topology-${role} topology-${icon} ${directions.map((value) => `topology-${value}`).join(' ')}`, 'data-node-id': item.node_id, 'data-role': role, 'data-icon': icon, 'data-role-source': roleSource, 'data-zone': facetData.zone, 'data-subnet': facetData.subnet, 'data-vrf': facetData.vrf, 'data-vdom': facetData.vdom, tabindex: '0', role: 'button', 'aria-pressed': String(state.selected === item.node_id), 'aria-label': accessibleLabel }, nodeLayer);
+      const nodeTitle = svgElement('title',{},group); nodeTitle.textContent = accessibleLabel;
       const fill = role === 'firewall' ? '#fff7eb' : role === 'router' ? '#eef6ff' : role === 'switch' ? '#eef9f5' : role === 'server' ? '#f4f1ff' : role === 'host' ? '#f4f7fa' : '#f2f6f8';
       svgElement('rect', { class: 'topology-node-card', x: pos.x, y: pos.y, width: cardW, height: cardH, rx: 14, fill }, group);
-      const iconWrap = svgElement('g', { transform: `translate(${pos.x + 16} ${pos.y + 17})` }, group); deviceIcon(icon, iconWrap);
-      const primaryLabel = String(projected.label || item.node_id); const label = svgElement('text', { class: 'topology-node-label', x: pos.x + 58, y: pos.y + 35 }, group); label.textContent = primaryLabel.length > 19 ? `${primaryLabel.slice(0,16)}…` : primaryLabel;
-      const snapshot = getSnapshot(item.node_id); const hostname = projected.hostname || snapshot && snapshot.hostname; const sub = svgElement('text', { class: 'topology-node-subtitle', x: pos.x + 58, y: pos.y + 54 }, group); const secondary = hostname && hostname !== primaryLabel ? hostname : primaryLabel !== item.node_id ? item.node_id : role === 'device' ? 'Device type unspecified' : role; sub.textContent = String(secondary).slice(0,26);
-      const status = svgElement('text', { class: 'topology-node-status', x: pos.x + 16, y: pos.y + 82 }, group); status.textContent = found.length ? `${directions.join(' + ')} path · ${found[0].hop.path && found[0].hop.path.disposition || 'status unavailable'}` : roleSource === 'query_endpoint' ? 'Query endpoint' : 'Operator supplied device';
+      const iconWrap = svgElement('g', { transform: `translate(${pos.x + 14} ${pos.y + 12}) scale(1.28)` }, group); deviceIcon(icon, iconWrap);
+      const label = svgElement('text', { class: 'topology-node-label', x: pos.x + 56, y: pos.y + 34, 'font-size': '16' }, group); fittedSvgLabel(label,primaryLabel,104,13);
+      const sub = svgElement('text', { class: 'topology-node-subtitle', x: pos.x + 56, y: pos.y + 57, 'font-size': '12' }, group); const secondary = hostname && hostname !== primaryLabel ? hostname : primaryLabel !== item.node_id ? item.node_id : role === 'device' ? 'Device type unspecified' : role; fittedSvgLabel(sub,secondary,104,10);
+      const status = svgElement('text', { class: 'topology-node-status', x: pos.x + 16, y: pos.y + 84, 'font-size': '11' }, group); fittedSvgLabel(status,found.length ? `${directions.join(' + ')} path · ${found[0].hop.path && found[0].hop.path.disposition || 'status unavailable'}` : roleSource === 'query_endpoint' ? 'Query endpoint' : 'Operator supplied device',140,9);
       if (topology.traffic && topology.traffic.available === true) { const trafficValue = projected.traffic || topology.traffic.by_node && topology.traffic.by_node[item.node_id]; if (trafficValue) { const traffic = svgElement('text', { class: 'topology-node-traffic', x: pos.x + cardW - 12, y: pos.y + 82, 'text-anchor': 'end' }, group); traffic.textContent = String(trafficValue.label || trafficValue.value || ''); } }
     });
     renderFilters(); applyGraphFilters(); state.applyZoom(); return true;

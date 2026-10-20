@@ -28,6 +28,7 @@ configuration parser, route evaluator or alternate analysis engine is involved.
 - Clicking a device opens expandable identity, configuration, selected-path and
   evidence sections. Clicking a link opens its endpoint ports, provenance and
   snapshot-qualified source links. Evidence opens the shared physical-line drawer.
+  The canvas starts at full width; Hide details closes the inspector again.
 - Search, exact facet filters, layer toggles, focus, fit, wheel zoom and background
   drag change only the current view. Filtered nodes/links are hidden without
   recomputing or rewriting saved analysis. Clearing filters restores the map.
@@ -47,6 +48,8 @@ configuration parser, route evaluator or alternate analysis engine is involved.
 Facet counts refer to matching devices, not interface counts. Missing dimensions
 are shown as unavailable. Choosing several filters intersects their device matches;
 filtering does not establish policy or connectivity between those groups.
+Each device matches values from all of its projected interfaces, including
+secondary interface subnets.
 
 The current analysis limits remain 16 snapshot-pinned devices and 32 declared
 links, plus up to two query endpoint symbols in the view. This redesign does not

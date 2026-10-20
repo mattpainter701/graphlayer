@@ -132,7 +132,7 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   await expectEvidenceReadableAndOwned(page, page.locator('#exploration-forward-hops'));
   await expectEvidenceReadableAndOwned(page, page.locator('#exploration-return-hops'));
 
-  const northNode = page.getByRole('button', { name: /^north, operator supplied topology node/i });
+  const northNode = page.getByRole('button', { name: /^north,.*firewall,/i });
   await northNode.focus();
   await northNode.press('Enter');
   await expect(page.locator('#topology-inspector')).toContainText('north');
@@ -148,7 +148,7 @@ test('explores both firewall branches, asymmetric and symmetric returns, source 
   await expect(page.locator('#exploration-return-status')).toContainText(/session established/i);
   await expect(page.locator('#exploration-forward-hops')).toContainText('south');
   await expect(page.locator('#exploration-return-hops')).toContainText('south');
-  await expect(page.locator('#exploration-topology g.topology-node[data-node-id="north"]')).toHaveAttribute('aria-label', /not in selected branch/i);
+  await expect(page.locator('#exploration-topology g.topology-node[data-node-id="north"]')).toHaveAttribute('aria-label', /no selected path overlay/i);
 
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#exploration-export').click()]);
   expect(download.suggestedFilename()).toMatch(/^network-exploration-.*\.json$/i);

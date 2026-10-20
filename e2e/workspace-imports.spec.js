@@ -128,6 +128,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   expect(draftSnapshot).toBeTruthy();
   expect(draftSnapshot.path.interfaces.length).toBeGreaterThan(0);
   expect(draftSnapshot.path.routes.length).toBeGreaterThan(0);
+  await page.locator('#topology-device-list .topology-device[data-node-id="device1"]').click();
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshot.hostname);
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshotId);
   for (const group of ['topology', 'configuration', 'path', 'evidence']) {
