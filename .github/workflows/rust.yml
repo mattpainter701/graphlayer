@@ -13,12 +13,33 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: |
+          if cargo fmt --all -- --check; then exit 0; fi
+          cargo fmt --all
+          git diff --binary > "$RUNNER_TEMP/rustfmt.patch"
+          exit 1
+      - name: Upload formatting correction for review
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-correction
+          path: ${{ runner.temp }}/rustfmt.patch
+          if-no-files-found: ignore
       - name: Check Rust engine
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test Rust engine
         run: cargo test --locked --workspace
       - uses: ./.github/actions/build-rust-engine
+
+      - name: Measure bounded 1000-host layer projections
+        env:
+          GRAPHLAYER_SCALE_ARTIFACT_DIR: ${{ runner.temp }}/topology-scale
+        run: cargo test --locked --release -p graphlayer-engine --test topology_layers_scale -- --nocapture
+      - name: Upload synthetic scale corpus and measurements
+        uses: actions/upload-artifact@v4
+        with:
+          name: topology-scale-corpus
+          path: ${{ runner.temp }}/topology-scale/
 
   rust-boundary:
     runs-on: ubuntu-latest

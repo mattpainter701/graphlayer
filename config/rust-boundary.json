@@ -358,8 +358,8 @@
       "path": "platform/investigation/server.go",
       "category": "transport_adapter",
       "owner": "GraphLayer topology workspace maintainers",
-      "reason": "Existing local HTTP/storage compatibility layer resolves immutable snapshot and saved-result references and calls Rust project_topology; no topology inference, parser, routing or graph construction is implemented in Go.",
-      "sha256": "02f7ddcfecc56fe5f3805f9bdf221d2901854a5c1d3f58c5160ae6e2239c81eb",
+      "reason": "Existing local HTTP/storage compatibility layer resolves immutable snapshot and saved-result references and transports Rust project_topology and topology.layer_sample/project_layers requests. Rust owns auxiliary validation, aggregation, evidence and L2 traversal; no network decisions are implemented in Go.",
+      "sha256": "27843988525d43e5fce2a0d49d263dba2e11bca7abc45a5150a9a5f9ddfa2316",
       "expires": "2027-01-15"
     }
   ],

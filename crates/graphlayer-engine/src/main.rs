@@ -181,6 +181,8 @@ fn known_operation(operation: &str) -> Option<&'static str> {
         "evaluate_network",
         "explore_network",
         "project_topology",
+        "topology.layer_sample",
+        "topology.project_layers",
         "netbox.normalize",
         "netbox.collect",
         "netbox.ping",
