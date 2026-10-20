@@ -36,6 +36,15 @@ async function exportAnalysis(page) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+async function fetchStoredExploration(page, id) {
+  const response = await page.evaluate(async (explorationId) => {
+    const result = await fetch(`/api/network-explorations/${encodeURIComponent(explorationId)}`);
+    if (!result.ok) throw new Error(`Saved exploration lookup failed: ${result.status}`);
+    return result.json();
+  }, id);
+  return response.exploration;
+}
+
 async function boxesDoNotOverlap(page) {
   return page.locator('#exploration-topology').evaluate((svg) => {
     const matrixBox = (element) => {
@@ -79,6 +88,8 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
   await page.setViewportSize({ width: 1280, height: 900 });
   await importBranchSample(page);
   const exploration = await exploreWithRealWorker(page);
+  const storedExploration = await fetchStoredExploration(page, exploration.id);
+  expect(storedExploration).toEqual(exploration);
   const result = exploration.result;
   const branches = result.branches;
   const asymmetric = branches.flatMap((branch, branchIndex) => branch.returns.map((candidate, returnIndex) => ({ branchIndex, returnIndex, candidate }))).find((entry) => entry.candidate.asymmetric);
@@ -189,6 +200,7 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
   await expect(canvas.locator(`.topology-node[data-node-id="${inspectorNode}"]`)).toHaveAttribute('data-role', projectedNode.role);
   await expect(canvas.locator(`.topology-node[data-node-id="${inspectorNode}"]`)).toHaveAttribute('data-role-source', projectedNode.source);
   expect(await exportAnalysis(page)).toEqual(exportedBeforeFilters);
+  expect(await fetchStoredExploration(page, exploration.id)).toEqual(storedExploration);
   for (const group of ['topology', 'configuration', 'path', 'evidence']) {
     const section = page.locator(`#topology-inspector details[data-group="${group}"]`);
     await section.locator('summary').click();
@@ -253,10 +265,12 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
 
   await page.reload();
   await page.goto('/#network-path');
-  await expect(page.locator('#exploration-history-list .exploration-history-open').first()).toBeVisible();
-  await page.locator('#exploration-history-list .exploration-history-open').first().click();
+  const savedExploration = page.locator(`#exploration-history-list .exploration-history-open[data-exploration-id="${exploration.id}"]`);
+  await expect(savedExploration).toBeVisible();
+  await savedExploration.click();
   await expect(page.locator('#exploration-result')).toBeVisible();
   expect(await exportAnalysis(page)).toEqual(exploration);
+  expect(await fetchStoredExploration(page, exploration.id)).toEqual(storedExploration);
 
   await fs.mkdir(screenshotRoot, { recursive: true });
   await page.screenshot({ path: path.join(screenshotRoot, 'topology-advanced-desktop.png'), fullPage: true });
