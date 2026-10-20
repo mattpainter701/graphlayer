@@ -217,6 +217,11 @@ test('network map scales through real Rust projections, evidence, tracing, and e
   await page.locator('#tl-trace-status .tl-hop-source').first().click();
   await expect(page.locator('#tl-source-body')).toContainText('host-0001');
   await expect(page.locator('#tl-svg .tl-on-path')).toHaveCount(5);
+  await expect(page.locator('#tl-svg .tl-node')).toHaveCount(5);
+  await page.locator('#tl-focus-path').click();
+  await expect.poll(() => nodeCount(page)).toBeGreaterThan(5);
+  await page.locator('#tl-focus-path').click();
+  await expect(page.locator('#tl-svg .tl-node')).toHaveCount(5);
   await page.locator('#tl-graph').screenshot({ path: path.join(screenshotRoot, 'topology-layers-l2-path.png') });
   await page.locator('.tl-trace').screenshot({ path: path.join(screenshotRoot, 'topology-layers-l2-ports.png') });
 
