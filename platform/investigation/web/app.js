@@ -875,15 +875,9 @@
   }
 
   function renderDeclaredTopology() {
-    const request = networkPayload();
-    notifyTopology(request);
-    const submitted = networkRequestJSON(request);
-    const missing = [...new Set((request.nodes || []).map((node) => node.snapshot_id).filter((id) => id && !state.networkSnapshots.has(id)))];
-    if (missing.length) Promise.all(missing.map(networkSnapshot)).then(() => {
-      if (!state.networkExploration && !state.networkInvestigation && networkRequestJSON(networkPayload()) === submitted) {
-        notifyTopology(request);
-      }
-    }).catch((error) => { if (networkRequestJSON(networkPayload()) === submitted) showToast(error.message, 'error'); });
+    // notifyTopology loads the snapshot details before projecting, and discards
+    // stale responses. A second render here would cancel that same request.
+    notifyTopology(networkPayload());
   }
 
   async function openTopologyEvidence(detail) {

@@ -118,6 +118,7 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   await expect(page.locator('.network-node-row')).toHaveCount(4);
   await expect(page.locator('#topology-stage')).toBeVisible();
   await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(4);
+  await expect(page.locator('#exploration-topology .topology-node[data-role="firewall"]')).toHaveCount(4);
   await expect(page.locator('#topology-caption')).toContainText(/Declared topology draft.*analysis not run/i);
   expect(await page.locator('.network-snapshot-id').evaluateAll((inputs) => inputs.map((input) => input.value))).toEqual(set.members.map((member) => member.snapshot_id));
   await expect(page.locator('.network-link-row')).toHaveCount(0);
@@ -129,6 +130,12 @@ test('onboards a site and mixed-vendor baseline, investigates pinned members, an
   expect(draftSnapshot.path.routes.length).toBeGreaterThan(0);
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshot.hostname);
   await expect(page.locator('#topology-inspector')).toContainText(draftSnapshotId);
+  for (const group of ['topology', 'configuration', 'path', 'evidence']) {
+    const section = page.locator(`#topology-inspector details[data-group="${group}"]`);
+    await expect(section).toBeVisible();
+    await section.locator('summary').click();
+    await expect(section).toHaveAttribute('open', '');
+  }
   await expect(page.locator('#topology-inspector')).toContainText(`Interfaces ${draftSnapshot.path.interfaces.length} · routes ${draftSnapshot.path.routes.length} · ASA NAT rules ${draftSnapshot.path.nat_rules.length}`);
   const draftEvidence = page.locator('#topology-inspector .topology-source-button').first();
   await expect(draftEvidence).toBeVisible();

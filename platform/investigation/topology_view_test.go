@@ -105,6 +105,9 @@ func TestTopologyViewRejectsScopeInjectionAndUnavailableWorkers(t *testing.T) {
 	browser, store := newTestBrowser(t)
 	request := importExplorationSample(t, store)
 	view := topologyViewRequest{Request: request}
+	duplicate := request
+	duplicate.Nodes = append([]NetworkNodeRef(nil), request.Nodes...)
+	duplicate.Nodes[1].SnapshotID = duplicate.Nodes[0].SnapshotID
 	if status, _ := topologyResponse(t, browser, view, false); status != http.StatusForbidden {
 		t.Fatalf("unverified projection status=%d", status)
 	}
@@ -122,6 +125,7 @@ func TestTopologyViewRejectsScopeInjectionAndUnavailableWorkers(t *testing.T) {
 		"invalid annotation":       topologyViewRequest{Request: request, Roles: map[string]string{"edge": "database"}},
 		"foreign annotation":       topologyViewRequest{Request: request, Roles: map[string]string{"foreign": "host"}},
 		"negative branch":          topologyViewRequest{Request: request, BranchIndex: -1},
+		"duplicate snapshot":       topologyViewRequest{Request: duplicate},
 		"two identities":           topologyViewRequest{Request: request, ExplorationID: strings.Repeat("a", 64), InvestigationID: strings.Repeat("b", 64)},
 	} {
 		t.Run(name, func(t *testing.T) {

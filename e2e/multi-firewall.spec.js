@@ -67,6 +67,12 @@ test('models the two-firewall NAT round trip, opens hop evidence, exports, and r
   const coreSnapshot = coreSnapshotResponse.snapshot;
   expect(coreSnapshot).toBeTruthy();
   await page.locator('#topology-device-list .topology-device[data-node-id="core"]').click();
+  for (const group of ['topology', 'configuration', 'path', 'evidence']) {
+    const section = page.locator(`#topology-inspector details[data-group="${group}"]`);
+    await expect(section).toBeVisible();
+    await section.locator('summary').click();
+    await expect(section).toHaveAttribute('open', '');
+  }
   await expect(page.locator('#topology-inspector')).toContainText(coreSnapshot.hostname);
   await expect(page.locator('#topology-inspector')).toContainText(coreSnapshotId);
   await expect(page.locator('#topology-inspector')).toContainText(/selected path context/i);

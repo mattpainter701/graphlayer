@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {} };
+  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, inspectorCollapsed: true, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {} };
   const $ = (id) => document.getElementById(id);
   const node = (tag, className, text) => { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = String(text); return item; };
   const safeText = (value, fallback = 'Unavailable') => value === undefined || value === null || value === '' ? fallback : String(value);
@@ -24,7 +24,8 @@
     const fit = toolButton('topology-fit', 'Fit', 'Fit topology to view'); const zoomOut = toolButton('topology-zoom-out', '−', 'Zoom out'); const zoom = node('output', 'topology-zoom', '100%'); zoom.id = 'topology-zoom'; zoom.setAttribute('aria-live', 'polite'); const zoomIn = toolButton('topology-zoom-in', '+', 'Zoom in'); const focus = toolButton('topology-focus', 'Focus selected', 'Focus the selected device');
     const layer = (id, label, checked) => { const wrap = node('label', 'topology-layer'); const input = node('input'); input.type = 'checkbox'; input.id = id; input.checked = checked; wrap.append(input, document.createTextNode(label)); return { wrap, input }; };
     const forward = layer('topology-show-forward', 'Forward', true); const returned = layer('topology-show-return', 'Return', true);
-    const controls = node('div', 'topology-toolbar-actions'); controls.append(fit, zoomOut, zoom, zoomIn, focus, forward.wrap, returned.wrap);
+    const inspectorToggle = toolButton('topology-inspector-toggle', 'Details', 'Show selected device details'); inspectorToggle.setAttribute('aria-controls','topology-inspector'); inspectorToggle.setAttribute('aria-expanded','false');
+    const controls = node('div', 'topology-toolbar-actions'); controls.append(fit, zoomOut, zoom, zoomIn, focus, inspectorToggle, forward.wrap, returned.wrap);
     const filters = node('div', 'topology-filter-bar'); filters.id = 'topology-filters'; filters.setAttribute('aria-label', 'Topology filters');
     const resultControls = node('div','topology-result-controls'); resultControls.id = 'topology-result-controls'; resultControls.hidden = true;
     const resultSelector = (id,label,sourceId) => { const wrap = node('label','topology-result-select-label',label); const select = node('select','topology-result-select'); select.id = id; select.setAttribute('aria-label',label); wrap.append(select); select.addEventListener('change',() => { const source = $(sourceId); if (!source || source.value === select.value) return; source.value = select.value; source.dispatchEvent(new Event('change',{bubbles:true})); }); return {wrap,select}; };
@@ -32,7 +33,7 @@
     const traceBadge = node('div','topology-trace-badge'); traceBadge.id = 'topology-trace-badge'; traceBadge.hidden = true; traceBadge.setAttribute('role','status');
     toolbar.append(searchWrap, controls);
     const deviceList = node('div', 'topology-device-list'); deviceList.id = 'topology-device-list'; deviceList.setAttribute('role', 'group'); deviceList.setAttribute('aria-label', 'Device search results');
-    const body = node('div', 'topology-workbench-body'); const stage = node('div', 'topology-stage'); stage.id = 'topology-stage'; stage.tabIndex = 0; stage.setAttribute('role', 'region'); stage.setAttribute('aria-label', 'Interactive network topology. Use the device list to select a device.');
+    const body = node('div', 'topology-workbench-body topology-inspector-collapsed'); const stage = node('div', 'topology-stage'); stage.id = 'topology-stage'; stage.tabIndex = 0; stage.setAttribute('role', 'region'); stage.setAttribute('aria-label', 'Interactive network topology. Use the device list to select a device.');
     const caption = node('div', 'topology-stage-caption', 'Declared topology draft · analysis not run · runtime observations unavailable'); caption.id = 'topology-caption'; caption.setAttribute('aria-live', 'polite');
     const canvas = node('div', 'topology-canvas'); canvas.append(state.svg); stage.append(canvas, caption);
     const inspector = node('aside', 'topology-inspector'); inspector.id = 'topology-inspector'; inspector.setAttribute('aria-label', 'Selected device details'); inspector.append(node('div', 'topology-inspector-empty', 'Select a device to inspect its saved configuration and selected path context.'));
@@ -41,14 +42,15 @@
     const trafficStatus = node('span', 'topology-traffic-status', 'Traffic observations unavailable'); trafficStatus.dataset.available = 'false'; trafficStatus.setAttribute('aria-live', 'polite'); help.append(document.createTextNode(' '), trafficStatus);
     state.list.replaceChildren();
     state.root.append(toolbar, resultControls, traceBadge, filters, deviceList, body, help);
-    state.deviceList = deviceList; state.stage = stage; state.inspector = inspector; state.zoomOutput = zoom; state.search = search; state.caption = caption; state.forwardToggle = forward.input; state.returnToggle = returned.input; state.toolbar = toolbar; state.filtersHost = filters; state.resultControls = resultControls; state.branchSelect = branchControl.select; state.returnSelect = returnControl.select; state.resultStatus = resultStatus; state.traceBadge = traceBadge;
+    state.deviceList = deviceList; state.stage = stage; state.inspector = inspector; state.inspectorToggle = inspectorToggle; state.body = body; state.zoomOutput = zoom; state.search = search; state.caption = caption; state.forwardToggle = forward.input; state.returnToggle = returned.input; state.toolbar = toolbar; state.filtersHost = filters; state.resultControls = resultControls; state.branchSelect = branchControl.select; state.returnSelect = returnControl.select; state.resultStatus = resultStatus; state.traceBadge = traceBadge;
+    inspectorToggle.addEventListener('click', () => setInspectorCollapsed(!state.inspectorCollapsed));
     const applyZoom = () => { if (!state.base) return; const width = state.base.width / state.scale; const height = state.base.height / state.scale; state.svg.setAttribute('viewBox', `${state.x} ${state.y} ${width} ${height}`); state.zoomOutput.value = `${Math.round(state.scale * 100)}%`; state.zoomOutput.textContent = `${Math.round(state.scale * 100)}%`; };
     state.applyZoom = applyZoom;
     const svgPoint = (clientX, clientY) => { const matrix = state.svg.getScreenCTM(); if (!matrix) return null; const point = state.svg.createSVGPoint(); point.x = clientX; point.y = clientY; return point.matrixTransform(matrix.inverse()); };
     const setScale = (value, clientX, clientY) => { const next = Math.max(.25, Math.min(4, value)); const anchor = clientX === undefined ? null : svgPoint(clientX, clientY); if (anchor && state.base) { const px = (anchor.x - state.x) / (state.base.width / state.scale); const py = (anchor.y - state.y) / (state.base.height / state.scale); state.scale = next; state.x = anchor.x - px * state.base.width / next; state.y = anchor.y - py * state.base.height / next; } else state.scale = next; applyZoom(); };
     state.fit = () => { if (!state.base) return; state.scale = 1; state.x = state.base.x; state.y = state.base.y; applyZoom(); };
     fit.addEventListener('click', () => state.fit()); zoomIn.addEventListener('click', () => setScale(state.scale * 1.2)); zoomOut.addEventListener('click', () => setScale(state.scale / 1.2));
-    focus.addEventListener('click', () => { if (state.selected) selectNode(state.selected, true); else state.search.focus(); });
+    focus.addEventListener('click', () => { if (state.selected) selectNode(state.selected, true, true); else state.search.focus(); });
     search.addEventListener('input', renderDeviceList);
     forward.input.addEventListener('change', () => { state.svg.classList.toggle('topology-hide-forward', !forward.input.checked); });
     returned.input.addEventListener('change', () => { state.svg.classList.toggle('topology-hide-return', !returned.input.checked); });
@@ -57,8 +59,8 @@
     stage.addEventListener('pointermove', (event) => { if (!state.dragging || !state.pointers.has(event.pointerId)) return; const previous = state.pointers.get(event.pointerId); const oldPoint = svgPoint(previous.x, previous.y); const nextPoint = svgPoint(event.clientX, event.clientY); state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY }); if (Math.abs(event.clientX - previous.x) + Math.abs(event.clientY - previous.y) > 1) state.moved = true; if (state.base && oldPoint && nextPoint) { state.x -= nextPoint.x - oldPoint.x; state.y -= nextPoint.y - oldPoint.y; applyZoom(); } });
     const endPan = (event) => { state.pointers.delete(event.pointerId); if (!state.pointers.size) { state.dragging = false; stage.classList.remove('is-panning'); setTimeout(() => { state.moved = false; }, 0); } };
     stage.addEventListener('pointerup', endPan); stage.addEventListener('pointercancel', endPan);
-    state.svg.addEventListener('click', (event) => { if (state.moved) { event.preventDefault(); event.stopImmediatePropagation(); return; } const link = event.target.closest('.topology-link'); if (link) { event.preventDefault(); event.stopImmediatePropagation(); selectLink(Number(link.dataset.linkIndex)); return; } const target = event.target.closest('.topology-node'); if (!target) return; event.preventDefault(); event.stopImmediatePropagation(); selectNode(target.dataset.nodeId); }, true);
-    state.svg.addEventListener('keydown', (event) => { if (!['Enter', ' '].includes(event.key)) return; const link = event.target.closest('.topology-link'); if (link) { event.preventDefault(); event.stopImmediatePropagation(); selectLink(Number(link.dataset.linkIndex)); return; } const target = event.target.closest('.topology-node'); if (!target) return; event.preventDefault(); event.stopImmediatePropagation(); selectNode(target.dataset.nodeId); }, true);
+    state.svg.addEventListener('click', (event) => { if (state.moved) { event.preventDefault(); event.stopImmediatePropagation(); return; } const link = event.target.closest('.topology-link'); if (link) { event.preventDefault(); event.stopImmediatePropagation(); selectLink(Number(link.dataset.linkIndex)); return; } const target = event.target.closest('.topology-node'); if (!target) return; event.preventDefault(); event.stopImmediatePropagation(); selectNode(target.dataset.nodeId, false, true); }, true);
+    state.svg.addEventListener('keydown', (event) => { if (!['Enter', ' '].includes(event.key)) return; const link = event.target.closest('.topology-link'); if (link) { event.preventDefault(); event.stopImmediatePropagation(); selectLink(Number(link.dataset.linkIndex)); return; } const target = event.target.closest('.topology-node'); if (!target) return; event.preventDefault(); event.stopImmediatePropagation(); selectNode(target.dataset.nodeId, false, true); }, true);
     state.filtersHost = filters; state.trafficStatus = trafficStatus;
     window.addEventListener('resize', () => { if (state.base) applyZoom(); });
     state.svg.classList.toggle('topology-hide-forward', !forward.input.checked); state.svg.classList.toggle('topology-hide-return', !returned.input.checked);
@@ -106,6 +108,12 @@
   }
   function getProjectedNode(requestNode) { const list = getTopology().nodes || []; return list.find((item) => (item.node_id || item.id) === requestNode.node_id) || {}; }
   function projectedValue(item, key) { const projected = getProjectedNode(item); const snapshot = getSnapshot(item.node_id) || {}; const presentation = projected.presentation || {}; const inventory = projected.inventory || {}; return projected[key] ?? presentation[key] ?? inventory[key] ?? snapshot[key] ?? null; }
+  function projectedFacetValues(item, key) {
+    const projected = getProjectedNode(item); const values = [];
+    const add = (value) => { (Array.isArray(value) ? value : value === undefined || value === null || value === '' ? [] : [value]).forEach((entry) => { const text = String(entry); if (text && !values.includes(text)) values.push(text); }); };
+    add(projectedValue(item,key)); (projected.interfaces || []).forEach((iface) => add(iface && iface[key]));
+    return values;
+  }
   const svgElement = (tag, attrs = {}, parent) => { const element = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.entries(attrs).forEach(([key, value]) => { if (value !== undefined && value !== null) element.setAttribute(key, String(value)); }); if (parent) parent.append(element); return element; };
   function deviceIcon(kind, parent) {
     const icon = svgElement('g', { class: 'topology-device-icon', 'data-icon': kind, 'aria-hidden': 'true', transform: 'translate(0 0)' }, parent);
@@ -130,13 +138,14 @@
     const links = projectedLinks.filter((item) => item && item.a && item.b && item.a.node_id && item.b.node_id);
     const layout = nodes.map((item, index) => { const point = getProjectedNode(item).layout || {}; return { item, column: Number.isFinite(Number(point.column)) ? Number(point.column) : 0, row: Number.isFinite(Number(point.row)) ? Number(point.row) : index }; });
     const degrees = new Map(); links.forEach((link) => [link.a.node_id,link.b.node_id].forEach((id) => degrees.set(id,(degrees.get(id) || 0) + 1)));
-    const maxDegree = Math.max(1,...degrees.values()); const cardW = 198; const cardH = Math.max(102,32 + maxDegree * 22); const gapX = Math.max(150,148 * 2 + 32,cardH + 56 - cardW); const gapY = 78, marginX = 72, marginY = 74;
+    const maxDegree = Math.max(1,...degrees.values()); const cardW = 172; const cardH = Math.max(96,30 + maxDegree * 20); const gapY = 50, marginX = 36, marginY = 34;
     const maxColumns = Math.max(1, ...layout.map((entry) => entry.column + 1)); const maxRows = Math.max(1, ...layout.map((entry) => entry.row + 1));
+    const availableWidth = Math.max(480, (state.stage && state.stage.clientWidth || 960) - 24); const desiredPitch = maxColumns > 1 ? (availableWidth - marginX * 2 - cardW) / (maxColumns - 1) : cardW + 120; const gapX = Math.max(72, Math.min(176, desiredPitch - cardW));
     const width = Math.max(480, marginX * 2 + cardW + (maxColumns - 1) * (cardW + gapX) + 48);
     const height = Math.max(280, marginY * 2 + cardH + (maxRows - 1) * (cardH + gapY));
     const geometry = layout.map(({ item, column, row }) => { const anchorX = marginX + column * (cardW + gapX) + cardW / 2; const anchorY = marginY + row * (cardH + gapY) + cardH / 2; return { nodeId: item.node_id, anchorX, anchorY, x: anchorX, y: anchorY }; });
     if (geometry.length) {
-      const simulation = d3.forceSimulation(geometry).force('x', d3.forceX((entry) => entry.anchorX).strength(.92)).force('y', d3.forceY((entry) => entry.anchorY).strength(.92)).force('collision', d3.forceCollide(cardH / 2 + 28).strength(1).iterations(3)).stop();
+      const simulation = d3.forceSimulation(geometry).force('x', d3.forceX((entry) => entry.anchorX).strength(.92)).force('y', d3.forceY((entry) => entry.anchorY).strength(.92)).force('collision', d3.forceCollide(cardH / 2 + 14).strength(1).iterations(3)).stop();
       for (let tick = 0; tick < 90; tick += 1) simulation.tick();
     }
     const positions = new Map(geometry.map((entry) => [entry.nodeId, { x: entry.x - cardW / 2, y: entry.y - cardH / 2 }]));
@@ -158,8 +167,8 @@
       const group = svgElement('g', { class: `topology-link${index === state.selectedLink ? ' topology-link-selected' : ''}`, 'data-link-index': index, 'data-provenance': link.provenance || 'declared_topology', 'data-synthetic': String(Boolean(link.synthetic)), tabindex: '0', role: 'button', 'aria-pressed': String(index === state.selectedLink), 'aria-label': `Link ${link.a.node_id} ${link.a.interface || 'port unavailable'} to ${link.b.node_id} ${link.b.interface || 'port unavailable'}` }, linkLayer); linkIndex.set(link, { path, reversePath, group, index });
       svgElement('path', { d: path, class: 'topology-link-line' }, group);
       const title = svgElement('title', {}, group); title.textContent = `${link.a.node_id} · ${link.a.interface || 'port unavailable'} ↔ ${link.b.node_id} · ${link.b.interface || 'port unavailable'}`;
-      const portLabel = (x, y, label, side) => { const text = label || 'port unavailable'; const width = Math.min(148, Math.max(42, text.length * 6.2 + 14)); const lx = side < 0 ? x - width - 8 : x + 8; const ly = y - 9; const pill = svgElement('g', { class: 'topology-port-label' }, group); svgElement('rect', { x: lx, y: ly, width, height: 18, rx: 6 }, pill); const t = svgElement('text', { x: lx + width / 2, y: ly + 12 }, pill); t.textContent = text.length > 21 ? `${text.slice(0,18)}…` : text; };
-      portLabel(sx, sy, link.a.interface, sameColumn || direction > 0 ? 1 : -1); portLabel(ex, ey, link.b.interface, sameColumn || direction < 0 ? 1 : -1);
+      const portLabel = (x, y, label, side, lane) => { const text = label || 'port unavailable'; const width = Math.min(98, Math.max(42, text.length * 5.1 + 12)); const lx = side < 0 ? x - width - 7 : x + 7; const ly = y - 9 + lane * 10; const pill = svgElement('g', { class: 'topology-port-label' }, group); svgElement('rect', { x: lx, y: ly, width, height: 18, rx: 6 }, pill); const t = svgElement('text', { x: lx + width / 2, y: ly + 12 }, pill); t.textContent = text.length > 15 ? `${text.slice(0,12)}…` : text; };
+      portLabel(sx, sy, link.a.interface, sameColumn || direction > 0 ? 1 : -1, -1); portLabel(ex, ey, link.b.interface, sameColumn || direction < 0 ? 1 : -1, 1);
     });
     function overlay(hops, direction, status) {
       (hops || []).forEach((hop) => { if (!hop.link || !hop.link.a || !hop.link.b) return; const key = (edge) => [edge.a,edge.b].map((endpoint) => `${endpoint.node_id}\u0000${String(endpoint.interface || '').toLowerCase()}`).sort().join('\u0001'); const hopKey = key(hop.link); const match = links.find((link) => key(link) === hopKey); const metadata = match && linkIndex.get(match); if (!metadata) return; const value = String(status || hop.path && hop.path.disposition || 'unknown').toLowerCase(); const marker = value === 'blocked' ? 'blocked' : ['unknown','indeterminate','unresolved','not_evaluated'].includes(value) ? 'unknown' : direction; const d = hop.node_id === match.b.node_id ? metadata.reversePath : metadata.path; svgElement('path', { d, class: `topology-edge topology-${direction} topology-state-${value.replace(/[^a-z0-9-]/g, '-')}`, 'marker-end': `url(#topology-arrow-${marker})` }, overlayLayer); });
@@ -172,7 +181,8 @@
     const hits = new Map(); [[forward,'forward'],[returned,'return']].forEach(([hops,direction]) => (hops || []).forEach((hop,index) => { if (!hits.has(hop.node_id)) hits.set(hop.node_id,[]); hits.get(hop.node_id).push({hop,index,direction}); }));
     nodes.forEach((item) => {
       const pos = positions.get(item.node_id); if (!pos) return; const projected = getProjectedNode(item); const annotationKey = roleAnnotationKey(item.node_id); const override = state.roleAnnotations && state.roleAnnotations[annotationKey]; const role = normalizedRole(override || projected.icon || projected.role || projected.device_role); const icon = override ? role : normalizedRole(projected.icon || role); const roleSource = override ? 'display_annotation' : projected.role_source || 'unspecified'; const found = hits.get(item.node_id) || []; const directions = [...new Set(found.map((entry) => entry.direction))];
-      const group = svgElement('g', { class: `topology-node topology-${role} topology-${icon} ${directions.map((value) => `topology-${value}`).join(' ')}`, 'data-node-id': item.node_id, 'data-role': role, 'data-icon': icon, 'data-role-source': roleSource, 'data-zone': Array.isArray(projected.zone) ? projected.zone.join(',') : projected.zone || '', 'data-subnet': Array.isArray(projected.subnet) ? projected.subnet.join(',') : projected.subnet || '', 'data-vrf': Array.isArray(projected.vrf) ? projected.vrf.join(',') : projected.vrf || '', 'data-vdom': Array.isArray(projected.vdom) ? projected.vdom.join(',') : projected.vdom || '', tabindex: '0', role: 'button', 'aria-pressed': String(state.selected === item.node_id), 'aria-label': `${item.node_id}, ${role === 'device' ? 'device type unspecified' : role}${roleSource === 'display_annotation' ? ', display annotation' : ''}${directions.length ? `, selected ${directions.join(' and ')} path` : ', no selected path overlay'}` }, nodeLayer);
+      const facetData = Object.fromEntries(['zone','subnet','vrf','vdom'].map((field) => [field,projectedFacetValues(item,field).join(',')]));
+      const group = svgElement('g', { class: `topology-node topology-${role} topology-${icon} ${directions.map((value) => `topology-${value}`).join(' ')}`, 'data-node-id': item.node_id, 'data-role': role, 'data-icon': icon, 'data-role-source': roleSource, 'data-zone': facetData.zone, 'data-subnet': facetData.subnet, 'data-vrf': facetData.vrf, 'data-vdom': facetData.vdom, tabindex: '0', role: 'button', 'aria-pressed': String(state.selected === item.node_id), 'aria-label': `${item.node_id}, ${role === 'device' ? 'device type unspecified' : role}${roleSource === 'display_annotation' ? ', display annotation' : ''}${directions.length ? `, selected ${directions.join(' and ')} path` : ', no selected path overlay'}` }, nodeLayer);
       const fill = role === 'firewall' ? '#fff7eb' : role === 'router' ? '#eef6ff' : role === 'switch' ? '#eef9f5' : role === 'server' ? '#f4f1ff' : role === 'host' ? '#f4f7fa' : '#f2f6f8';
       svgElement('rect', { class: 'topology-node-card', x: pos.x, y: pos.y, width: cardW, height: cardH, rx: 14, fill }, group);
       const iconWrap = svgElement('g', { transform: `translate(${pos.x + 16} ${pos.y + 17})` }, group); deviceIcon(icon, iconWrap);
@@ -187,7 +197,7 @@
     if (!state.filtersHost) return; const topology = getTopology(); const facets = topology.facets || {}; const fields = ['zone','subnet','vrf','vdom']; state.filtersHost.replaceChildren();
     fields.forEach((field) => { const facet = facets[field] || {}; const values = Array.isArray(facet) ? facet : facet.values || []; if (!values.length || facet.available === false) return; const label = node('label','topology-filter-label',field.toUpperCase()); const select = node('select','topology-filter'); select.dataset.filter = field; select.setAttribute('aria-label',`Filter by ${field}`); const all = node('option','',`All ${field}s`); all.value = ''; select.append(all); values.forEach((entry) => { const value = typeof entry === 'object' ? entry.value : entry; if (value === undefined || value === null || value === '') return; const option = node('option','',typeof entry === 'object' ? `${value} (${entry.count})` : value); option.value = String(value); select.append(option); }); select.value = state.filters[field] || ''; select.addEventListener('change', () => { state.filters[field] = select.value; applyGraphFilters(); renderDeviceList(); }); label.append(select); state.filtersHost.append(label); });
   }
-  function matchesFacetFilters(item) { return Object.entries(state.filters).every(([field,value]) => { const fieldValue = projectedValue(item,field); return !value || (Array.isArray(fieldValue) ? fieldValue.map(String).includes(value) : String(fieldValue || '') === value); }); }
+  function matchesFacetFilters(item) { return Object.entries(state.filters).every(([field,value]) => !value || projectedFacetValues(item,field).includes(value)); }
   function applyGraphFilters() {
     if (!state.svg) return; const nodes = getNodes(); const visible = new Set();
     nodes.forEach((item) => { const match = matchesFacetFilters(item); const group = [...state.svg.querySelectorAll('.topology-node')].find((entry) => entry.dataset.nodeId === item.node_id); if (group) { group.classList.toggle('topology-filtered', !match); group.setAttribute('aria-hidden', String(!match)); group.setAttribute('tabindex', match ? '0' : '-1'); } if (match) visible.add(item.node_id); });
@@ -203,7 +213,7 @@
     const query = (state.search.value || '').trim().toLocaleLowerCase(); const nodes = getNodes().filter((item) => matchesFacetFilters(item) && deviceSearchText(item).includes(query));
     state.deviceList.replaceChildren(); state.deviceList.setAttribute('aria-label', query ? 'Matching devices' : 'Devices');
     if (!nodes.length) state.deviceList.append(node('span', 'topology-no-results', query ? 'No matching devices' : 'No devices'));
-    nodes.forEach((item) => { const snapshot = getSnapshot(item.node_id); const button = node('button', 'topology-device', item.node_id); button.type = 'button'; button.dataset.nodeId = item.node_id; button.setAttribute('aria-label', `${item.node_id}${snapshot && snapshot.hostname ? ` · ${snapshot.hostname}` : ''}${snapshot && snapshot.vendor ? ` · ${snapshot.vendor}` : ''}${snapshot && snapshot.context ? ` · ${snapshot.context}` : ''}`); button.setAttribute('aria-pressed', String(state.selected === item.node_id)); button.addEventListener('click', () => selectNode(item.node_id, true)); state.deviceList.append(button); });
+    nodes.forEach((item) => { const snapshot = getSnapshot(item.node_id); const button = node('button', 'topology-device', item.node_id); button.type = 'button'; button.dataset.nodeId = item.node_id; button.setAttribute('aria-label', `${item.node_id}${snapshot && snapshot.hostname ? ` · ${snapshot.hostname}` : ''}${snapshot && snapshot.vendor ? ` · ${snapshot.vendor}` : ''}${snapshot && snapshot.context ? ` · ${snapshot.context}` : ''}`); button.setAttribute('aria-pressed', String(state.selected === item.node_id)); button.addEventListener('click', () => selectNode(item.node_id, true, true)); state.deviceList.append(button); });
     state.svg.querySelectorAll('.topology-node').forEach((item) => { const match = nodes.some((candidate) => candidate.node_id === item.dataset.nodeId); item.classList.toggle('topology-search-dim', Boolean(query && !match)); item.classList.toggle('topology-search-match', Boolean(query && match)); });
   }
   function renderInspector(nodeId) {
@@ -252,6 +262,7 @@
   }
   function selectLink(index) {
     const link = (getTopology().links || getRequest().links || [])[index]; if (!link) return; state.selectedLink = index;
+    setInspectorCollapsed(false);
     state.svg.querySelectorAll('.topology-link').forEach((item) => { const selected = Number(item.dataset.linkIndex) === index; item.classList.toggle('topology-link-selected',selected); item.setAttribute('aria-pressed',String(selected)); }); state.svg.querySelectorAll('.topology-node').forEach((item) => { item.classList.remove('topology-selected'); item.setAttribute('aria-pressed','false'); });
     const panel = node('div','topology-inspector-content'); panel.dataset.inspectorKind = 'link'; const heading = node('div','topology-inspector-heading'); heading.append(node('div','topology-eyebrow','LINK INSPECTOR'),node('h4','',`${link.a.node_id} ↔ ${link.b.node_id}`)); panel.append(heading);
     const summary = node('dl','topology-summary'); const add = (label,value) => summary.append(node('dt','',label),node('dd','',safeText(value)));
@@ -263,8 +274,14 @@
     if (!evidence.querySelector('.topology-source-button')) evidence.append(node('p','topology-config-status','No link evidence references were supplied.'));
     const evidenceGroup = node('details','topology-inspector-group'); evidenceGroup.dataset.group = 'evidence'; evidenceGroup.open = true; evidenceGroup.append(node('summary','','Link evidence'),evidence); panel.append(evidenceGroup); state.inspector.replaceChildren(panel);
   }
-  function selectNode(nodeId, focus) {
+  function setInspectorCollapsed(collapsed) {
+    if (!state.body) return;
+    state.inspectorCollapsed = Boolean(collapsed); state.body.classList.toggle('topology-inspector-collapsed',state.inspectorCollapsed);
+    if (state.inspectorToggle) { state.inspectorToggle.setAttribute('aria-expanded',String(!state.inspectorCollapsed)); state.inspectorToggle.setAttribute('aria-label',state.inspectorCollapsed ? 'Show selected device details' : 'Hide selected device details'); state.inspectorToggle.textContent = state.inspectorCollapsed ? 'Details' : 'Hide details'; }
+  }
+  function selectNode(nodeId, focus, revealInspector) {
     if (!nodeId) return; state.selected = nodeId; state.selectedLink = -1; state.svg.querySelectorAll('.topology-link').forEach((item) => { item.classList.remove('topology-link-selected'); item.setAttribute('aria-pressed','false'); }); state.svg.querySelectorAll('.topology-node').forEach((item) => { const selected = item.dataset.nodeId === nodeId; item.classList.toggle('topology-selected', selected); item.setAttribute('aria-pressed', String(selected)); });
+    if (revealInspector) setInspectorCollapsed(false);
     state.deviceList.querySelectorAll('.topology-device').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.nodeId === nodeId)));
     renderInspector(nodeId); if (focus) focusNode(nodeId);
   }

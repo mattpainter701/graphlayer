@@ -83,6 +83,13 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
   expect(symmetric).toBeTruthy();
 
   const canvas = page.locator('#exploration-topology');
+  const compactBranch = page.locator('#topology-branch-select');
+  const compactReturn = page.locator('#topology-return-select');
+  await expect(compactBranch).toBeVisible();
+  await expect(compactReturn).toBeVisible();
+  const branchOptions = (locator) => locator.locator('option').evaluateAll((items) => items.map((item) => [item.value, item.textContent.trim()]));
+  expect(await branchOptions(compactBranch)).toEqual(await branchOptions(page.locator('#exploration-branch')));
+  expect(await branchOptions(compactReturn)).toEqual(await branchOptions(page.locator('#exploration-return')));
   await expect(canvas.locator('.topology-node')).toHaveCount(6);
   const initial = await canvas.locator('.topology-node').evaluateAll((nodes) => nodes.map((entry) => ({ id: entry.dataset.nodeId, role: entry.dataset.role, icon: entry.dataset.icon, source: entry.dataset.roleSource })));
   expect(initial.filter((item) => ['core', 'edge', 'north', 'south'].includes(item.id))).toHaveLength(4);
@@ -112,8 +119,10 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
     expect(options).toEqual(facetValues);
     for (const value of facetValues) {
       await filter.selectOption(value);
-      const visibility = await canvas.locator('.topology-node').evaluateAll((nodes, facetName) => nodes.map((item) => ({ value: item.dataset[facetName], filtered: item.classList.contains('topology-filtered'), hidden: item.getAttribute('aria-hidden') === 'true' })), name);
-      expect(visibility.filter((item) => !item.filtered).every((item) => (item.value || '').split(',').includes(value))).toBe(true);
+      const visibility = await canvas.locator('.topology-node').evaluateAll((nodes, facetName) => nodes.map((item) => ({ id: item.dataset.nodeId, value: item.dataset[facetName], filtered: item.classList.contains('topology-filtered'), hidden: item.getAttribute('aria-hidden') === 'true' })), name);
+      const expectedIDs = visibility.filter((item) => (item.value || '').split(',').includes(value)).map((item) => item.id).sort();
+      expect(expectedIDs.length).toBeGreaterThan(0);
+      expect(visibility.filter((item) => !item.filtered).map((item) => item.id).sort()).toEqual(expectedIDs);
       expect(visibility.filter((item) => item.filtered).every((item) => item.hidden)).toBe(true);
     }
     await filter.selectOption('');
@@ -131,13 +140,26 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
   await expect(page.locator('#topology-inspector .topology-inspector-content[data-inspector-kind="link"]')).toBeVisible();
   await expect(page.locator('#topology-inspector')).toContainText(/configured_link/i);
 
-  await page.locator('#exploration-branch').selectOption(String(asymmetric.branchIndex));
-  await page.locator('#exploration-return').selectOption(String(asymmetric.returnIndex));
-  expect(await canvas.locator('.topology-edge.topology-forward').count()).toBeGreaterThan(0);
-  expect(await canvas.locator('.topology-edge.topology-return').count()).toBeGreaterThan(0);
+  await compactBranch.selectOption(String(asymmetric.branchIndex));
+  await expect(page.locator('#exploration-branch')).toHaveValue(String(asymmetric.branchIndex));
+  await expect(page.locator('#exploration-return option')).toHaveCount(branches[asymmetric.branchIndex].returns.length);
+  await expect(compactReturn.locator('option')).toHaveCount(branches[asymmetric.branchIndex].returns.length);
+  await compactReturn.selectOption(String(asymmetric.returnIndex));
+  await expect(page.locator('#exploration-return')).toHaveValue(String(asymmetric.returnIndex));
+  const asymmetricForwardCount = branches[asymmetric.branchIndex].forward.hops.filter((hop) => hop.link).length;
+  const asymmetricReturnCount = asymmetric.candidate.direction.hops.filter((hop) => hop.link).length;
+  await expect(canvas.locator('.topology-edge.topology-forward')).toHaveCount(asymmetricForwardCount);
+  await expect(canvas.locator('.topology-edge.topology-return')).toHaveCount(asymmetricReturnCount);
   await expect(page.locator('#exploration-return-status')).toContainText(/asymmetric route/i);
-  await page.locator('#exploration-branch').selectOption(String(symmetric.branchIndex));
-  await page.locator('#exploration-return').selectOption(String(symmetric.returnIndex));
+  await expect(page.locator('#topology-result-status')).toContainText(/asymmetric route/i);
+  await compactBranch.selectOption(String(symmetric.branchIndex));
+  await expect(page.locator('#exploration-branch')).toHaveValue(String(symmetric.branchIndex));
+  await expect(page.locator('#exploration-return option')).toHaveCount(branches[symmetric.branchIndex].returns.length);
+  await expect(compactReturn.locator('option')).toHaveCount(branches[symmetric.branchIndex].returns.length);
+  await compactReturn.selectOption(String(symmetric.returnIndex));
+  await expect(page.locator('#exploration-return')).toHaveValue(String(symmetric.returnIndex));
+  await expect(canvas.locator('.topology-edge.topology-forward')).toHaveCount(branches[symmetric.branchIndex].forward.hops.filter((hop) => hop.link).length);
+  await expect(canvas.locator('.topology-edge.topology-return')).toHaveCount(symmetric.candidate.direction.hops.filter((hop) => hop.link).length);
   await expect(page.locator('#exploration-return-status')).not.toContainText(/asymmetric route/i);
 
   const inspectorNode = 'edge';
@@ -191,9 +213,20 @@ test('advanced topology filters and inspectors preserve real analysis, evidence 
   await page.locator('#topology-fit').click();
   await expect.poll(() => canvas.getAttribute('viewBox')).toBe(fitted);
   const stage = page.locator('#topology-stage');
+  await stage.scrollIntoViewIfNeeded();
   const stageBox = await stage.boundingBox();
-  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2);
-  await page.mouse.down(); await page.mouse.move(stageBox.x + stageBox.width / 2 + 28, stageBox.y + stageBox.height / 2 + 14); await page.mouse.up();
+  const panPoint = await stage.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const candidates = [[12, 12], [box.width - 12, 12], [12, box.height - 12], [box.width - 12, box.height - 12]];
+    for (const [x, y] of candidates) {
+      const hit = document.elementFromPoint(box.left + x, box.top + y);
+      if (hit && hit.closest('#topology-stage') === element && !hit.closest('.topology-node,.topology-link')) return { x: box.left + x, y: box.top + y };
+    }
+    return null;
+  });
+  expect(panPoint).toBeTruthy();
+  await page.mouse.move(panPoint.x, panPoint.y);
+  await page.mouse.down(); await page.mouse.move(panPoint.x + 28, panPoint.y + 14); await page.mouse.up();
   await expect.poll(() => canvas.getAttribute('viewBox')).not.toBe(fitted);
 
   await page.reload();

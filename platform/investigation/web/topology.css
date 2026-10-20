@@ -81,6 +81,22 @@
 .topology-traffic-status[data-available="false"] { color: #798999; }
 .topology-traffic-status[data-available="true"] { color: #527764; }
 
+/* Keep the topology canvas as the primary surface; open device details on demand. */
+.topology-workbench-body { grid-template-columns: minmax(0,1fr) minmax(270px,290px); min-height: clamp(430px,calc(100vh - 285px),600px); }
+.topology-workbench-body.topology-inspector-collapsed { grid-template-columns: minmax(0,1fr); }
+.topology-workbench-body.topology-inspector-collapsed .topology-inspector { display: none; }
+.topology-stage { min-height: 0; height: 100%; }
+.topology-canvas { min-height: 0; padding: 8px; }
+.topology-stage .exploration-topology { min-height: 0; height: 100%; }
+.topology-inspector { min-height: 0; max-height: none; height: 100%; }
+.topology-tool-button#topology-inspector-toggle { border-color: #bfcfda; color: #355e78; }
+.topology-stage .topology-port-label text { font-size: 8px; }
+@media (max-width: 900px) {
+  .topology-workbench-body { grid-template-columns: minmax(0,1fr); min-height: 0; }
+  .topology-stage { min-height: 460px; height: auto; }
+  .topology-inspector { min-height: 340px; max-height: 560px; height: auto; border-top: 1px solid #e0e7ec; }
+}
+
 .topology-stage .topology-link { cursor: pointer; outline: none; transition: opacity .15s ease; }
 .topology-stage .topology-link-line { fill: none; stroke: #aab9c5; stroke-width: 2; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
 .topology-stage .topology-link[data-provenance="query_endpoint"] .topology-link-line { stroke: #8d9baa; stroke-dasharray: 3 6; }
