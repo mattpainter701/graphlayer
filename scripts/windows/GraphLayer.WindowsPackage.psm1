@@ -70,6 +70,32 @@ function Assert-GraphLayerSignTool([string] $Path) {
         $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
         throw 'SignTool must have a valid embedded Microsoft Authenticode signature.'
     }
+    if ((Get-Item -LiteralPath $Path).VersionInfo.OriginalFilename -ine 'SIGNTOOL.EXE') {
+        throw 'The signed executable is not Microsoft SignTool.'
+    }
+    # Corporate Microsoft roots, not the Public Trust root used for third-party
+    # signing customers. Source: https://www.microsoft.com/pkiops/docs/repository.htm
+    $microsoftRoots = @(
+        'DF545BF919A2439C36983B54CDFC903DFA4F37D3996D8D84B4C31EEC6F3C163E',
+        '847DF6A78497943F27FC72EB93F9A637320A02B561D0A91B09E87A7807ED7C61'
+    )
+    $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        # Authenticode above validates trust and timestamp semantics. This extra
+        # chain build identifies the root, including timestamp-valid older SDKs.
+        $chain.ChainPolicy.RevocationMode = [Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+        $chain.ChainPolicy.VerificationFlags = [Security.Cryptography.X509Certificates.X509VerificationFlags]::IgnoreNotTimeValid
+        if (-not $chain.Build($signature.SignerCertificate) -or $chain.ChainElements.Count -lt 2) {
+            throw 'Unable to establish the Microsoft SignTool issuer chain.'
+        }
+        $root = $chain.ChainElements[$chain.ChainElements.Count - 1].Certificate
+        $rootHash = [BitConverter]::ToString($hasher.ComputeHash($root.RawData)).Replace('-', '')
+        if ($rootHash -notin $microsoftRoots) { throw 'SignTool issuer is not an approved Microsoft corporate root.' }
+    } finally {
+        $hasher.Dispose()
+        $chain.Dispose()
+    }
 }
 
 Export-ModuleMember -Function Test-GraphLayerPE, Get-GraphLayerSigningCertificate, Assert-GraphLayerSignedFile, Assert-GraphLayerSignTool

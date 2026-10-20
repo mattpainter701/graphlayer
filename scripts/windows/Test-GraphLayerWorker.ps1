@@ -55,6 +55,10 @@ try {
     }
     Write-Output "Verified $PackageKind Rust worker protocol: graphlayer-engine-v1"
 } finally {
-    if ($workerStarted -and -not $worker.HasExited) { $worker.Kill($true); $worker.WaitForExit() }
+    if ($workerStarted -and -not $worker.HasExited) {
+        try { $worker.Kill($true) }
+        catch [InvalidOperationException] { if (-not $worker.HasExited) { throw } }
+        [void]$worker.WaitForExit(1000)
+    }
     $worker.Dispose()
 }
