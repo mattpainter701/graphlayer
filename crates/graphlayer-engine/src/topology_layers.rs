@@ -63,10 +63,10 @@ fn refev(id: &str, line: usize, digest: &str) -> Value {
 /// Return the same deterministic, fully synthetic 1,000-host dataset each time.
 pub fn layer_sample(input: Value) -> Result<Value, String> {
     if !input.is_object() || input.as_object().is_some_and(|o| !o.is_empty()) {
-        return Err("invalid_request".into());
+        return Err("invalid_layer_request".into());
     }
     let pan = "set deviceconfig system hostname scale-panos\nset network interface ethernet ethernet1/1 layer3 ip 10.20.1.254/24\nset network virtual-router default interface ethernet1/1\n";
-    let forti = "config system global\n    set hostname scale-fortigate\nend\nconfig system interface\n    edit \"port1\"\n        set ip 10.20.2.254 255.255.255.0\n        set allowaccess ping\n    next\nend\n";
+    let forti = "config system global\n    set hostname scale-fortigate\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set ip 10.20.2.254 255.255.255.0\n        set allowaccess ping\n    next\nend\n";
     // Exercise the same Rust parsers used by parse_config and retain stable source hashes.
     let pan_hash = hash(pan);
     let forti_hash = hash(forti);
@@ -194,7 +194,7 @@ pub fn layer_sample(input: Value) -> Result<Value, String> {
             "cfg-fortios",
             forti_hash.as_str(),
             "port1",
-            6,
+            7,
             "inventory-02",
         ),
     ] {
@@ -738,7 +738,7 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                     .get(ev["line"].as_u64().unwrap_or(0).saturating_sub(1) as usize)
                     .map(String::as_str)
                     != Some(record.as_str())
-                || evidence.len() != 2
+                || evidence.len() != 3
                 || !configs.iter().any(|c| {
                     c["source_id"] == evidence[1]["source_id"]
                         && c["result"]["path"]["interfaces"]
@@ -804,7 +804,7 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
             .contains(&k.as_str())
         })
     }) {
-        return Err("invalid_request".into());
+        return Err("invalid_layer_request".into());
     }
     for key in [
         "network_id",
@@ -814,19 +814,19 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
         "destination_host_id",
     ] {
         if input.get(key).is_some_and(|v| !v.is_string()) {
-            return Err("invalid_request".into());
+            return Err("invalid_layer_request".into());
         }
     }
     for key in ["offset", "limit"] {
         if input.get(key).is_some_and(|v| !v.is_u64()) {
-            return Err("invalid_request".into());
+            return Err("invalid_layer_request".into());
         }
     }
-    let d = input.get("dataset").ok_or("invalid_request")?;
+    let d = input.get("dataset").ok_or("invalid_layer_request")?;
     validate_dataset(d)?;
-    let view = input["view"].as_str().ok_or("invalid_request")?;
+    let view = input["view"].as_str().ok_or("invalid_layer_request")?;
     if !["l2", "l3", "zone"].contains(&view) {
-        return Err("invalid_request".into());
+        return Err("invalid_layer_request".into());
     }
     let hosts = d["hosts"].as_array().ok_or("invalid_dataset")?;
     let links = d["links"].as_array().ok_or("invalid_dataset")?;
@@ -1256,7 +1256,7 @@ mod tests {
         let d = layer_sample(json!({})).unwrap()["dataset"].clone();
         let mut bad = d.clone();
         bad["links"][0]["to"] = "missing-switch".into();
-        assert_eq!(validate_dataset(&bad).unwrap_err(), "dangling_link");
+        assert_eq!(validate_dataset(&bad).unwrap_err(), "record_evidence_mismatch");
         assert!(project_layers(json!({"dataset":d,"view":"l2","limit":"100"})).is_err());
         assert!(project_layers(json!({"dataset":null,"view":"l2","unknown":true})).is_err());
     }
