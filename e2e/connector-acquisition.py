@@ -143,7 +143,10 @@ def acquire(protocol: str, *, smb: bool = False) -> Path:
     result = connector.do_download()
     connector.disconnect()
     assert result["status"] == "completed"
-    assert result["files_downloaded"] >= 3
+    assert result["files_downloaded"] >= 4, (
+        f"{protocol} fixture acquisition incomplete: "
+        f"downloaded={result['files_downloaded']} failed={result.get('files_failed', 0)}"
+    )
     for filename in ("enterprise.asa.txt", "asa_path_sample.txt", "panos_sample.txt", "fortigate_sample.txt"):
         assert (folder / filename).is_file(), f"{protocol} missed {filename}"
         expected = (ROOT / "platform" / "firewall" / "testdata" / filename).read_bytes()

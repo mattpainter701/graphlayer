@@ -5,6 +5,7 @@
 - Use project-owned Go module paths and neutral reference-comparison API names. Remove obsolete generated data, enforce privacy checks on working files, staged bytes and complete commit ancestry, reject opaque LFS pointers and keep private configuration collections outside source control. Existing clients must update their module imports and reference-comparison flags/types.
 - License original GraphLayer project code under Apache-2.0; preserve third-party component licenses.
 - Allow private, reviewed CI pushes to use a dedicated local Linux runner with one-job registrations; keep pull requests and native Windows checks on hosted runners.
+- Set explicit container file permissions so non-root application and fixture accounts work when builds use a restrictive umask. Preserve private runner credential and workspace permissions.
 
 - Explore an explicitly synthetic 1,000-host lab across ten networks with host/Layer 2, Layer 3 and zone maps, bounded host pages, search and drill-down. Trace explicit same-VLAN switch paths and show when routing is required.
 - Generate and validate auxiliary attachment, VLAN, MAC/ARP and uplink evidence in Rust alongside parsed PAN-OS and FortiOS samples. Inspect source lines and hashes, export the lab dataset and measure graph/projection budgets without changing saved workspace evidence.

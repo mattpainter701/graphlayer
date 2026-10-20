@@ -64,6 +64,11 @@ stay under `%LOCALAPPDATA%/GraphLayer/runner-controller`, outside Git. Keep
 customer corpora and their reports outside every runner
 workspace and mount.
 
+The controller defaults to `codex/repository-privacy`. After the coordinated
+history cleanup, use `--branch main --head <reviewed-commit-sha>` to validate
+private main pushes. It accepts only those two branch names and verifies the
+selected branch and every workflow run against the exact reviewed revision.
+
 ## Public repository transition
 
 Enable `GRAPHLAYER_ONPREM_RUNNERS` only while trusted maintainers control pushes
@@ -75,3 +80,8 @@ caches under `/opt/graphlayer-ci-cache/`, rather than using GitHub
 artifact or cache storage. Archive manifests record hashes and counts; they
 do not publish the archived files. Preserve these local results before
 retiring the runner environment.
+
+The runner uses umask `077`. Container builds set executable permissions
+explicitly for the non-root application user and readable permissions for
+reviewed synthetic acquisition fixtures. Keep the runner's restrictive umask;
+do not loosen workspace or credential permissions to accommodate a container.

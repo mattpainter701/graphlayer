@@ -32,11 +32,12 @@ WORKFLOW_JOBS = {
 }
 
 
-def workflow_run(run_id: int, name: str, *, event: str = "push", head: str = HEAD) -> dict:
+def workflow_run(run_id: int, name: str, *, event: str = "push", head: str = HEAD,
+                 branch: str = local_ci.BRANCH) -> dict:
     return {
         "id": run_id,
         "name": name,
-        "head_branch": local_ci.BRANCH,
+        "head_branch": branch,
         "event": event,
         "head_sha": head,
         "head_repository": {"full_name": local_ci.REPOSITORY},
@@ -58,6 +59,8 @@ class FakeApi:
     def __init__(self) -> None:
         self.private = True
         self.branch_sha = HEAD
+        self.branch_calls: list[str] = []
+        self.workflow_run_calls: list[tuple[str, str]] = []
         self.target_runs = [
             workflow_run(index + 10, name)
             for index, name in enumerate(local_ci.EXPECTED_WORKFLOWS)
@@ -79,9 +82,11 @@ class FakeApi:
         return {"full_name": local_ci.REPOSITORY, "private": self.private}
 
     def branch(self, branch):
+        self.branch_calls.append(branch)
         return {"name": branch, "commit": {"sha": self.branch_sha}}
 
     def workflow_runs(self, branch, head):
+        self.workflow_run_calls.append((branch, head))
         return list(self.target_runs)
 
     def active_runs(self):
@@ -127,10 +132,11 @@ class FakeRunner:
 
 
 class LocalCIRunnerSecurityTests(unittest.TestCase):
-    def make_controller(self, api: FakeApi, root: Path) -> tuple[local_ci.LocalCIRunnerController, FakeRunner]:
+    def make_controller(self, api: FakeApi, root: Path, *, branch=local_ci.BRANCH) -> tuple[local_ci.LocalCIRunnerController, FakeRunner]:
         runner = FakeRunner()
         controller = local_ci.LocalCIRunnerController(
             HEAD,
+            branch=branch,
             api=api,
             runner=runner,
             runtime_dir=root / "runtime",
@@ -162,6 +168,42 @@ class LocalCIRunnerSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(local_ci.ControllerError, "branch head does not match"):
                 controller.run()
 
+            self.assertEqual(api.generate_calls, [])
+            self.assertEqual(runner.started, 0)
+
+    def test_main_is_accepted_when_branch_head_and_push_runs_match_exact_sha(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = FakeApi()
+            api.target_runs = [
+                workflow_run(run["id"], run["name"], branch="main")
+                for run in api.target_runs
+            ]
+            controller, _ = self.make_controller(api, Path(directory), branch="main")
+
+            trusted = controller._trusted_runs()
+
+            self.assertEqual(set(trusted), set(local_ci.EXPECTED_WORKFLOWS))
+            self.assertEqual(api.branch_calls, ["main"])
+            self.assertEqual(api.workflow_run_calls, [("main", HEAD)])
+
+    def test_unreviewed_branch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = FakeApi()
+            with self.assertRaisesRegex(local_ci.ControllerError, "--branch must be main"):
+                self.make_controller(api, Path(directory), branch="release")
+            self.assertEqual(api.branch_calls, [])
+            self.assertEqual(api.workflow_run_calls, [])
+
+    def test_main_rejects_workflow_runs_from_privacy_branch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = FakeApi()  # Its runs are on codex/repository-privacy, not main.
+            controller, runner = self.make_controller(api, Path(directory), branch="main")
+
+            with self.assertRaisesRegex(local_ci.ControllerError, "workflow runs for this push"):
+                controller.run()
+
+            self.assertEqual(api.branch_calls, ["main"])
+            self.assertEqual(api.workflow_run_calls, [("main", HEAD)])
             self.assertEqual(api.generate_calls, [])
             self.assertEqual(runner.started, 0)
 

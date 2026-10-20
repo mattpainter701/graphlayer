@@ -13,8 +13,8 @@ RUN CGO_ENABLED=0 go build -trimpath -o /graphlayer-investigate ./cmd/graphlayer
 FROM debian:bookworm-slim
 RUN groupadd --gid 10001 graphlayer && useradd --uid 10001 --gid 10001 --create-home graphlayer
 WORKDIR /app
-COPY --from=rust-builder /build/target/release/graphlayer-engine ./graphlayer-engine
-COPY --from=app-builder /graphlayer-investigate ./graphlayer-investigate
+COPY --chmod=0555 --from=rust-builder /build/target/release/graphlayer-engine ./graphlayer-engine
+COPY --chmod=0555 --from=app-builder /graphlayer-investigate ./graphlayer-investigate
 USER 10001:10001
 # The investigation service deliberately binds loopback only. Use host network
 # mode on Linux; publishing a bridge-network port does not expose this service.

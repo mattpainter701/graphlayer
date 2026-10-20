@@ -21,6 +21,7 @@ from urllib.parse import urlencode
 
 REPOSITORY = "mattpainter701/graphlayer"
 BRANCH = "codex/repository-privacy"
+SUPPORTED_BRANCHES = ("main", BRANCH)
 RUNNER_LABELS = ("self-hosted", "Linux", "X64", "graphlayer-private")
 RUNNER_LABEL_SET = frozenset(label.casefold() for label in RUNNER_LABELS)
 RUNNER_PREFIX = "graphlayer-private-"
@@ -466,6 +467,7 @@ class LocalCIRunnerController:
         self,
         head: str,
         *,
+        branch: str = BRANCH,
         api: Api,
         runner: Runner,
         runtime_dir: Path,
@@ -479,11 +481,14 @@ class LocalCIRunnerController:
     ) -> None:
         if not re.fullmatch(r"[0-9a-fA-F]{40}", head):
             raise ControllerError("--head must be a 40-character commit SHA")
+        if branch not in SUPPORTED_BRANCHES:
+            raise ControllerError("--branch must be main or codex/repository-privacy")
         if not 1 <= max_jobs <= len(EXPECTED_JOBS):
             raise ControllerError("--max-jobs must be between 1 and 12")
         if job_timeout_minutes < 1:
             raise ControllerError("--job-timeout-minutes must be positive")
         self.head = head.lower()
+        self.branch_name = branch
         self.prefix = f"{RUNNER_PREFIX}{self.head[:8]}-"
         self.api = api
         self.runner = runner
@@ -542,16 +547,16 @@ class LocalCIRunnerController:
         if repo.get("private") is not True:
             raise ControllerError("Local runner is allowed only while the repository is private")
 
-        branch = self.api.branch(BRANCH)
+        branch = self.api.branch(self.branch_name)
         branch_sha = branch.get("commit", {}).get("sha") if isinstance(branch.get("commit"), dict) else None
         if not isinstance(branch_sha, str) or branch_sha.lower() != self.head:
-            raise ControllerError("Remote privacy branch head does not match --head")
+            raise ControllerError("Remote branch head does not match --head")
 
-        matches = self.api.workflow_runs(BRANCH, self.head)
+        matches = self.api.workflow_runs(self.branch_name, self.head)
         by_name: dict[str, dict[str, Any]] = {}
         for run in matches:
             if (
-                run.get("head_branch") != BRANCH
+                run.get("head_branch") != self.branch_name
                 or run.get("event") != "push"
                 or str(run.get("head_sha", "")).lower() != self.head
             ):
@@ -803,7 +808,7 @@ class LocalCIRunnerController:
                 self._log("cleanup_incomplete")
 
     def run(self) -> None:
-        self._log("start", repository=REPOSITORY, branch=BRANCH, head=self.head)
+        self._log("start", repository=REPOSITORY, branch=self.branch_name, head=self.head)
         launched = 0
         wait_deadline = self.monotonic() + self.job_timeout
         while True:
@@ -833,7 +838,9 @@ def default_runtime_dir() -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--head", required=True, help="exact 40-character privacy branch commit SHA")
+    parser.add_argument("--head", required=True, help="exact 40-character commit SHA from the selected branch")
+    parser.add_argument("--branch", choices=SUPPORTED_BRANCHES, default=BRANCH,
+                        help="reviewed push branch (default: codex/repository-privacy)")
     parser.add_argument("--max-jobs", type=int, default=12, help="maximum JIT registrations in this invocation")
     parser.add_argument("--job-timeout-minutes", type=int, default=120)
     parser.add_argument("--runtime-dir", type=Path, default=default_runtime_dir())
@@ -847,6 +854,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         controller = LocalCIRunnerController(
             args.head,
+            branch=args.branch,
             api=GhApi(),
             runner=WslRunner(),
             runtime_dir=args.runtime_dir,
