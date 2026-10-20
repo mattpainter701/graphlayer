@@ -199,21 +199,29 @@ jobs:
         working-directory: platform
         run: go test ./vendors/cisco/asa ./firewall ./policy ./investigation ./cmd/graphlayer-investigate ./pathanalysis ./networkpath ./rustengine
 
+      - name: Verify Windows package signing contracts
+        shell: pwsh
+        run: |
+          $signTool = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin' -Filter signtool.exe -Recurse |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signTool) { throw 'The Microsoft Windows SDK SignTool is required.' }
+          ./tests/windows-package.Tests.ps1 -SignToolPath $signTool
+
       - name: Package native Windows application and required Rust engine
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path native-bundle | Out-Null
-          go -C platform build -trimpath -o ../native-bundle/graphlayer-investigate.exe ./cmd/graphlayer-investigate
+          New-Item -ItemType Directory -Path native-input | Out-Null
+          go -C platform build -trimpath -o ../native-input/graphlayer-investigate.exe ./cmd/graphlayer-investigate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item -LiteralPath $env:GRAPHLAYER_ENGINE -Destination native-bundle/graphlayer-engine.exe
-          Get-ChildItem -LiteralPath native-bundle -Filter '*.exe' | ForEach-Object {
-            $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$digest  $($_.Name)"
-          } | Set-Content -LiteralPath native-bundle/SHA256SUMS -Encoding utf8
-      - name: Upload native Windows application bundle
+          Copy-Item -LiteralPath $env:GRAPHLAYER_ENGINE -Destination native-input/graphlayer-engine.exe
+          ./scripts/windows/New-GraphLayerWindowsPackage.ps1 -InputDirectory native-input -OutputDirectory native-bundle -PackageKind Development -SourceRevision (git rev-parse HEAD)
+          ./scripts/windows/Test-GraphLayerWindowsPackage.ps1 -PackageDirectory native-bundle
+          ./scripts/windows/Test-GraphLayerWorker.ps1 -PackageDirectory native-bundle -PackageKind Development
+      - name: Upload explicitly unsigned development bundle
         uses: actions/upload-artifact@v4
         with:
-          name: graphlayer-investigate-windows-amd64
+          name: graphlayer-investigate-windows-amd64-development
           path: native-bundle/
 
       - uses: actions/setup-python@v5
