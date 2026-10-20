@@ -10,3 +10,4 @@
 
 # POSIX fixture entrypoints must retain executable-script line endings on Windows.
 /e2e/connector-services/*.sh text eol=lf
+/scripts/ci/*.sh text eol=lf

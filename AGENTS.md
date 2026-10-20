@@ -47,6 +47,20 @@
   clones have been addressed. Coordinate destructive history rewrites and
   preserve unrelated working files before changing repository history.
 
+## Private CI runners
+
+- Local runners are repository-scoped and accept only reviewed pushes to the
+  explicitly enabled branches while the repository is private. Pull requests
+  and public-repository jobs use hosted runners.
+- Keep local CI in its dedicated Linux environment, with no customer corpus,
+  Windows data drives or host Docker socket mounted. Preserve Windows
+  application-control policy; native Windows checks require an approved host.
+- Use one-job runner registrations, serialize jobs that share ports, and clean
+  job workspaces and credentials between runs. A one-job registration does not
+  reset the underlying machine or make untrusted code safe.
+- Remove local runner registrations and disable local routing before making
+  the repository public. Run every required check on the final commit.
+
 ## Language boundary
 
 - Rust owns domain behavior: vendor parsing and connectors, graph and topology
