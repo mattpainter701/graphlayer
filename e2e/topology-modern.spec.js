@@ -189,6 +189,27 @@ test('topology workbench controls pan and zoom the real sample without rerunning
   await expect(page.locator('#topology-overview')).toContainText('Declared links');
   await expect.poll(() => analysisPosts).toBe(1);
 
+  const svgPresentation = await page.locator('#exploration-topology').evaluate((svg) => {
+    const icon = getComputedStyle(svg.querySelector('.topology-device-icon path'));
+    const pill = getComputedStyle(svg.querySelector('.topology-port-label rect'));
+    const label = getComputedStyle(svg.querySelector('.topology-port-label text'));
+    const uncertain = getComputedStyle(svg.querySelector('.topology-edge.topology-state-indeterminate'));
+    return { iconFill: icon.fill, iconStroke: icon.stroke, pillFill: pill.fill, labelAnchor: label.textAnchor, uncertainStroke: uncertain.stroke };
+  });
+  expect(svgPresentation.iconFill).toBe('none');
+  expect(svgPresentation.iconStroke).not.toBe('none');
+  expect(svgPresentation.pillFill).toBe('rgb(255, 255, 255)');
+  expect(svgPresentation.labelAnchor).toBe('middle');
+  expect(svgPresentation.uncertainStroke).toBe('rgb(192, 139, 50)');
+  for (const direction of ['forward', 'return']) {
+    await page.locator(`#topology-show-${direction}`).uncheck();
+    await expect(page.locator('#exploration-topology .topology-node:visible')).toHaveCount(6);
+    const overlay = page.locator(`#exploration-topology .topology-overlays .topology-${direction}`).first();
+    await expect(overlay).toHaveCSS('display', 'none');
+    await page.locator(`#topology-show-${direction}`).check();
+    await expect(overlay).not.toHaveCSS('display', 'none');
+  }
+
   await page.locator('#topology-search').fill('north');
   await expect(page.locator('#topology-device-list .topology-device')).toHaveCount(1);
   await page.locator('#topology-filter-reset').click();
@@ -197,6 +218,24 @@ test('topology workbench controls pan and zoom the real sample without rerunning
   const north = page.locator('#exploration-topology .topology-node[data-node-id="north"]');
   await north.focus();
   await north.press('Enter');
+  await expect(page.locator('#topology-inspector')).toContainText('north');
+
+  await page.locator('#topology-fullscreen').click();
+  const fullscreenLayout = await page.evaluate(() => {
+    const overview = document.querySelector('#topology-overview').getBoundingClientRect();
+    const values = [...document.querySelectorAll('#topology-overview strong')].map((item) => item.getBoundingClientRect());
+    const graph = document.querySelector('#topology-stage').getBoundingClientRect();
+    const inspector = document.querySelector('#topology-inspector').getBoundingClientRect();
+    return {
+      overviewValuesFit: values.every((value) => value.top >= overview.top && value.bottom <= overview.bottom),
+      graphHeight: graph.height,
+      overlap: graph.left < inspector.right && graph.right > inspector.left && graph.top < inspector.bottom && graph.bottom > inspector.top,
+    };
+  });
+  expect(fullscreenLayout.overviewValuesFit, JSON.stringify(fullscreenLayout)).toBe(true);
+  expect(fullscreenLayout.graphHeight).toBeGreaterThanOrEqual(300);
+  expect(fullscreenLayout.overlap, JSON.stringify(fullscreenLayout)).toBe(false);
+  await page.locator('#topology-fullscreen').click();
   await expect(page.locator('#topology-inspector')).toContainText('north');
 
   const stage = page.locator('#topology-stage');
