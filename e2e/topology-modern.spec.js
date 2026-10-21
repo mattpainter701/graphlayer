@@ -108,6 +108,35 @@ test('synthetic network map pages hosts, preserves global counts, and keeps pres
   expect(source).toBeTruthy();
   expect(source.lines.some((line) => line.number === evidence.line && line.text.includes(dataset.hosts[0].ip))).toBe(true);
 
+  await page.locator('#tl-fullscreen').click();
+  await expect(page.locator('#topology-layers')).toHaveClass(/tl-fullscreen/);
+  await expect(page.locator('#tl-fullscreen')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#tl-inspector')).toBeVisible();
+  await expect(page.locator('#tl-inspector')).toHaveAttribute('aria-label', 'Selection details');
+  await expect(page.locator('#tl-inspector')).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.locator('#tl-inspector')).toContainText('host-0001');
+  const fullscreenLayout = await page.evaluate(() => {
+    const graph = document.querySelector('#tl-graph');
+    const inspector = document.querySelector('#tl-inspector');
+    const graphBox = graph.getBoundingClientRect();
+    const inspectorBox = inspector.getBoundingClientRect();
+    const hit = document.elementFromPoint(graphBox.left + graphBox.width / 2, graphBox.top + graphBox.height / 2);
+    return {
+      graphVisible: graphBox.width > 0 && graphBox.height > 0,
+      inspectorVisible: inspectorBox.width > 0 && inspectorBox.height > 0,
+      overlap: graphBox.left < inspectorBox.right && graphBox.right > inspectorBox.left
+        && graphBox.top < inspectorBox.bottom && graphBox.bottom > inspectorBox.top,
+      graphOwnsCenterHit: Boolean(hit && graph.contains(hit)),
+    };
+  });
+  expect(fullscreenLayout.graphVisible).toBe(true);
+  expect(fullscreenLayout.inspectorVisible).toBe(true);
+  expect(fullscreenLayout.overlap, JSON.stringify(fullscreenLayout)).toBe(false);
+  expect(fullscreenLayout.graphOwnsCenterHit, JSON.stringify(fullscreenLayout)).toBe(true);
+  await page.locator('#tl-fullscreen').click();
+  await expect(page.locator('#topology-layers')).not.toHaveClass(/tl-fullscreen/);
+  await expect(page.locator('#tl-inspector')).toContainText('host-0001');
+
   const projectionCount = observed.projections.length;
   const before = await page.locator('#tl-stage').getAttribute('transform');
   const graph = page.locator('#tl-graph');

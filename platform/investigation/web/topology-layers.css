@@ -118,11 +118,12 @@
 #tl-inspector-toggle { border-color: #b8cfde; color: #285c7a; }
 #tl-inspector-toggle:disabled { display: none; }
 .tl-lower { grid-template-columns: minmax(0,1fr); }
-.tl-fullscreen .tl-content { flex: 1 1 auto; min-height: 0; }
-.tl-fullscreen { position: fixed; z-index: 10; inset: 10px; display: flex; flex-direction: column; margin: 0; overflow: auto; border-radius: 14px; box-shadow: 0 20px 80px rgb(10 28 42 / 48%); }
-.tl-fullscreen .tl-workspace { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
-.tl-fullscreen .tl-graph { flex: 1 1 auto; height: auto; min-height: 300px; }
-.tl-fullscreen .tl-lower { flex: 0 0 auto; }
+.tl-fullscreen { position: fixed; z-index: 10; inset: 10px; display: block; margin: 0; overflow: auto; border-radius: 14px; box-shadow: 0 20px 80px rgb(10 28 42 / 48%); }
+.tl-fullscreen .tl-content { display: grid; min-height: 0; }
+.tl-fullscreen .tl-workspace { display: block; min-height: 0; }
+.tl-fullscreen .tl-graph { height: 62vh; min-height: 320px; }
+.tl-fullscreen .tl-lower { display: grid; grid-template-columns: minmax(0,1fr); }
+.tl-fullscreen .tl-content.has-selection:not(.is-inspector-collapsed) > #tl-inspector { max-height: min(720px,calc(100vh - 130px)); }
 @media (max-width: 900px) {
   .topology-layers { padding: 18px; }
   .tl-lower { grid-template-columns: minmax(0,1fr); }
@@ -133,6 +134,10 @@
 @media (min-width: 1360px) {
   .tl-content.has-selection:not(.is-inspector-collapsed) { grid-template-columns: minmax(560px,1fr) minmax(310px,min(34vw,420px)); }
   .tl-content.has-selection:not(.is-inspector-collapsed) > #tl-inspector { position: sticky; top: 16px; max-height: min(720px,calc(100vh - 300px)); }
+}
+@media (min-width: 960px) {
+  .tl-fullscreen .tl-content.has-selection:not(.is-inspector-collapsed) { grid-template-columns: minmax(0,1fr) minmax(300px,34%); }
+  .tl-fullscreen .tl-content.has-selection:not(.is-inspector-collapsed) > #tl-inspector { position: sticky; top: 12px; align-self: start; max-height: min(720px,calc(100vh - 120px)); }
 }
 @media (max-width: 680px) {
   .topology-layers { margin-top: 12px; padding: 15px; border-radius: 13px; }
@@ -148,7 +153,8 @@
   .tl-content > #tl-inspector > .tl-eyebrow:first-child { top: -14px; margin: -14px -14px 0; padding: 14px 14px 5px; }
   .tl-inspector > h3 { margin-inline: -14px; padding-inline: 14px; }
   .tl-fullscreen { inset: 0; padding: 12px; border-radius: 0; }
-  .tl-fullscreen .tl-lower { overflow: auto; max-height: 34vh; }
+  .tl-fullscreen .tl-graph { height: 58vh; min-height: 320px; }
+  .tl-fullscreen .tl-content.has-selection:not(.is-inspector-collapsed) > #tl-inspector { position: static; max-height: min(540px,60vh); }
 }
 @media (max-width: 440px) {
   .topology-layers { padding: 12px; }
