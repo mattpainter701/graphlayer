@@ -186,6 +186,18 @@ class LocalCIRunnerSecurityTests(unittest.TestCase):
             self.assertEqual(api.branch_calls, ["main"])
             self.assertEqual(api.workflow_run_calls, [("main", HEAD)])
 
+    def test_topology_branch_requires_matching_reviewed_pushes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = FakeApi()
+            branch = "codex/topology-modern-explorer"
+            api.target_runs = [workflow_run(run["id"], run["name"], branch=branch)
+                               for run in api.target_runs]
+            controller, _ = self.make_controller(api, Path(directory), branch=branch)
+            controller._snapshot()
+            self.assertEqual(api.branch_calls, [branch])
+            self.assertEqual(api.workflow_run_calls, [(branch, HEAD)])
+            self.assertEqual(api.generate_calls, [])
+
     def test_unreviewed_branch_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             api = FakeApi()

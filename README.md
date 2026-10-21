@@ -26,6 +26,9 @@ The [workspace and import foundation](docs/WORKSPACE_IMPORTS.md) adds sites, nam
 The [topology workspace](docs/TOPOLOGY_WORKSPACE.md) separates workspace, imports,
 investigation and topology pages, with device search, an interactive canvas and
 snapshot-qualified configuration evidence.
+The [topology explorer guide](docs/TOPOLOGY_EXPLORER.md) covers responsive selection
+details, keyboard navigation, the viewport overview, bounded host pages and
+source-backed inspection, including the current scale and observation limits.
 See the [investigation guide](docs/FIREWALL_INVESTIGATION.md) for supported syntax, limits,
 launch commands and tests. This is a single-user investigation application;
 enterprise service deployment and end-to-end network reachability remain planned work.

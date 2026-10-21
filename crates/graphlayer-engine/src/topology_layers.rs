@@ -80,6 +80,10 @@ pub fn layer_sample(input: Value) -> Result<Value, String> {
     if !input.is_object() || input.as_object().is_some_and(|o| !o.is_empty()) {
         return Err("invalid_layer_request".into());
     }
+    layer_sample_sized(10, 100)
+}
+
+fn layer_sample_sized(network_count: usize, hosts_per_network: usize) -> Result<Value, String> {
     let pan = "set deviceconfig system hostname scale-panos\nset network interface ethernet ethernet1/1 layer3 ip 10.20.1.254/24\nset network virtual-router default interface ethernet1/1\n";
     let forti = "config system global\n    set hostname scale-fortigate\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set ip 10.20.2.254 255.255.255.0\n        set allowaccess ping\n    next\nend\n";
     // Exercise the same Rust parsers used by parse_config and retain stable source hashes.
@@ -101,20 +105,23 @@ pub fn layer_sample(input: Value) -> Result<Value, String> {
             forti,
         ),
     ];
-    let mut hosts = Vec::with_capacity(1000);
-    let mut devices = Vec::with_capacity(42);
-    let mut links = Vec::with_capacity(1060);
+    let mut hosts = Vec::with_capacity(network_count * hosts_per_network);
+    let mut devices = Vec::with_capacity(network_count * 4);
+    let mut links = Vec::with_capacity(network_count * (hosts_per_network + 6));
     let mut networks = Vec::new();
     let zones = ["engineering", "operations", "research", "shared-services"];
-    for n in 1..=10 {
+    for n in 1..=network_count {
         let subnet = format!("10.20.{}.0/24", n);
         let net_id = format!("net-{n:02}");
         let zone = zones[(n - 1) % zones.len()];
         let inv_id = format!("inventory-{n:02}");
+        let first_switch_hosts = hosts_per_network / 2;
+        let second_switch_hosts = hosts_per_network - first_switch_hosts;
+        let host_port_offset = if hosts_per_network > 100 { 60 } else { 0 };
         let mut lines = vec![format!(
             "network {net_id} {subnet} zone {zone} gateway 10.20.{n}.253 via rtr-{n:02}"
         )];
-        for h in 1..=100 {
+        for h in 1..=hosts_per_network {
             let mac = format!(
                 "02:20:{n:02x}:{:02x}:{:02x}:{:02x}",
                 (h >> 8) & 255,
@@ -123,12 +130,16 @@ pub fn layer_sample(input: Value) -> Result<Value, String> {
             );
             lines.push(format!(
                 "host host-{:04} 10.20.{}.{} mac {} vlan {} port Gi1/0/{} arp 10.20.{}.{} {}",
-                (n - 1) * 100 + h,
+                (n - 1) * hosts_per_network + h,
                 n,
                 h,
                 mac,
                 100 + n,
-                if h <= 50 { h } else { h - 50 },
+                if h <= first_switch_hosts {
+                    h + host_port_offset
+                } else {
+                    h - first_switch_hosts + host_port_offset
+                },
                 n,
                 h,
                 mac
@@ -152,15 +163,15 @@ pub fn layer_sample(input: Value) -> Result<Value, String> {
         let sw_a = format!("sw-{n:02}-a");
         let sw_b = format!("sw-{n:02}-b");
         let dist = format!("sw-{n:02}-d");
-        devices.push(json!({"id":sw_a,"label":sw_a,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":50,"evidence":[refev(&inv_id,1,&invhash)]}));
-        devices.push(json!({"id":sw_b,"label":sw_b,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":50,"evidence":[refev(&inv_id,1,&invhash)]}));
+        devices.push(json!({"id":sw_a,"label":sw_a,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":first_switch_hosts,"evidence":[refev(&inv_id,1,&invhash)]}));
+        devices.push(json!({"id":sw_b,"label":sw_b,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":second_switch_hosts,"evidence":[refev(&inv_id,1,&invhash)]}));
         devices.push(json!({"id":dist,"label":dist,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":0,"evidence":[refev(&inv_id,1,&invhash)]}));
         devices.push(json!({"id":format!("rtr-{n:02}"),"label":format!("Router {n:02}"),"role":"router","zone":zone,"network_id":net_id,"subnet":subnet,"ip":format!("10.20.{n}.253"),"host_count":0,"evidence":[refev(&inv_id,1,&invhash)]}));
         networks.push(
             json!({"id":net_id,"subnet":subnet,"zone":zone,"evidence":[refev(&inv_id,1,&invhash)]}),
         );
-        for h in 1..=100 {
-            let ix = (n - 1) * 100 + h;
+        for h in 1..=hosts_per_network {
+            let ix = (n - 1) * hosts_per_network + h;
             let id = format!("host-{ix:04}");
             let ip = format!("{prefix}.{h}");
             let mac = format!(
@@ -169,8 +180,16 @@ pub fn layer_sample(input: Value) -> Result<Value, String> {
                 h & 255,
                 n
             );
-            let sw = if h <= 50 { &sw_a } else { &sw_b };
-            let port = if h <= 50 { h } else { h - 50 };
+            let sw = if h <= first_switch_hosts {
+                &sw_a
+            } else {
+                &sw_b
+            };
+            let port = if h <= first_switch_hosts {
+                h + host_port_offset
+            } else {
+                h - first_switch_hosts + host_port_offset
+            };
             hosts.push(json!({"id":id,"label":id,"role":"host","zone":zone,"network_id":net_id,"subnet":subnet,"ip":ip,"mac":mac,"vlan":100+n,"port":format!("Gi1/0/{port}"),"attachment":sw,"evidence":[refev(&inv_id,h+1,&invhash)]}));
             links.push(json!({"id":format!("attach-{ix:04}"),"from":id,"to":sw,"kind":"attachment","label":format!("VLAN {}",100+n),"from_port":"eth0","to_port":format!("Gi1/0/{port}"),"vlan":100+n,"evidence":[refev(&inv_id,h+1,&invhash)]}));
         }
@@ -222,7 +241,7 @@ pub fn layer_sample(input: Value) -> Result<Value, String> {
         let node = json!({"id":id,"label":if id=="fw-panos" {"PAN-OS edge"} else {"FortiGate edge"},"role":"firewall","zone":"shared-services","network_id":net,"subnet":if net=="net-01" {"10.20.1.0/24"} else {"10.20.2.0/24"},"ip":if net=="net-01" {"10.20.1.254"} else {"10.20.2.254"},"evidence":[refev(source_id,config_line,digest)]});
         devices.push(node);
         let uplink = format!("gateway-{id}");
-        links.push(json!({"id":uplink,"from":format!("rtr-{}",if net=="net-01" {"01"} else {"02"}),"to":id,"kind":"declared_uplink","label":"Declared synthetic firewall uplink","from_port":"Gi0/1","to_port":interface,"evidence":[refev(inventory_id,102,&inventory_hash),refev(source_id,config_line,digest)]}));
+        links.push(json!({"id":uplink,"from":format!("rtr-{}",if net=="net-01" {"01"} else {"02"}),"to":id,"kind":"declared_uplink","label":"Declared synthetic firewall uplink","from_port":"Gi0/1","to_port":interface,"evidence":[refev(inventory_id,hosts_per_network+2,&inventory_hash),refev(source_id,config_line,digest)]}));
     }
     // Bind every normalized row to a canonical source line so evidence cannot be reassigned.
     let mut canonical_lines = Vec::new();
@@ -360,6 +379,16 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             }
         }
     }
+    // Keep endpoint lookups constant-time as host and link limits grow. These
+    // references borrow the validated input and do not duplicate any records.
+    let host_by_id: HashMap<&str, &Value> = hosts
+        .iter()
+        .filter_map(|host| Some((host["id"].as_str()?, host)))
+        .collect();
+    let device_by_id: HashMap<&str, &Value> = devices
+        .iter()
+        .filter_map(|device| Some((device["id"].as_str()?, device)))
+        .collect();
     for h in hosts {
         if !only(
             h,
@@ -419,26 +448,20 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
         let id = s["id"].as_str().ok_or("invalid_source")?;
         let lines = s["lines"].as_array().ok_or("invalid_source")?;
         let text = s["text"].as_str().ok_or("invalid_source")?;
-        let actual: Vec<String> = text.lines().map(str::to_owned).collect();
+        let actual: Vec<&str> = text.lines().collect();
+        let digest = s["sha256"].as_str().ok_or("invalid_source")?;
         if source_lines
-            .insert(
-                id.to_owned(),
-                (
-                    actual.clone(),
-                    s["sha256"].as_str().unwrap_or("").to_owned(),
-                    text.to_owned(),
-                ),
-            )
+            .insert(id.to_owned(), (actual, digest, text))
             .is_some()
-            || s["sha256"].as_str() != Some(hash(text).as_str())
-            || lines.len() != actual.len()
+            || digest != hash(text)
+            || lines.len() != text.lines().count()
         {
             return Err("invalid_source".into());
         }
-        for (i, (line, expected)) in lines.iter().zip(&actual).enumerate() {
+        for (i, (line, expected)) in lines.iter().zip(text.lines()).enumerate() {
             if !only(line, &["number", "text"])
                 || line["number"].as_u64() != Some((i + 1) as u64)
-                || line["text"].as_str() != Some(expected.as_str())
+                || line["text"].as_str() != Some(expected)
             {
                 return Err("invalid_source".into());
             }
@@ -517,9 +540,7 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                 let (source_rows, _, _) = source_lines
                     .get("synthetic-records")
                     .ok_or("invalid_evidence")?;
-                if source_rows.get(line.saturating_sub(1)).map(String::as_str)
-                    != Some(canonical.as_str())
-                {
+                if source_rows.get(line.saturating_sub(1)).copied() != Some(canonical.as_str()) {
                     return Err("record_evidence_mismatch".into());
                 }
                 matched = true
@@ -541,13 +562,10 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             return Err("inconsistent_network_vlan".into());
         }
         let switch = h["attachment"].as_str().ok_or("invalid_attachment")?;
-        let device = devices
-            .iter()
-            .find(|n| {
-                n["id"] == switch
-                    && n["role"] == "switch"
-                    && n["network_id"] == network
-                    && n["zone"] == h["zone"]
+        let device = device_by_id
+            .get(switch)
+            .filter(|n| {
+                n["role"] == "switch" && n["network_id"] == network && n["zone"] == h["zone"]
             })
             .ok_or("invalid_attachment")?;
         let port = h["port"].as_str().ok_or("invalid_attachment")?;
@@ -621,15 +639,13 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             }
         }
         if l["kind"] == "attachment" {
-            let host = hosts
-                .iter()
-                .find(|h| h["id"] == l["from"])
+            let host = host_by_id
+                .get(l["from"].as_str().ok_or("invalid_attachment")?)
                 .ok_or("invalid_attachment")?;
-            let sw = devices
-                .iter()
-                .find(|n| {
-                    n["id"] == l["to"]
-                        && n["role"] == "switch"
+            let sw = device_by_id
+                .get(l["to"].as_str().ok_or("invalid_attachment")?)
+                .filter(|n| {
+                    n["role"] == "switch"
                         && n["network_id"] == host["network_id"]
                         && n["zone"] == host["zone"]
                 })
@@ -645,13 +661,11 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             }
         }
         if l["kind"] == "trunk" {
-            let sw_a = devices
-                .iter()
-                .find(|n| n["id"] == l["from"])
+            let sw_a = device_by_id
+                .get(l["from"].as_str().ok_or("invalid_link")?)
                 .ok_or("invalid_link")?;
-            let sw_b = devices
-                .iter()
-                .find(|n| n["id"] == l["to"])
+            let sw_b = device_by_id
+                .get(l["to"].as_str().ok_or("invalid_link")?)
                 .ok_or("invalid_link")?;
             let vlan = l["vlan"].as_u64().ok_or("invalid_link")?;
             if sw_a["role"] != "switch"
@@ -688,18 +702,16 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                 l["to_port"].as_str().unwrap_or(""),
                 vlan
             );
-            if line != &expected {
+            if *line != expected {
                 return Err("invalid_link".into());
             }
         }
         if l["kind"] == "routed_uplink" {
-            let sw = devices
-                .iter()
-                .find(|n| n["id"] == l["from"])
+            let sw = device_by_id
+                .get(l["from"].as_str().ok_or("invalid_link")?)
                 .ok_or("invalid_link")?;
-            let router = devices
-                .iter()
-                .find(|n| n["id"] == l["to"])
+            let router = device_by_id
+                .get(l["to"].as_str().ok_or("invalid_link")?)
                 .ok_or("invalid_link")?;
             if sw["role"] != "switch"
                 || router["role"] != "router"
@@ -726,7 +738,7 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                 l["to"].as_str().unwrap_or(""),
                 l["to_port"].as_str().unwrap_or("")
             );
-            if line != &expected {
+            if *line != expected {
                 return Err("invalid_link".into());
             }
         }
@@ -742,11 +754,10 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                 .iter()
                 .find(|n| n["id"] == l["from"])
                 .ok_or("invalid_link")?;
-            let router = devices
-                .iter()
-                .find(|n| {
-                    n["id"] == l["to"]
-                        && n["role"] == "router"
+            let router = device_by_id
+                .get(l["to"].as_str().ok_or("invalid_link")?)
+                .filter(|n| {
+                    n["role"] == "router"
                         && n["network_id"] == l["from"]
                         && n["zone"] == net["zone"]
                 })
@@ -764,13 +775,13 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             }
         }
         if l["kind"] == "declared_uplink" {
-            let router = devices
-                .iter()
-                .find(|n| n["id"] == l["from"] && n["role"] == "router")
+            let router = device_by_id
+                .get(l["from"].as_str().ok_or("invalid_gateway")?)
+                .filter(|n| n["role"] == "router")
                 .ok_or("invalid_gateway")?;
-            let fw = devices
-                .iter()
-                .find(|n| n["id"] == l["to"] && n["role"] == "firewall")
+            let fw = device_by_id
+                .get(l["to"].as_str().ok_or("invalid_gateway")?)
+                .filter(|n| n["role"] == "firewall")
                 .ok_or("invalid_gateway")?;
             let ev = &l["evidence"][0];
             let sid = ev["source_id"].as_str().ok_or("invalid_evidence")?;
@@ -785,7 +796,7 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             if router["network_id"] != fw["network_id"]
                 || source_rows
                     .get(ev["line"].as_u64().unwrap_or(0).saturating_sub(1) as usize)
-                    .map(String::as_str)
+                    .copied()
                     != Some(record.as_str())
                 || evidence.len() != 3
                 || !configs.iter().any(|c| {
@@ -1266,6 +1277,35 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(a["hosts"].as_array().unwrap().len(), 1000);
         assert_eq!(a["hosts"][999]["id"], "host-1000");
+    }
+    #[test]
+    fn large_synthetic_projection_scale_respects_source_budget() {
+        let rejected_started = std::time::Instant::now();
+        assert_eq!(
+            layer_sample_sized(40, 250).unwrap_err(),
+            "source_limit",
+            "10,000-host evidence corpus must stay within the existing source budget"
+        );
+        let rejected_10k_ms = rejected_started.elapsed().as_secs_f64() * 1000.0;
+
+        let build_started = std::time::Instant::now();
+        let d = layer_sample_sized(10, 250).expect("large synthetic corpus")["dataset"].clone();
+        let build_ms = build_started.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(d["hosts"].as_array().unwrap().len(), 2_500);
+        let dataset_bytes = serde_json::to_vec(&d).unwrap().len();
+
+        let projection_started = std::time::Instant::now();
+        let out =
+            project_layers(json!({"dataset":d,"view":"l2","network_id":"net-10","limit":100}))
+                .expect("validated large projection");
+        let projection_ms = projection_started.elapsed().as_secs_f64() * 1000.0;
+        let response_bytes = serde_json::to_vec(&out).unwrap().len();
+        assert_eq!(out["counts"]["hosts"], 2_500);
+        assert_eq!(out["pagination"]["total"], 250);
+        assert!(out["nodes"].as_array().unwrap().len() <= 140);
+        eprintln!(
+            "scale_projection view=l2 hosts=2500 dataset_bytes={dataset_bytes} response_bytes={response_bytes} build_ms={build_ms:.2} projection_ms={projection_ms:.2} rejected_hosts=10000 rejected_reason=source_limit reject_ms={rejected_10k_ms:.2}"
+        );
     }
     #[test]
     fn projections_page_and_paths_are_bounded_and_semantic() {
