@@ -10,11 +10,16 @@ reachability, traffic volume or an active session.
 
 Start with Layer 3 or Zones to see an aggregate overview. Selecting a network
 opens its host and Layer 2 projection; selecting a zone narrows the Layer 3 view.
-Search by host name, IP or MAC, or use network and zone filters. Reset filters
+Search by host name, IP or MAC, or use network, zone, VRF and VDOM filters. Reset filters
 returns to the unfiltered projection. Host pages contain 25, 50 or 100 hosts;
 the total dataset count remains visible independently of the current page.
 
 Network and zone inputs suggest values from the loaded synthetic dataset.
+VRF and VDOM suggestions come from the Rust projection's declared context facets.
+Filters intersect: selecting a network in a different VRF or VDOM produces an
+empty result. Clearing one chip preserves the remaining constraints. Legacy
+datasets without context metadata still load; selecting a named context does
+not assign those records to an invented default.
 Active filters appear as removable chips, so you can clear one constraint
 without losing the others. An empty result offers a clear-filter action. Search
 updates are debounced, and an earlier response cannot replace the latest query.
@@ -42,7 +47,7 @@ map places details beside the canvas; on smaller screens they stack. The Details
 control hides or reveals the current selection without changing the projection.
 
 Host details include the projected IP, MAC, network, zone, VLAN and attachment
-information when present, plus connections and source references. Device
+information when present, plus declared VRF/VDOM, connections and source references. Device
 shortcuts open interfaces, routes, selected path hops and source evidence. Saved
 configuration and path groups retain their bounded lists and report omitted
 records instead of implying complete display. Snapshot identity and source
@@ -55,6 +60,17 @@ and assign the destination. In the path workbench, declared-connection buttons o
 devices and link details; each link inspector can open either endpoint. These
 actions navigate the existing projection and do not run another investigation.
 
+The host view groups its bounded fan-out by attachment using Rust-supplied
+positions. Select a connected port or link to inspect both endpoint ports,
+VLAN, available scope and source references. An ordered Layer 2 hop opens the
+matching device or link without discarding the returned trace. Endpoints outside
+the selected context produce an explicit unavailable path with no path hops or
+highlighted links. Scope labels describe the synthetic inventory; they do not
+establish real routing between VRFs or VDOMs.
+Network, zone and search narrow the displayed map; an explicit trace follows
+its selected endpoints within the VRF/VDOM boundary. A cross-network request
+still reports that Layer 3 analysis is required.
+
 Path-workbench facet chips narrow visible devices by zone, subnet, VRF or VDOM
 when the Rust projection supplies those facets. Find highlights matching devices
 and narrows the device list. The filter status explains this distinction, and
@@ -65,6 +81,15 @@ paths. An asymmetric return or an unproven session remains explicit. Link
 inspectors identify endpoint interfaces and declared provenance. Source buttons
 open the existing line-addressed evidence; an icon annotation changes display
 only and does not alter the saved model.
+
+Expand an interface in the device inspector for its returned address, mask,
+zone, context, configured status, exact declared connections and selected path
+hops. Expand a forward or return hop to inspect ingress/egress, the selected
+route, flow tuples, returned NAT information and decision-stage evidence.
+Interface buttons in a link inspector open the owning device's port details.
+Missing configuration facts remain unavailable, and evidence links retain their
+owning snapshot. None of these drilldowns executes another analysis or implies
+an observed port state or active session.
 
 ## Scale and limits
 

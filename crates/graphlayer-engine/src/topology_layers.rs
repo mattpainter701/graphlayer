@@ -32,6 +32,22 @@ fn only(value: &Value, allowed: &[&str]) -> bool {
         .as_object()
         .is_some_and(|o| o.keys().all(|k| allowed.contains(&k.as_str())))
 }
+fn valid_scope_fields(row: &Value) -> bool {
+    let Some(obj) = row.as_object() else {
+        return false;
+    };
+    let (Some(vrf), Some(vdom)) = (obj.get("vrf"), obj.get("vdom")) else {
+        return !obj.contains_key("vrf") && !obj.contains_key("vdom");
+    };
+    [vrf, vdom].iter().all(|v| {
+        v.as_str().is_some_and(|s| {
+            !s.is_empty()
+                && s.len() <= 80
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+        })
+    })
+}
 fn source(id: &str, label: &str, kind: &str, text: &str) -> Value {
     let lines: Vec<Value> = text
         .lines()
@@ -114,12 +130,14 @@ fn layer_sample_sized(network_count: usize, hosts_per_network: usize) -> Result<
         let subnet = format!("10.20.{}.0/24", n);
         let net_id = format!("net-{n:02}");
         let zone = zones[(n - 1) % zones.len()];
+        let vrf = format!("lab-vrf-{:02}", n);
+        let vdom = if n == 2 { "root" } else { "campus" };
         let inv_id = format!("inventory-{n:02}");
         let first_switch_hosts = hosts_per_network / 2;
         let second_switch_hosts = hosts_per_network - first_switch_hosts;
         let host_port_offset = if hosts_per_network > 100 { 60 } else { 0 };
         let mut lines = vec![format!(
-            "network {net_id} {subnet} zone {zone} gateway 10.20.{n}.253 via rtr-{n:02}"
+            "network {net_id} {subnet} zone {zone} gateway 10.20.{n}.253 via rtr-{n:02} vrf {vrf} vdom {vdom}"
         )];
         for h in 1..=hosts_per_network {
             let mac = format!(
@@ -129,7 +147,7 @@ fn layer_sample_sized(network_count: usize, hosts_per_network: usize) -> Result<
                 n
             );
             lines.push(format!(
-                "host host-{:04} 10.20.{}.{} mac {} vlan {} port Gi1/0/{} arp 10.20.{}.{} {}",
+                "host host-{:04} 10.20.{}.{} mac {} vlan {} port Gi1/0/{} arp 10.20.{}.{} {} vrf {} vdom {}",
                 (n - 1) * hosts_per_network + h,
                 n,
                 h,
@@ -142,7 +160,9 @@ fn layer_sample_sized(network_count: usize, hosts_per_network: usize) -> Result<
                 },
                 n,
                 h,
-                mac
+                mac,
+                vrf,
+                vdom
             ));
         }
         if n == 1 {
@@ -163,12 +183,12 @@ fn layer_sample_sized(network_count: usize, hosts_per_network: usize) -> Result<
         let sw_a = format!("sw-{n:02}-a");
         let sw_b = format!("sw-{n:02}-b");
         let dist = format!("sw-{n:02}-d");
-        devices.push(json!({"id":sw_a,"label":sw_a,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":first_switch_hosts,"evidence":[refev(&inv_id,1,&invhash)]}));
-        devices.push(json!({"id":sw_b,"label":sw_b,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":second_switch_hosts,"evidence":[refev(&inv_id,1,&invhash)]}));
-        devices.push(json!({"id":dist,"label":dist,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"host_count":0,"evidence":[refev(&inv_id,1,&invhash)]}));
-        devices.push(json!({"id":format!("rtr-{n:02}"),"label":format!("Router {n:02}"),"role":"router","zone":zone,"network_id":net_id,"subnet":subnet,"ip":format!("10.20.{n}.253"),"host_count":0,"evidence":[refev(&inv_id,1,&invhash)]}));
+        devices.push(json!({"id":sw_a,"label":sw_a,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"vrf":vrf,"vdom":vdom,"host_count":first_switch_hosts,"evidence":[refev(&inv_id,1,&invhash)]}));
+        devices.push(json!({"id":sw_b,"label":sw_b,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"vrf":vrf,"vdom":vdom,"host_count":second_switch_hosts,"evidence":[refev(&inv_id,1,&invhash)]}));
+        devices.push(json!({"id":dist,"label":dist,"role":"switch","zone":zone,"network_id":net_id,"subnet":subnet,"vrf":vrf,"vdom":vdom,"host_count":0,"evidence":[refev(&inv_id,1,&invhash)]}));
+        devices.push(json!({"id":format!("rtr-{n:02}"),"label":format!("Router {n:02}"),"role":"router","zone":zone,"network_id":net_id,"subnet":subnet,"ip":format!("10.20.{n}.253"),"vrf":vrf,"vdom":vdom,"host_count":0,"evidence":[refev(&inv_id,1,&invhash)]}));
         networks.push(
-            json!({"id":net_id,"subnet":subnet,"zone":zone,"evidence":[refev(&inv_id,1,&invhash)]}),
+            json!({"id":net_id,"subnet":subnet,"zone":zone,"vrf":vrf,"vdom":vdom,"evidence":[refev(&inv_id,1,&invhash)]}),
         );
         for h in 1..=hosts_per_network {
             let ix = (n - 1) * hosts_per_network + h;
@@ -190,7 +210,7 @@ fn layer_sample_sized(network_count: usize, hosts_per_network: usize) -> Result<
             } else {
                 h - first_switch_hosts + host_port_offset
             };
-            hosts.push(json!({"id":id,"label":id,"role":"host","zone":zone,"network_id":net_id,"subnet":subnet,"ip":ip,"mac":mac,"vlan":100+n,"port":format!("Gi1/0/{port}"),"attachment":sw,"evidence":[refev(&inv_id,h+1,&invhash)]}));
+            hosts.push(json!({"id":id,"label":id,"role":"host","zone":zone,"network_id":net_id,"subnet":subnet,"vrf":vrf,"vdom":vdom,"ip":ip,"mac":mac,"vlan":100+n,"port":format!("Gi1/0/{port}"),"attachment":sw,"evidence":[refev(&inv_id,h+1,&invhash)]}));
             links.push(json!({"id":format!("attach-{ix:04}"),"from":id,"to":sw,"kind":"attachment","label":format!("VLAN {}",100+n),"from_port":"eth0","to_port":format!("Gi1/0/{port}"),"vlan":100+n,"evidence":[refev(&inv_id,h+1,&invhash)]}));
         }
         let up_id = format!("uplinks-{n:02}");
@@ -343,10 +363,13 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
     let mut ips = HashSet::new();
     let mut macs = HashSet::new();
     for net in d["networks"].as_array().ok_or("invalid_dataset")? {
-        if !only(net, &["id", "subnet", "zone", "evidence"]) {
+        if !only(net, &["id", "subnet", "zone", "vrf", "vdom", "evidence"]) {
             return Err("invalid_dataset".into());
         }
         let id = net["id"].as_str().ok_or("invalid_dataset")?;
+        if !valid_scope_fields(net) {
+            return Err("invalid_scope".into());
+        }
         if !ids.insert(id.to_owned()) {
             return Err("duplicate_node".into());
         }
@@ -362,6 +385,8 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                 "network_id",
                 "subnet",
                 "ip",
+                "vrf",
+                "vdom",
                 "host_count",
                 "evidence",
             ],
@@ -369,6 +394,9 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             return Err("invalid_dataset".into());
         }
         let id = node["id"].as_str().ok_or("invalid_dataset")?;
+        if !valid_scope_fields(node) {
+            return Err("invalid_scope".into());
+        }
         if !ids.insert(id.to_owned()) {
             return Err("duplicate_node".into());
         }
@@ -376,6 +404,15 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             let parsed = ip.parse::<Ipv4Addr>().map_err(|_| "invalid_device_ip")?;
             if !parsed.is_private() || !ips.insert(ip.to_owned()) {
                 return Err("invalid_device_ip".into());
+            }
+        }
+        if matches!(node["role"].as_str(), Some("switch" | "router")) {
+            let net = networks
+                .iter()
+                .find(|n| n["id"] == node["network_id"])
+                .ok_or("invalid_network")?;
+            if node["vrf"] != net["vrf"] || node["vdom"] != net["vdom"] {
+                return Err("invalid_scope".into());
             }
         }
     }
@@ -404,12 +441,17 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                 "vlan",
                 "port",
                 "attachment",
+                "vrf",
+                "vdom",
                 "evidence",
             ],
         ) {
             return Err("invalid_host".into());
         }
         let id = h["id"].as_str().ok_or("invalid_dataset")?;
+        if !valid_scope_fields(h) {
+            return Err("invalid_scope".into());
+        }
         if !ids.insert(id.to_owned()) {
             return Err("duplicate_host".into());
         }
@@ -421,9 +463,15 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
         let network = h["network_id"].as_str().ok_or("invalid_host_network")?;
         let (subnet, zone, prefix, mask) =
             subnet_index.get(network).ok_or("invalid_host_network")?;
+        let network_row = networks
+            .iter()
+            .find(|n| n["id"] == network)
+            .ok_or("invalid_host_network")?;
         if h["role"] != "host"
             || h["subnet"] != *subnet
             || h["zone"] != *zone
+            || h["vrf"] != network_row["vrf"]
+            || h["vdom"] != network_row["vdom"]
             || u32::from(parsed) & *mask != *prefix
         {
             return Err("invalid_host_network".into());
@@ -565,7 +613,11 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
         let device = device_by_id
             .get(switch)
             .filter(|n| {
-                n["role"] == "switch" && n["network_id"] == network && n["zone"] == h["zone"]
+                n["role"] == "switch"
+                    && n["network_id"] == network
+                    && n["zone"] == h["zone"]
+                    && n["vrf"] == h["vrf"]
+                    && n["vdom"] == h["vdom"]
             })
             .ok_or("invalid_attachment")?;
         let port = h["port"].as_str().ok_or("invalid_attachment")?;
@@ -763,12 +815,16 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
                 })
                 .ok_or("invalid_link")?;
             let expected = format!(
-                "network {} {} zone {} gateway {} via {}",
+                "network {} {} zone {} gateway {} via {}{}",
                 net["id"].as_str().ok_or("invalid_link")?,
                 net["subnet"].as_str().ok_or("invalid_link")?,
                 net["zone"].as_str().ok_or("invalid_link")?,
                 router["ip"].as_str().ok_or("invalid_link")?,
-                router["id"].as_str().ok_or("invalid_link")?
+                router["id"].as_str().ok_or("invalid_link")?,
+                match (net["vrf"].as_str(), net["vdom"].as_str()) {
+                    (Some(vrf), Some(vdom)) => format!(" vrf {vrf} vdom {vdom}"),
+                    _ => String::new(),
+                }
             );
             if line != &expected {
                 return Err("invalid_link".into());
@@ -831,14 +887,18 @@ fn validate_dataset(d: &Value) -> Result<(), String> {
             .get(ev["line"].as_u64().ok_or("invalid_evidence")? as usize - 1)
             .ok_or("invalid_evidence")?;
         let expected = format!(
-            "host {} {} mac {} vlan {} port {} arp {} {}",
+            "host {} {} mac {} vlan {} port {} arp {} {}{}",
             h["id"].as_str().ok_or("invalid_host")?,
             h["ip"].as_str().ok_or("invalid_host")?,
             h["mac"].as_str().ok_or("invalid_host")?,
             h["vlan"].as_u64().ok_or("invalid_host")?,
             h["port"].as_str().ok_or("invalid_host")?,
             h["ip"].as_str().unwrap(),
-            h["mac"].as_str().unwrap()
+            h["mac"].as_str().unwrap(),
+            match (h["vrf"].as_str(), h["vdom"].as_str()) {
+                (Some(vrf), Some(vdom)) => format!(" vrf {vrf} vdom {vdom}"),
+                _ => String::new(),
+            }
         );
         if line != &expected {
             return Err("host_evidence_mismatch".into());
@@ -856,6 +916,8 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
                 "network_id",
                 "zone",
                 "search",
+                "vrf",
+                "vdom",
                 "offset",
                 "limit",
                 "source_host_id",
@@ -870,10 +932,21 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
         "network_id",
         "zone",
         "search",
+        "vrf",
+        "vdom",
         "source_host_id",
         "destination_host_id",
     ] {
         if input.get(key).is_some_and(|v| !v.is_string()) {
+            return Err("invalid_layer_request".into());
+        }
+    }
+    for key in ["vrf", "vdom"] {
+        if input
+            .get(key)
+            .and_then(Value::as_str)
+            .is_some_and(|v| v.len() > 80 || v.trim().is_empty() && !v.is_empty())
+        {
             return Err("invalid_layer_request".into());
         }
     }
@@ -894,13 +967,37 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
     let search = input["search"].as_str().unwrap_or("").to_lowercase();
     let network = input["network_id"].as_str().unwrap_or("");
     let zone = input["zone"].as_str().unwrap_or("");
+    let vrf = input["vrf"].as_str().unwrap_or("").trim();
+    let vdom = input["vdom"].as_str().unwrap_or("").trim();
+    let mut vrfs: Vec<String> = hosts
+        .iter()
+        .chain(d["devices"].as_array().unwrap())
+        .chain(d["networks"].as_array().unwrap())
+        .filter_map(|n| n["vrf"].as_str().map(str::to_owned))
+        .collect();
+    vrfs.sort();
+    vrfs.dedup();
+    let mut vdoms: Vec<String> = hosts
+        .iter()
+        .chain(d["devices"].as_array().unwrap())
+        .chain(d["networks"].as_array().unwrap())
+        .filter_map(|n| n["vdom"].as_str().map(str::to_owned))
+        .collect();
+    vdoms.sort();
+    vdoms.dedup();
     let matching: Vec<&Value> = hosts
         .iter()
         .filter(|h| {
             (network.is_empty() || h["network_id"] == network)
                 && (zone.is_empty() || h["zone"] == zone)
+                && (vrf.is_empty() || h["vrf"].as_str().is_some_and(|v| v.to_lowercase() == vrf))
+                && (vdom.is_empty() || h["vdom"].as_str().is_some_and(|v| v.to_lowercase() == vdom))
                 && (search.is_empty() || h.to_string().to_lowercase().contains(&search))
         })
+        .collect();
+    let selected_network_ids: HashSet<String> = matching
+        .iter()
+        .filter_map(|h| h["network_id"].as_str().map(str::to_owned))
         .collect();
     let total = matching.len();
     let offset = input["offset"].as_u64().unwrap_or(0).min(10000) as usize;
@@ -914,21 +1011,28 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
     let mut nodes: Vec<Value> = Vec::new();
     let mut projected_links = Vec::new();
     if view == "l2" {
-        let target = if !network.is_empty() {
-            network
+        let requested_target = if !network.is_empty() {
+            Some(network)
         } else {
-            page.first()
-                .or_else(|| matching.first().copied())
-                .map(|h| h["network_id"].as_str().unwrap_or(""))
-                .unwrap_or_else(|| {
-                    hosts
-                        .first()
+            input["source_host_id"]
+                .as_str()
+                .and_then(|id| {
+                    matching
+                        .iter()
+                        .find(|h| h["id"] == id)
                         .map(|h| h["network_id"].as_str().unwrap_or(""))
-                        .unwrap_or("")
+                })
+                .or_else(|| {
+                    page.first()
+                        .or_else(|| matching.first().copied())
+                        .map(|h| h["network_id"].as_str().unwrap_or(""))
                 })
         };
+        let target = requested_target
+            .filter(|target| selected_network_ids.contains(*target))
+            .unwrap_or("");
         for device in d["devices"].as_array().unwrap() {
-            if device["network_id"] == target && device["role"] == "switch" {
+            if !target.is_empty() && device["network_id"] == target && device["role"] == "switch" {
                 nodes.push(device.clone());
             }
         }
@@ -937,10 +1041,16 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
                 .as_array()
                 .unwrap()
                 .iter()
-                .filter(|n| n["network_id"] == target && n["role"] == "router")
+                .filter(|n| {
+                    !target.is_empty() && n["network_id"] == target && n["role"] == "router"
+                })
                 .cloned(),
         );
-        nodes.extend(page.iter().filter(|h| h["network_id"] == target).cloned());
+        nodes.extend(
+            page.iter()
+                .filter(|h| !target.is_empty() && h["network_id"] == target)
+                .cloned(),
+        );
         let node_ids: HashSet<String> = nodes
             .iter()
             .filter_map(|n| n["id"].as_str().map(str::to_owned))
@@ -959,7 +1069,13 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
             .unwrap()
             .iter()
             .filter(|n| {
-                (network.is_empty() || n["id"] == network) && (zone.is_empty() || n["zone"] == zone)
+                (network.is_empty() || n["id"] == network)
+                    && selected_network_ids.contains(n["id"].as_str().unwrap_or(""))
+                    && (zone.is_empty() || n["zone"] == zone)
+                    && (vrf.is_empty()
+                        || n["vrf"].as_str().is_some_and(|v| v.to_lowercase() == vrf))
+                    && (vdom.is_empty()
+                        || n["vdom"].as_str().is_some_and(|v| v.to_lowercase() == vdom))
             })
             .filter_map(|n| n["id"].as_str().map(str::to_owned))
             .collect();
@@ -969,7 +1085,15 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
             .iter()
             .filter(|n| selected.contains(n["id"].as_str().unwrap_or("")))
         {
-            nodes.push(json!({"id":n["id"],"label":n["subnet"],"role":"network","zone":n["zone"],"network_id":n["id"],"subnet":n["subnet"],"host_count":hosts.iter().filter(|h|h["network_id"]==n["id"]).count(),"evidence":n["evidence"]}));
+            let mut projected = n.clone();
+            projected["label"] = n["subnet"].clone();
+            projected["role"] = json!("network");
+            projected["network_id"] = n["id"].clone();
+            projected["host_count"] = json!(matching
+                .iter()
+                .filter(|h| h["network_id"] == n["id"])
+                .count());
+            nodes.push(projected);
         }
         nodes.extend(
             d["devices"]
@@ -978,7 +1102,7 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
                 .iter()
                 .filter(|n| {
                     (n["role"] == "router" || n["role"] == "firewall")
-                        && (network.is_empty() || n["network_id"] == network)
+                        && selected_network_ids.contains(n["network_id"].as_str().unwrap_or(""))
                         && (zone.is_empty() || n["zone"] == zone)
                 })
                 .cloned(),
@@ -995,54 +1119,70 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
             projected_links.push(l.clone());
         }
     } else {
-        let mut selected_zones: HashSet<String> = if zone.is_empty() {
-            d["zones"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        } else {
-            HashSet::from([zone.to_owned()])
-        };
-        if !network.is_empty() {
-            selected_zones.retain(|z| {
-                hosts
-                    .iter()
-                    .any(|h| h["network_id"] == network && h["zone"].as_str() == Some(z.as_str()))
-                    || d["devices"].as_array().unwrap().iter().any(|node| {
-                        node["network_id"] == network && node["zone"].as_str() == Some(z.as_str())
-                    })
-            });
-            for link in links.iter().filter(|l| l["kind"] == "declared_uplink") {
-                let net_id = link["from"].as_str().unwrap_or("").replace("rtr-", "net-");
-                if net_id == network {
-                    if let Some(node) = d["devices"]
+        let mut selected_zones: HashSet<String> = d["networks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|n| selected_network_ids.contains(n["id"].as_str().unwrap_or("")))
+            .filter_map(|n| n["zone"].as_str().map(str::to_owned))
+            .collect();
+        // Explicit declared uplinks may expose the connected firewall zone,
+        // but only when their router belongs to the selected network context.
+        for link in links.iter().filter(|l| l["kind"] == "declared_uplink") {
+            if let Some(router) = d["devices"].as_array().unwrap().iter().find(|n| {
+                n["id"] == link["from"]
+                    && selected_network_ids.contains(n["network_id"].as_str().unwrap_or(""))
+            }) {
+                if zone.is_empty() || router["zone"] == zone {
+                    if let Some(fw) = d["devices"]
                         .as_array()
                         .unwrap()
                         .iter()
                         .find(|n| n["id"] == link["to"])
                     {
-                        if let Some(z) = node["zone"].as_str() {
+                        if let Some(z) = fw["zone"].as_str() {
                             selected_zones.insert(z.to_owned());
                         }
                     }
                 }
             }
         }
+        if !zone.is_empty() {
+            selected_zones.retain(|z| {
+                z == zone
+                    || d["devices"].as_array().unwrap().iter().any(|n| {
+                        n["role"] == "firewall"
+                            && n["zone"].as_str() == Some(z.as_str())
+                            && selected_network_ids.contains(n["network_id"].as_str().unwrap_or(""))
+                    })
+            });
+        }
         for z in d["zones"].as_array().unwrap() {
             let z = z.as_str().unwrap_or("");
             if selected_zones.contains(z) {
-                let evidence: Vec<Value> = d["networks"]
+                let mut evidence: Vec<Value> = d["networks"]
                     .as_array()
                     .unwrap()
                     .iter()
                     .chain(d["devices"].as_array().unwrap())
-                    .filter(|n| n["zone"] == z)
+                    .filter(|n| {
+                        n["zone"] == z
+                            && selected_network_ids.contains(
+                                n["network_id"]
+                                    .as_str()
+                                    .or_else(|| n["id"].as_str())
+                                    .unwrap_or(""),
+                            )
+                    })
                     .flat_map(|n| n["evidence"].as_array().cloned().unwrap_or_default())
                     .collect();
-                nodes.push(json!({"id":format!("zone-{z}"),"label":z,"role":"zone","zone":z,"host_count":hosts.iter().filter(|h|h["zone"]==z).count(),"evidence":evidence}));
+                evidence.extend(
+                    matching
+                        .iter()
+                        .filter(|h| h["zone"] == z)
+                        .flat_map(|h| h["evidence"].as_array().cloned().unwrap_or_default()),
+                );
+                nodes.push(json!({"id":format!("zone-{z}"),"label":z,"role":"zone","zone":z,"host_count":matching.iter().filter(|h|h["zone"]==z).count(),"evidence":evidence}));
             }
         }
         // Zone links are emitted only when a parser-backed gateway explicitly joins two zones.
@@ -1061,7 +1201,12 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
             ) else {
                 continue;
             };
-            if a != b
+            let source_selected = d["devices"].as_array().unwrap().iter().any(|n| {
+                n["id"] == l["from"]
+                    && selected_network_ids.contains(n["network_id"].as_str().unwrap_or(""))
+            });
+            if source_selected
+                && a != b
                 && selected_zones.contains(a)
                 && selected_zones.contains(b)
                 && boundaries.insert(format!("{a}:{b}"))
@@ -1075,7 +1220,21 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
         input["destination_host_id"].as_str(),
     ) {
         if !src.is_empty() && !dst.is_empty() {
-            Some(path(hosts, links, src, dst))
+            // Network, zone and search narrow the map; a trace still evaluates
+            // its explicit endpoints. Declared VRF/VDOM context is the boundary
+            // that must not be bypassed while adding a selected path.
+            let endpoint_in_scope = |id: &str| {
+                hosts.iter().find(|h| h["id"] == id).is_none_or(|h| {
+                    (vrf.is_empty() || h["vrf"] == vrf) && (vdom.is_empty() || h["vdom"] == vdom)
+                })
+            };
+            if endpoint_in_scope(src) && endpoint_in_scope(dst) {
+                Some(path(hosts, links, src, dst))
+            } else {
+                Some(
+                    json!({"status":"indeterminate","reason":"outside_selected_context","hops":[],"links":[],"evidence":[]}),
+                )
+            }
         } else {
             None
         }
@@ -1083,7 +1242,10 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
         None
     };
     if view == "l2" {
-        if let Some(selected) = &path_result {
+        if let Some(selected) = path_result
+            .as_ref()
+            .filter(|p| p["status"] == "modeled_l2_path")
+        {
             let mut node_ids: HashSet<String> = nodes
                 .iter()
                 .filter_map(|n| n["id"].as_str().map(str::to_owned))
@@ -1130,7 +1292,118 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
     if nodes.len() > 140 || projected_links.len() > LINK_LIMIT {
         return Err("projection_limit".into());
     }
-    let mut result = json!({"schema_version":1,"synthetic":true,"view":view,"counts":{"hosts":hosts.len(),"networks":d["networks"].as_array().map_or(0,Vec::len),"zones":d["zones"].as_array().map_or(0,Vec::len),"visible_nodes":nodes.len(),"visible_links":projected_links.len(),"matched_hosts":total},"nodes":nodes,"links":projected_links,"hosts":page,"pagination":{"offset":offset,"limit":limit,"total":total,"has_more":offset.saturating_add(limit)<total},"sources":sources});
+    let mut canvas_width = 780usize;
+    let mut canvas_height = 180usize;
+    if view == "l2" {
+        let target_id = nodes
+            .iter()
+            .find(|n| n["role"] == "switch")
+            .and_then(|n| n["network_id"].as_str())
+            .unwrap_or("")
+            .to_owned();
+        let row_h = 104usize;
+        let mut host_order: Vec<usize> = nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n["role"] == "host")
+            .map(|(i, _)| i)
+            .collect();
+        host_order.sort_by_key(|i| {
+            (
+                nodes[*i]["attachment"].as_str().unwrap_or("").to_owned(),
+                nodes[*i]["id"].as_str().unwrap_or("").to_owned(),
+            )
+        });
+        let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for node in nodes.iter().filter(|n| {
+            n["role"] == "switch"
+                && n["network_id"] == target_id
+                && !n["id"].as_str().unwrap_or("").ends_with("-d")
+        }) {
+            groups
+                .entry(node["id"].as_str().unwrap_or("").to_owned())
+                .or_default();
+        }
+        for index in host_order {
+            groups
+                .entry(nodes[index]["attachment"].as_str().unwrap_or("").to_owned())
+                .or_default()
+                .push(index);
+        }
+        // Compact attachment groups avoid a 100-row canvas. Keep card-sized
+        // spacing in both axes and an empty row between adjacent fan-outs.
+        let columns = groups
+            .values()
+            .map(|items| items.len().min(5))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let access_x = columns * 188 + 100;
+        let mut attachment_y = HashMap::new();
+        let mut next_row = 0usize;
+        for (attachment, indices) in groups {
+            let rows = indices.len().div_ceil(columns).max(1);
+            attachment_y.insert(attachment, (next_row * row_h) + ((rows - 1) * row_h) / 2);
+            for (local, index) in indices.into_iter().enumerate() {
+                nodes[index]["layout"] = json!({"x":(local % columns) * 188,"y":(next_row + local / columns) * row_h,"width":168,"height":84});
+            }
+            next_row += rows + 1;
+        }
+        let rows = next_row.max(1);
+        for node in nodes
+            .iter_mut()
+            .filter(|n| n["role"] == "switch" && n["network_id"] == target_id)
+        {
+            let id = node["id"].as_str().unwrap_or("");
+            let y = if id.ends_with("-d") {
+                rows / 2 * row_h
+            } else {
+                attachment_y.get(id).copied().unwrap_or(0)
+            };
+            let x = if id.ends_with("-d") {
+                access_x + 260
+            } else {
+                access_x
+            };
+            node["layout"] = json!({"x":x,"y":y,"width":168,"height":84});
+        }
+        for node in nodes.iter_mut().filter(|n| n["role"] == "router") {
+            node["layout"] = json!({"x":access_x + 520,"y":(rows.saturating_sub(1) * row_h) / 2,"width":168,"height":84});
+        }
+        canvas_width = access_x + 520 + 168;
+        canvas_height = rows * row_h + 84;
+    }
+    for link in &mut projected_links {
+        let endpoint = |id: &str| {
+            nodes
+                .iter()
+                .chain(hosts.iter())
+                .chain(d["devices"].as_array().unwrap().iter())
+                .find(|n| n["id"] == id)
+        };
+        let from = endpoint(link["from"].as_str().unwrap_or(""));
+        let to = endpoint(link["to"].as_str().unwrap_or(""));
+        if let (Some(from), Some(to)) = (from, to) {
+            if from["vrf"].as_str().is_some() && from["vrf"] == to["vrf"] {
+                link["vrf"] = from["vrf"].clone();
+            }
+            if from["vdom"].as_str().is_some() && from["vdom"] == to["vdom"] {
+                link["vdom"] = from["vdom"].clone();
+            }
+        }
+    }
+    let filters = json!({"network_id":network,"zone":zone,"search":search,"vrf":vrf,"vdom":vdom});
+    let matched_zones: HashSet<&str> = if view == "zone" {
+        nodes
+            .iter()
+            .filter(|n| n["role"] == "zone")
+            .filter_map(|n| n["zone"].as_str())
+            .collect()
+    } else {
+        matching.iter().filter_map(|h| h["zone"].as_str()).collect()
+    };
+    let mut result = json!({"schema_version":1,"synthetic":true,"view":view,"layout":{"width":canvas_width,"height":canvas_height},"facets":{"vrfs":vrfs,"vdoms":vdoms},"filters":filters,"counts":{"hosts":hosts.len(),"networks":d["networks"].as_array().unwrap().len(),"zones":d["zones"].as_array().unwrap().len(),"matched_networks":selected_network_ids.len(),"matched_zones":matched_zones.len(),"visible_nodes":nodes.len(),"visible_links":projected_links.len(),"matched_hosts":total},"nodes":nodes,"links":projected_links,"hosts":page,"pagination":{"offset":offset,"limit":limit,"total":total,"has_more":offset.saturating_add(limit)<total},"sources":sources});
     if let Some(path) = path_result {
         result["path"] = path;
     }
@@ -1261,7 +1534,10 @@ fn path(hosts: &[Value], links: &[Value], src: &str, dst: &str) -> Value {
                     .unwrap();
                 refs.extend(l["evidence"].as_array().cloned().unwrap_or_default())
             }
-            json!({"node_id":id,"ingress":ingress,"egress":egress,"vlan":a["vlan"],"evidence":refs})
+            let mut hop = json!({"node_id":id,"ingress":ingress,"egress":egress,"vlan":a["vlan"],"evidence":refs});
+            if let Some(vrf) = a["vrf"].as_str() { hop["vrf"] = json!(vrf); }
+            if let Some(vdom) = a["vdom"].as_str() { hop["vdom"] = json!(vdom); }
+            hop
         })
         .collect();
     json!({"status":"modeled_l2_path","reason":"explicit_same_vlan_links","hops":hops,"links":ids,"evidence":evidence})
@@ -1270,6 +1546,84 @@ fn path(hosts: &[Value], links: &[Value], src: &str, dst: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn replace_source_text(source_row: &mut Value, text: String) {
+        source_row["sha256"] = json!(hash(&text));
+        source_row["text"] = json!(text);
+        source_row["lines"] = json!(source_row["text"]
+            .as_str()
+            .unwrap()
+            .lines()
+            .enumerate()
+            .map(|(i, line)| json!({"number":i+1,"text":line}))
+            .collect::<Vec<_>>());
+    }
+    fn legacy_dataset() -> Value {
+        let mut d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        for key in ["hosts", "devices", "networks"] {
+            for row in d[key].as_array_mut().unwrap() {
+                if let Some(obj) = row.as_object_mut() {
+                    obj.remove("vrf");
+                    obj.remove("vdom");
+                }
+            }
+        }
+        for source_row in d["sources"].as_array_mut().unwrap() {
+            let id = source_row["id"].as_str().unwrap_or("");
+            if id.starts_with("inventory-") {
+                let text = source_row["text"]
+                    .as_str()
+                    .unwrap()
+                    .lines()
+                    .map(|line| line.split_once(" vrf ").map_or(line, |(prefix, _)| prefix))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                replace_source_text(source_row, text);
+            }
+        }
+        let canonical = d["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(d["devices"].as_array().unwrap())
+            .chain(d["networks"].as_array().unwrap())
+            .chain(d["links"].as_array().unwrap())
+            .map(|row| canonical_record(row).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let canon_source = d["sources"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|s| s["id"] == "synthetic-records")
+            .unwrap();
+        replace_source_text(canon_source, canonical);
+        let digests: HashMap<String, String> = d["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| {
+                (
+                    s["id"].as_str().unwrap().to_owned(),
+                    s["sha256"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        for key in ["hosts", "devices", "networks", "links"] {
+            for row in d[key].as_array_mut().unwrap() {
+                for ev in row["evidence"].as_array_mut().unwrap() {
+                    let sid = ev["source_id"].as_str().unwrap().to_owned();
+                    let digest = &digests[&sid];
+                    ev["sha256"] = json!(digest);
+                    ev["ref"] = json!(format!(
+                        "{sid}:{}:L{}",
+                        &digest[..12],
+                        ev["line"].as_u64().unwrap()
+                    ));
+                }
+            }
+        }
+        d
+    }
     #[test]
     fn sample_is_deterministic_and_exactly_one_thousand_hosts() {
         let a = layer_sample(json!({})).unwrap()["dataset"].clone();
@@ -1358,6 +1712,8 @@ mod tests {
         let out=project_layers(json!({"dataset":d,"view":"l2","limit":25,"source_host_id":"host-0001","destination_host_id":"host-0075"})).unwrap();
         let path = &out["path"];
         assert_eq!(path["status"], "modeled_l2_path");
+        assert_eq!(path["hops"][0]["vrf"], "lab-vrf-01");
+        assert_eq!(path["hops"][0]["vdom"], "campus");
         assert_eq!(path["hops"][0]["egress"], "eth0");
         assert!(path["hops"][1]["egress"]
             .as_str()
@@ -1372,5 +1728,165 @@ mod tests {
             .unwrap()
             .iter()
             .any(|n| n["id"] == "host-0075"));
+        assert!(out["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| l["kind"] == "attachment")
+            .all(|l| l["vrf"] == "lab-vrf-01" && l["vdom"] == "campus"));
+    }
+
+    #[test]
+    fn scope_filters_are_intersected_and_paths_fail_closed_outside_context() {
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let out = project_layers(json!({"dataset":d,"view":"l2","vrf":" lab-vrf-01 ","vdom":"campus","network_id":"net-01","zone":"engineering","search":"host-00","limit":100})).unwrap();
+        assert_eq!(out["pagination"]["total"], 99);
+        assert_eq!(out["facets"]["vrfs"].as_array().unwrap().len(), 10);
+        assert_eq!(out["facets"]["vdoms"].as_array().unwrap().len(), 2);
+        assert_eq!(out["filters"]["vrf"], "lab-vrf-01");
+        let distinct_case =
+            project_layers(json!({"dataset":d,"view":"l2","vrf":"LAB-VRF-01"})).unwrap();
+        assert_eq!(distinct_case["pagination"]["total"], 0);
+        assert_eq!(distinct_case["filters"]["vrf"], "LAB-VRF-01");
+        let routed = project_layers(json!({"dataset":d,"view":"l2","network_id":"net-01","search":"host-0001","source_host_id":"host-0001","destination_host_id":"host-0101"})).unwrap();
+        assert_eq!(routed["path"]["status"], "requires_l3");
+        let same_vlan = project_layers(json!({"dataset":d,"view":"l2","vrf":"lab-vrf-01","search":"host-0001","source_host_id":"host-0001","destination_host_id":"host-0002"})).unwrap();
+        assert_eq!(same_vlan["path"]["status"], "modeled_l2_path");
+        let outside = project_layers(json!({"dataset":d,"view":"l2","vrf":"lab-vrf-02","source_host_id":"host-0001","destination_host_id":"host-0002"})).unwrap();
+        assert_eq!(outside["path"]["reason"], "outside_selected_context");
+        assert_eq!(outside["path"]["hops"].as_array().unwrap().len(), 0);
+        assert!(!outside["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["id"] == "host-0001"));
+    }
+
+    #[test]
+    fn l2_fanout_layout_cards_do_not_overlap() {
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let out =
+            project_layers(json!({"dataset":d,"view":"l2","network_id":"net-01","limit":100}))
+                .unwrap();
+        let nodes = out["nodes"].as_array().unwrap();
+        let mut cards = Vec::new();
+        for node in nodes {
+            let l = &node["layout"];
+            let x = l["x"].as_u64().unwrap();
+            let y = l["y"].as_u64().unwrap();
+            let w = l["width"].as_u64().unwrap();
+            let h = l["height"].as_u64().unwrap();
+            for (ox, oy, ow, oh) in &cards {
+                assert!(
+                    x + w <= *ox || *ox + *ow <= x || y + h <= *oy || *oy + *oh <= y,
+                    "card overlap"
+                );
+            }
+            cards.push((x, y, w, h));
+        }
+        assert_eq!(cards.len(), 104);
+        let width = out["layout"]["width"].as_u64().unwrap();
+        let height = out["layout"]["height"].as_u64().unwrap();
+        assert!(
+            width <= 2_200 && height <= 3_000,
+            "fan-out must fit a compact overview"
+        );
+        assert!(cards
+            .iter()
+            .all(|(x, y, w, h)| x + w <= width && y + h <= height));
+        let a_bottom = nodes
+            .iter()
+            .filter(|n| n["attachment"] == "sw-01-a")
+            .map(|n| n["layout"]["y"].as_u64().unwrap() + n["layout"]["height"].as_u64().unwrap())
+            .max()
+            .unwrap();
+        let b_top = nodes
+            .iter()
+            .filter(|n| n["attachment"] == "sw-01-b")
+            .map(|n| n["layout"]["y"].as_u64().unwrap())
+            .min()
+            .unwrap();
+        assert!(
+            a_bottom < b_top,
+            "attachment fan-outs must remain visibly separate"
+        );
+        assert!(
+            nodes.iter().find(|n| n["id"] == "sw-01-a").unwrap()["layout"]["y"]
+                .as_u64()
+                .unwrap()
+                < nodes.iter().find(|n| n["id"] == "sw-01-b").unwrap()["layout"]["y"]
+                    .as_u64()
+                    .unwrap()
+        );
+    }
+
+    #[test]
+    fn scope_filters_bound_l2_l3_and_zone_projection_context() {
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let incompatible = project_layers(
+            json!({"dataset":d,"view":"l2","network_id":"net-01","vrf":"lab-vrf-02","limit":100}),
+        )
+        .unwrap();
+        assert_eq!(incompatible["counts"]["visible_nodes"], 0);
+        assert_eq!(incompatible["links"].as_array().unwrap().len(), 0);
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let l3 = project_layers(json!({"dataset":d,"view":"l3","network_id":"net-01","vrf":"lab-vrf-01","vdom":"campus"})).unwrap();
+        let net = l3["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["role"] == "network")
+            .unwrap();
+        assert_eq!(net["vrf"], "lab-vrf-01");
+        assert_eq!(net["vdom"], "campus");
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let zone =
+            project_layers(json!({"dataset":d,"view":"zone","vrf":"lab-vrf-01","vdom":"campus"}))
+                .unwrap();
+        assert!(zone["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|n| n["zone"] == "engineering" || n["zone"] == "shared-services"));
+        assert!(!zone["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|n| n["evidence"].as_array().unwrap().iter())
+            .any(|e| e["source_id"] == "inventory-02"));
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let none =
+            project_layers(json!({"dataset":d,"view":"zone","vrf":"lab-vrf-01","vdom":"root"}))
+                .unwrap();
+        assert_eq!(none["nodes"].as_array().unwrap().len(), 0);
+        assert_eq!(none["links"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn rejects_scope_metadata_that_disagrees_with_canonical_evidence() {
+        let mut d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        d["hosts"][0]["vrf"] = "lab-vrf-02".into();
+        assert!(matches!(
+            validate_dataset(&d).unwrap_err().as_str(),
+            "invalid_host_network" | "record_evidence_mismatch"
+        ));
+        let mut malformed = layer_sample(json!({})).unwrap()["dataset"].clone();
+        malformed["hosts"][0]["vrf"] = "invalid scope".into();
+        assert_eq!(validate_dataset(&malformed).unwrap_err(), "invalid_scope");
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        assert_eq!(
+            project_layers(json!({"dataset":d,"view":"l2","vrf":"x".repeat(81)})).unwrap_err(),
+            "invalid_layer_request"
+        );
+    }
+
+    #[test]
+    fn accepts_legacy_schema_one_dataset_without_scope_metadata() {
+        let d = legacy_dataset();
+        validate_dataset(&d).unwrap();
+        let out = project_layers(json!({"dataset":d,"view":"l2","vrf":"lab-vrf-01"})).unwrap();
+        assert_eq!(out["pagination"]["total"], 0);
+        assert_eq!(out["nodes"].as_array().unwrap().len(), 0);
+        assert!(out["facets"]["vrfs"].as_array().unwrap().is_empty());
     }
 }

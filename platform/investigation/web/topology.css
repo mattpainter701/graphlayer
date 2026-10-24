@@ -320,3 +320,21 @@
   .topology-active-filters { padding-inline: 14px; }
   .topology-neighbor-button, .topology-neighbor-link, .topology-endpoint-button { width: 100%; }
 }
+
+/* Port and hop drilldowns keep returned path facts readable in the inspector. */
+.topology-port-detail { margin: 8px 0; border: 1px solid #d7e3eb; border-radius: 9px; background: #fff; }
+.topology-port-toggle { display: flex; align-items: center; width: 100%; min-height: 44px; padding: 9px 11px; border: 0; border-radius: 8px; background: transparent; color: #31566f; font: 700 12px ui-sans-serif,system-ui,sans-serif; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.topology-port-toggle:hover, .topology-port-detail.is-expanded > .topology-port-toggle { background: #f4f9fc; }
+.topology-port-detail-body { min-width: 0; padding: 7px 11px 10px; }
+.topology-port-subsection { min-width: 0; margin: 8px 0; }
+.topology-port-subsection > h6 { margin: 9px 0 5px; color: #627a8d; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.topology-port-detail .topology-neighbor-link, .topology-endpoint-button { min-height: 44px; }
+.topology-hop-card { min-width: 0; }
+.topology-hop-title { margin: 0 0 7px; color: #294e68; font-size: 12px; }
+.topology-hop-card .topology-config-item, .topology-hop-card .topology-tuple { margin: 5px 0; }
+.topology-port-toggle:focus-visible { outline: 3px solid rgb(33 133 208 / 28%); outline-offset: 2px; }
+.topology-unavailable-reference { max-width: 100%; min-height: 34px; padding: 7px 9px; border: 1px dashed #c7d4dd; border-radius: 8px; color: #687d8f; font-size: 10px; overflow-wrap: anywhere; }
+@media (max-width: 800px) {
+  .topology-port-detail-body { padding-inline: 8px; }
+  .topology-port-detail .topology-neighbor-list { min-width: 0; }
+}

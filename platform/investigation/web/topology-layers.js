@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { root: null, csrf: '', dataset: null, projection: null, view: 'l3', network: '', zone: '', search: '', offset: 0, limit: 25, source: '', sourcePinned: false, destination: '', busy: false, seq: 0, timer: 0, controller: null, scale: 1, x: 0, y: 0, pan: null, selected: null, preservePan: false, transformFrame: 0, inspectorCollapsed: true, fullscreenActive: false, fullscreenFocus: null, bodyOverflow: null };
+  const state = { root: null, csrf: '', dataset: null, projection: null, view: 'l3', network: '', zone: '', vrf: '', vdom: '', search: '', offset: 0, limit: 25, source: '', sourcePinned: false, destination: '', busy: false, seq: 0, timer: 0, controller: null, scale: 1, x: 0, y: 0, pan: null, selected: null, preservePan: false, transformFrame: 0, inspectorCollapsed: true, fullscreenActive: false, fullscreenFocus: null, bodyOverflow: null };
   const NS = 'http://www.w3.org/2000/svg';
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = String(text); return e; };
   const button = (id, label, cls = 'tl-button') => { const b = el('button', cls, label); b.type = 'button'; if (id) b.id = id; return b; };
@@ -30,11 +30,15 @@
     const controls = el('div', 'tl-controls');
     const net = field('NETWORK', 'tl-network'); net.input.placeholder = 'All networks';
     const zone = field('ZONE', 'tl-zone'); zone.input.placeholder = 'All zones';
+    const vrf = field('VRF', 'tl-vrf'); vrf.input.placeholder = 'All VRFs';
+    const vdom = field('VDOM', 'tl-vdom'); vdom.input.placeholder = 'All VDOMs';
     const networkOptions = el('datalist'); networkOptions.id = 'tl-network-options'; net.input.setAttribute('list', networkOptions.id);
     const zoneOptions = el('datalist'); zoneOptions.id = 'tl-zone-options'; zone.input.setAttribute('list', zoneOptions.id);
+    const vrfOptions = el('datalist'); vrfOptions.id = 'tl-vrf-options'; vrf.input.setAttribute('list', vrfOptions.id);
+    const vdomOptions = el('datalist'); vdomOptions.id = 'tl-vdom-options'; vdom.input.setAttribute('list', vdomOptions.id);
     const search = field('SEARCH', 'tl-search', 'search'); search.input.placeholder = 'Host, IP, MAC…'; search.input.setAttribute('aria-label', 'Search hosts and networks');
     const resetFilters = button('tl-reset-filters', 'Reset filters'); resetFilters.classList.add('tl-reset-filters');
-    controls.append(net.wrap, zone.wrap, search.wrap, resetFilters);
+    controls.append(net.wrap, zone.wrap, vrf.wrap, vdom.wrap, search.wrap, resetFilters);
     const activeFilters = el('div', 'tl-active-filters'); activeFilters.id = 'tl-active-filters'; activeFilters.setAttribute('aria-label', 'Active filters');
     const filterCount = el('span', 'tl-filter-count', 'No active filters'); filterCount.id = 'tl-filter-count'; filterCount.setAttribute('aria-live', 'polite');
     const canvasHead = el('div', 'tl-canvas-head');
@@ -68,8 +72,8 @@
     const note = el('p', 'tl-note', 'All lab devices and observations are synthetic. Configuration projections do not establish live reachability or runtime state.');
     const workspace = el('div', 'tl-workspace'); workspace.append(canvasHead, graph, legend, caption, pager);
     const content = el('div', 'tl-content'); content.append(workspace, inspector); content.classList.add('is-inspector-collapsed');
-    state.root.replaceChildren(header, summary, tabs, controls, filterCount, activeFilters, networkOptions, zoneOptions, content, lower, sourceDrawer, note);
-    Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel });
+    state.root.replaceChildren(header, summary, tabs, controls, filterCount, activeFilters, networkOptions, zoneOptions, vrfOptions, vdomOptions, content, lower, sourceDrawer, note);
+    Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, vrfInput: vrf.input, vdomInput: vdom.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, vrfOptions, vdomOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel });
     state.focusPath = true; state.focusToggle = focusPath;
     focusPath.addEventListener('click', () => { state.focusPath = !state.focusPath; render(); });
     load.addEventListener('click', loadDataset);
@@ -80,6 +84,12 @@
       const network = net.input.value.trim(); const selectedZone = zone.input.value.trim();
       if (network === state.network && selectedZone === state.zone) return;
       clearTimeout(state.timer); state.timer = 0; state.network = network; state.zone = selectedZone; state.offset = 0; renderFilters(); requestProjection();
+    }));
+    [vrf.input, vdom.input].forEach((input) => input.addEventListener('change', () => {
+      const vrfValue = vrf.input.value.trim(); const vdomValue = vdom.input.value.trim();
+      if (vrfValue === state.vrf && vdomValue === state.vdom) return;
+      state.vrf = vrfValue; state.vdom = vdomValue; state.offset = 0;
+      clearScopeSelection(); renderFilters(); requestProjection();
     }));
     search.input.addEventListener('input', () => {
       state.search = search.input.value.trim(); state.offset = 0; renderFilters(); clearTimeout(state.timer); state.timer = 0;
@@ -97,9 +107,9 @@
     fit.addEventListener('click', fitGraph); zoomIn.addEventListener('click', () => setZoom(state.scale * 1.2)); zoomOut.addEventListener('click', () => setZoom(state.scale / 1.2));
     fullscreen.addEventListener('click', toggleFullscreen);
     inspectorToggle.addEventListener('click', () => { if (!state.selected) return; state.inspectorCollapsed = !state.inspectorCollapsed; syncInspectorView(); });
-    graph.addEventListener('wheel', (e) => { e.preventDefault(); const rect = graph.getBoundingClientRect(); const box = drawing.viewBox.baseVal; const cx = (e.clientX - rect.left) * box.width / rect.width; const cy = (e.clientY - rect.top) * box.height / rect.height; zoomAt(state.scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12), cx, cy); }, { passive: false });
-    graph.addEventListener('pointerdown', (e) => { if (e.button !== 0 || e.target.closest('.tl-node')) return; const rect = graph.getBoundingClientRect(); const box = drawing.viewBox.baseVal; state.pan = { x: e.clientX, y: e.clientY, factorX: box.width / rect.width, factorY: box.height / rect.height, ox: state.x, oy: state.y }; graph.setPointerCapture(e.pointerId); graph.classList.add('is-panning'); });
-    graph.addEventListener('pointermove', (e) => { if (!state.pan) return; state.x = state.pan.ox + (e.clientX - state.pan.x) * state.pan.factorX; state.y = state.pan.oy + (e.clientY - state.pan.y) * state.pan.factorY; scheduleTransform(); });
+    graph.addEventListener('wheel', (e) => { e.preventDefault(); const point = screenPoint(e); zoomAt(state.scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12), point.x, point.y); }, { passive: false });
+    graph.addEventListener('pointerdown', (e) => { if (e.button !== 0 || e.target.closest('.tl-node,.tl-edge')) return; const point = screenPoint(e); state.pan = { x: point.x, y: point.y, ox: state.x, oy: state.y }; graph.setPointerCapture(e.pointerId); graph.classList.add('is-panning'); });
+    graph.addEventListener('pointermove', (e) => { if (!state.pan) return; const point = screenPoint(e); state.x = state.pan.ox + point.x - state.pan.x; state.y = state.pan.oy + point.y - state.pan.y; scheduleTransform(); });
     const stopPan = (e) => { if (e && graph.hasPointerCapture(e.pointerId)) graph.releasePointerCapture(e.pointerId); state.pan = null; graph.classList.remove('is-panning'); }; graph.addEventListener('pointerup', stopPan); graph.addEventListener('pointercancel', stopPan); graph.addEventListener('lostpointercapture', stopPan);
     graph.addEventListener('keydown', (e) => { if (e.target.closest('.tl-node') || e.target.matches('button, input, select')) return; const step = e.shiftKey ? 80 : 32; if (e.key === '+' || e.key === '=') setZoom(state.scale * 1.2); else if (e.key === '-' || e.key === '_') setZoom(state.scale / 1.2); else if (e.key === 'Home') fitGraph(); else if (e.key === 'ArrowLeft') state.x += step; else if (e.key === 'ArrowRight') state.x -= step; else if (e.key === 'ArrowUp') state.y += step; else if (e.key === 'ArrowDown') state.y -= step; else return; e.preventDefault(); scheduleTransform(); });
     drawing.addEventListener('click', (e) => { const item = e.target.closest('.tl-node'); if (item) selectItem(item.__item); });
@@ -122,7 +132,7 @@
   }
   function renderFilters() {
     if (!state.activeFilters) return;
-    const filters = [['network', state.network], ['zone', state.zone], ['search', state.search]].filter(([, value]) => value);
+    const filters = [['network', state.network], ['zone', state.zone], ['vrf', state.vrf], ['vdom', state.vdom], ['search', state.search]].filter(([, value]) => value);
     state.filterCount.textContent = filters.length ? `${filters.length} active filter${filters.length === 1 ? '' : 's'}` : 'No active filters';
     const chips = new Map([...state.activeFilters.querySelectorAll('[data-filter-kind]')].map((chip) => [chip.dataset.filterKind, chip]));
     const activeKinds = new Set();
@@ -130,7 +140,8 @@
       activeKinds.add(kind);
       let chip = chips.get(kind);
       if (!chip) { chip = button('', '', 'tl-filter-chip'); chip.dataset.filterKind = kind; }
-      chip.replaceChildren(el('span', '', `${kind === 'search' ? 'Search' : kind === 'network' ? 'Network' : 'Zone'}: ${value}`), el('span', 'tl-filter-remove', '×'));
+      const title = ({ search: 'Search', network: 'Network', zone: 'Zone', vrf: 'VRF', vdom: 'VDOM' })[kind] || kind;
+      chip.replaceChildren(el('span', '', `${title}: ${value}`), el('span', 'tl-filter-remove', '×'));
       chip.setAttribute('aria-label', `Remove ${kind} filter ${value}`);
       if (chip.parentElement !== state.activeFilters) state.activeFilters.append(chip);
     });
@@ -140,18 +151,32 @@
     const zones = new Set(arr(state.dataset && state.dataset.hosts).map((item) => str(first(item.zone, item.zone_id))).filter(Boolean));
     arr(state.projection && state.projection.nodes).forEach((item) => { const value = str(first(item.zone, item.zone_id, typeOf(item) === 'zone' ? labelOf(item) : undefined)); if (value) zones.add(value); });
     state.zoneOptions.replaceChildren(); [...zones].sort().forEach((value) => { const option = el('option'); option.value = value; state.zoneOptions.append(option); });
+    const facets = state.projection && state.projection.facets || {};
+    state.vrfOptions.replaceChildren(); arr(facets.vrfs).forEach((value) => { const option = el('option'); option.value = String(value); state.vrfOptions.append(option); });
+    state.vdomOptions.replaceChildren(); arr(facets.vdoms).forEach((value) => { const option = el('option'); option.value = String(value); state.vdomOptions.append(option); });
   }
   function clearFilter(kind) {
     clearTimeout(state.timer); state.timer = 0;
     if (kind === 'network') { state.network = ''; state.net.value = ''; }
     else if (kind === 'zone') { state.zone = ''; state.zoneInput.value = ''; }
     else if (kind === 'search') { state.search = ''; state.searchInput.value = ''; }
+    else if (kind === 'vrf') { state.vrf = ''; state.vrfInput.value = ''; clearScopeSelection(); }
+    else if (kind === 'vdom') { state.vdom = ''; state.vdomInput.value = ''; clearScopeSelection(); }
     else return;
     state.offset = 0; renderFilters(); requestProjection();
   }
   function resetAllFilters() {
-    state.network = ''; state.zone = ''; state.search = ''; state.offset = 0; clearTimeout(state.timer); state.timer = 0;
-    state.net.value = ''; state.zoneInput.value = ''; state.searchInput.value = ''; renderFilters(); requestProjection();
+    state.network = ''; state.zone = ''; state.vrf = ''; state.vdom = ''; state.search = ''; state.offset = 0; clearTimeout(state.timer); state.timer = 0; clearScopeSelection();
+    state.net.value = ''; state.zoneInput.value = ''; state.vrfInput.value = ''; state.vdomInput.value = ''; state.searchInput.value = ''; renderFilters(); requestProjection();
+  }
+  function clearScopeSelection() {
+    state.selected = null; state.selectedEdge = null; state.inspectorCollapsed = true; syncInspectorView(); renderInspector(null); refreshNodeSelection(); refreshEdgeSelection();
+    state.traceRequested = false; state.focusPath = false; state.focusToggle.hidden = true; state.traceStatus.replaceChildren();
+    state.stage.querySelectorAll('.tl-node.tl-on-path').forEach((node) => node.classList.remove('tl-on-path'));
+    state.stage.querySelectorAll('.tl-edge.tl-path-edge').forEach((edge) => edge.classList.remove('tl-path-edge'));
+    refreshEdgeSelection();
+    if (!state.sourcePinned) { state.source = ''; state.sourceField.input.value = ''; }
+    state.destination = ''; state.destinationField.input.value = '';
   }
   async function post(url, body, signal) {
     const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrf }, body: JSON.stringify(body), signal });
@@ -163,12 +188,12 @@
     if (!state.csrf || state.busy) return;
     clearTimeout(state.timer); state.timer = 0;
     const seq = ++state.seq; state.controller?.abort(); const controller = new AbortController(); state.controller = controller;
-    state.busy = true; state.dataset = null; state.projection = null; state.view = 'l3'; state.network = ''; state.zone = ''; state.search = ''; state.offset = 0; state.source = ''; state.sourcePinned = false; state.destination = ''; state.selected = null; state.net.value = ''; state.zoneInput.value = ''; state.searchInput.value = ''; state.sourceField.input.value = ''; state.destinationField.input.value = ''; renderFilters(); drawTabs(); clearProjectionUI('Generating synthetic lab dataset…'); setProjectionBusy(true); state.load.textContent = 'Loading lab…'; updateControls();
+    state.busy = true; state.dataset = null; state.projection = null; state.view = 'l3'; state.network = ''; state.zone = ''; state.vrf = ''; state.vdom = ''; state.search = ''; state.offset = 0; state.source = ''; state.sourcePinned = false; state.destination = ''; state.selected = null; state.selectedEdge = null; state.net.value = ''; state.zoneInput.value = ''; state.vrfInput.value = ''; state.vdomInput.value = ''; state.searchInput.value = ''; state.sourceField.input.value = ''; state.destinationField.input.value = ''; renderFilters(); drawTabs(); clearProjectionUI('Generating synthetic lab dataset…'); setProjectionBusy(true); state.load.textContent = 'Loading lab…'; updateControls();
     try { const result = await post('/api/sample/topology-layers', {}, controller.signal); if (seq !== state.seq) return; const dataset = result.dataset || result; validateDataset(dataset); state.dataset = dataset; state.offset = 0; state.load.textContent = 'Reload lab dataset'; await requestProjection(); }
     catch (error) { if (seq === state.seq && error.name !== 'AbortError') showError(error); }
     finally { if (seq === state.seq) { state.busy = false; setProjectionBusy(false); state.load.textContent = state.dataset ? 'Reload lab dataset' : 'Load 1,000-host lab'; updateControls(); } }
   }
-  function query() { return { dataset: state.dataset, view: state.view, network_id: state.network, zone: state.zone, search: state.search, offset: state.offset, limit: state.limit, source_host_id: state.traceRequested ? state.source : '', destination_host_id: state.traceRequested ? state.destination : '' }; }
+  function query() { return { dataset: state.dataset, view: state.view, network_id: state.network, zone: state.zone, vrf: state.vrf, vdom: state.vdom, search: state.search, offset: state.offset, limit: state.limit, source_host_id: state.traceRequested ? state.source : '', destination_host_id: state.traceRequested ? state.destination : '' }; }
   async function requestProjection(resetPath = true) {
     if (!state.csrf || !state.dataset) return;
     clearTimeout(state.timer); state.timer = 0;
@@ -188,7 +213,7 @@
   function validateProjection(projection) { if (!isObject(projection) || projection.schema_version !== 1 || projection.synthetic !== true || !Array.isArray(projection.nodes) || projection.nodes.length > 140 || !Array.isArray(projection.links) || projection.links.length > 5000 || !Array.isArray(projection.sources) || !isObject(projection.counts) || !isObject(projection.pagination) || projection.nodes.some((item) => !isObject(item) || !idOf(item)) || projection.links.some((edge) => !isObject(edge) || !first(edge.id, edge.from, edge.source_id) || !first(edge.to, edge.target, edge.destination_id))) throw new Error('The topology response has an unsupported or unbounded shape.'); }
   function isObject(value) { return Boolean(value && typeof value === 'object' && !Array.isArray(value)); }
   function clearProjectionUI(message) { if (!state.stage) return; state.focusToggle.hidden = true; state.stage.replaceChildren(); state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.classList.remove('is-error'); state.caption.textContent = message; state.graphTitle.textContent = ({ l3: 'Layer 3 overview', zone: 'Zone overview', l2: 'Host & Layer 2 detail' })[state.view]; state.graph.setAttribute('aria-labelledby', `tl-tab-${state.view}`); state.pager.hidden = true; state.summary.replaceChildren(); for (const [label, value] of [['Hosts', '—'], ['Networks', '—'], ['Connections', '—'], ['On map', '—']]) { const cell = el('div', 'tl-stat'); cell.append(el('span', '', label), el('strong', '', value)); state.summary.append(cell); } state.traceStatus.replaceChildren(); state.sourceBody.replaceChildren(); document.getElementById('tl-sources').open = false; if (!state.dataset) state.options.replaceChildren(); state.exportButton.disabled = !state.dataset; if (!state.selected) renderInspector(null); syncInspectorView(); }
-  function showError(error) { state.projection = null; state.selected = null; renderInspector(null); syncInspectorView(); clearProjectionUI(`Could not load the network map: ${str(error && error.message, 'Request failed')}`); state.caption.classList.add('is-error'); }
+  function showError(error) { state.projection = null; state.selected = null; state.selectedEdge = null; renderInspector(null); syncInspectorView(); clearProjectionUI(`Could not load the network map: ${str(error && error.message, 'Request failed')}`); state.caption.classList.add('is-error'); }
   function drawTabs() { if (!state.tabs) return; state.tabs.querySelectorAll('[data-view]').forEach((b) => { const active = b.dataset.view === state.view; b.setAttribute('aria-selected', String(active)); b.tabIndex = active ? 0 : -1; }); if (state.graph) state.graph.setAttribute('aria-labelledby', `tl-tab-${state.view}`); }
   function chooseView(view) { if (!['l2', 'l3', 'zone'].includes(view) || view === state.view) return; state.view = view; state.offset = 0; drawTabs(); requestProjection(); }
   function clearPathDisplay() { state.traceRequested = false; state.focusPath = false; state.focusToggle.hidden = true; state.caption.textContent = 'Host selection changed · trace to update the L2 path.'; state.traceStatus.replaceChildren(); state.stage.querySelectorAll('.tl-node.tl-on-path').forEach((node) => node.classList.remove('tl-on-path')); state.stage.querySelectorAll('.tl-edge.tl-path-edge').forEach((edge) => edge.classList.remove('tl-path-edge')); }
@@ -196,6 +221,10 @@
   function projectionEdges() { const p = state.projection || {}; return arr(first(p.edges, p.links, p.connections)); }
   function layoutNodes(nodes, width, view) {
     const positions = new Map();
+    if (view === 'l2' && nodes.length && nodes.every((item) => item.layout && Number.isFinite(Number(item.layout.x)) && Number.isFinite(Number(item.layout.y)))) {
+      nodes.forEach((item) => { const layout = item.layout; positions.set(idOf(item), { x: Number(layout.x) + Number(layout.width || 168) / 2, y: Number(layout.y) + Number(layout.height || 84) / 2 }); });
+      return positions;
+    }
     if (view === 'zone') { const zones = nodes.filter((item) => typeOf(item) === 'zone'); zones.forEach((item, i) => positions.set(idOf(item), { x: 180 + i * 245, y: 260 })); return positions; }
     if (view === 'l3') {
       const firewalls = nodes.filter((item) => /firewall/.test(str(item.role, '').toLowerCase()));
@@ -243,13 +272,12 @@
     state.summary.replaceChildren(); for (const [label, value] of [['Hosts', totalHosts], ['Networks', networks], ['Connections', allEdges.length], ['On map', shown]]) { const cell = el('div', 'tl-stat'); cell.append(el('span', '', label), el('strong', '', value)); state.summary.append(cell); }
     const viewLabels = { l3: 'Layer 3 overview', zone: 'Zone overview', l2: 'Host & Layer 2 detail' }; state.graphTitle.textContent = viewLabels[state.view];
     state.stage.replaceChildren();
-    if (!nodes.length) { state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.textContent = state.dataset ? (p.message || 'No elements match these filters. Remove a filter or reset filters to see results.') : 'Load the synthetic lab to explore this map.'; renderInspector(state.selected); renderPager(p); state.exportButton.disabled = !state.dataset; state.preservePan = false; return; }
-    const width = 1100; const hostRows = Math.ceil(nodes.filter((item) => typeOf(item) === 'host').length / 5); const height = focused ? Math.max(600, Math.ceil(pathNodes.size / 5) * 160 + 100) : state.view === 'l2' ? Math.max(690, 280 + Math.max(0, hostRows - 1) * 82 + 68 + 32) : 600; state.drawing.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    const positions = focused ? new Map(p.path.hops.map((hop, i) => {
-      const row = Math.floor(i / 5); const column = row % 2 ? 4 - i % 5 : i % 5;
-      return [hop.node_id, { x: 100 + column * 225, y: pathNodes.size <= 5 ? 300 : 100 + row * 160 }];
-    })) : layoutNodes(nodes, width, state.view);
-    edges.forEach((edge) => { const a = positions.get(str(first(edge.source_id, edge.source, edge.from, edge.source_host_id))); const b = positions.get(str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id))); if (!a || !b) return; const line = svg('path', { d: `M${a.x},${a.y} L${b.x},${b.y}`, class: `tl-edge ${edge.path ? 'tl-path-edge' : ''}`, 'data-link-id': first(edge.id, '') }); state.stage.append(line); });
+    if (!nodes.length) { state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.textContent = state.dataset ? (p.message || 'No elements match these filters. Remove a filter or reset filters to see results.') : 'Load the synthetic lab to explore this map.'; renderInspector(state.selected); renderPager(p); state.exportButton.disabled = !state.dataset; state.preservePan = false; renderPath(p.path); return; }
+    const rustLayout = state.view === 'l2' && p.layout && Number.isFinite(Number(p.layout.width)) && Number.isFinite(Number(p.layout.height)) ? p.layout : null;
+    const width = rustLayout ? Math.max(1100, Number(rustLayout.width)) : 1100; const hostRows = Math.ceil(nodes.filter((item) => typeOf(item) === 'host').length / 5); const height = rustLayout ? Math.max(600, Number(rustLayout.height)) : focused ? Math.max(600, Math.ceil(pathNodes.size / 5) * 160 + 100) : state.view === 'l2' ? Math.max(690, 280 + Math.max(0, hostRows - 1) * 82 + 68 + 32) : 600; state.drawing.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    if (focused) { const bounds = layoutBounds(nodes, rustLayout); if (bounds) state.drawing.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`); }
+    const positions = layoutNodes(nodes, width, state.view);
+    edges.forEach((edge) => { const a = positions.get(str(first(edge.source_id, edge.source, edge.from, edge.source_host_id))); const b = positions.get(str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id))); if (!a || !b) return; const edgeId = edgeKey(edge); const selected = state.selected && state.selected.__edge && idOf(state.selected) === edgeId; const line = svg('path', { d: `M${a.x},${a.y} L${b.x},${b.y}`, class: `tl-edge ${edge.path ? 'tl-path-edge' : ''}${selected ? ' tl-selected-edge' : ''}`, 'data-link-id': edgeId, tabindex: '0', role: 'button', 'aria-pressed': String(Boolean(selected)), 'aria-label': `Inspect connection ${edgeId || 'between endpoints'}` }); line.__edge = edge; line.addEventListener('click', () => selectEdge(edge)); line.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectEdge(edge); } }); state.stage.append(line); });
     nodes.forEach((item) => { const point = positions.get(idOf(item)); const kind = typeOf(item); const selected = state.selected && idOf(state.selected) === idOf(item) && typeOf(state.selected) === kind; const group = svg('g', { class: `tl-node tl-kind-${kind}${selected ? ' tl-selected' : ''}`, tabindex: '0', role: 'button', 'aria-pressed': String(Boolean(selected)), 'aria-label': `${kind}: ${labelOf(item)}${selected ? ', selected' : ''}`, transform: `translate(${point.x} ${point.y})` }); group.__item = item;
       const box = svg('rect', { x: '-80', y: '-34', width: '160', height: '68', rx: '12', class: 'tl-node-box' }); const title = svg('text', { x: '-42', y: '-2', class: 'tl-node-title' }); title.textContent = clipped(labelOf(item), 19); const sub = svg('text', { x: '-42', y: '17', class: 'tl-node-subtitle' }); sub.textContent = clipped(str(first(item.subtitle, item.cidr, item.ip, item.host_count && `${item.host_count} hosts`), kind), 23); group.append(box, makeIcon(kind, item), title, sub); state.stage.append(group);
     });
@@ -260,18 +288,27 @@
     renderPager(p); if (focused) state.pager.hidden = true; renderHostOptions(nodes); renderInspector(state.selected); if (!state.preservePan) { state.scale = 1; state.x = 0; state.y = 0; } state.preservePan = false; applyTransform(); renderPath(p.path);
   }
   function renderPager(p) { const total = Number(first(p.pagination && p.pagination.total, p.total, p.total_count, p.filtered_count, 0)); const start = total ? state.offset + 1 : 0; state.pageLabel.textContent = `Hosts ${start}–${Math.min(state.offset + state.limit, total)} of ${total}`; state.prev.disabled = state.offset <= 0; state.next.disabled = p.pagination ? !p.pagination.has_more : state.offset + state.limit >= total; state.pager.hidden = state.view !== 'l2' || total <= state.limit; }
+  function layoutBounds(nodes, fallback) {
+    const cards = nodes.map((item) => item.layout).filter((layout) => layout && Number.isFinite(Number(layout.x)) && Number.isFinite(Number(layout.y)));
+    if (!cards.length) return fallback ? { x: 0, y: 0, width: Number(fallback.width), height: Number(fallback.height) } : null;
+    const left = Math.min(...cards.map((layout) => Number(layout.x))); const top = Math.min(...cards.map((layout) => Number(layout.y)));
+    const right = Math.max(...cards.map((layout) => Number(layout.x) + Number(layout.width || 168))); const bottom = Math.max(...cards.map((layout) => Number(layout.y) + Number(layout.height || 84)));
+    const padding = 56; return { x: left - padding, y: top - padding, width: Math.max(360, right - left + padding * 2), height: Math.max(260, bottom - top + padding * 2) };
+  }
   function renderHostOptions(nodes) { state.options.replaceChildren(); const candidates = [...arr(state.dataset && state.dataset.hosts), ...nodes, ...arr(state.projection && state.projection.hosts)]; const seen = new Set(); candidates.filter((item) => typeOf(item) === 'host' && !seen.has(idOf(item)) && seen.add(idOf(item))).forEach((item) => { const option = el('option'); option.value = `${labelOf(item)} (${idOf(item)})`; option.dataset.id = idOf(item); option.dataset.host = labelOf(item); state.options.append(option); }); }
   function findHostId(value) { const match = [...state.options.options].find((o) => o.value === value || o.dataset.id === value || o.dataset.host === value); if (match) return match.dataset.id; const host = arr(state.dataset && state.dataset.hosts).find((item) => item.id === value || item.ip === value || item.mac === value); return host ? host.id : ''; }
-  function selectItem(item) { state.selected = item; state.inspectorCollapsed = false; syncInspectorView(); refreshNodeSelection(); renderInspector(item); const kind = typeOf(item); if (kind === 'network' || kind === 'subnet') { state.network = idOf(item); state.net.value = state.network; state.zone = ''; state.zoneInput.value = ''; state.view = 'l2'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'zone') { state.zone = str(item.zone, idOf(item).replace(/^zone-/, '')); state.zoneInput.value = state.zone; state.network = ''; state.net.value = ''; state.view = 'l3'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'host') { if (!state.sourcePinned) { state.source = idOf(item); state.sourceField.input.value = `${labelOf(item)} (${idOf(item)})`; } clearPathDisplay(); } }
-  function reconcileSelection(nodes) { if (!state.selected) { syncInspectorView(); return; } const id = idOf(state.selected); const kind = typeOf(state.selected); const match = nodes.find((item) => idOf(item) === id && typeOf(item) === kind); state.selected = match || null; if (match) renderInspector(match); else renderInspector(null); syncInspectorView(); }
+  function selectItem(item, options = {}) { state.selected = item; state.selectedEdge = null; state.inspectorCollapsed = false; syncInspectorView(); refreshNodeSelection(); refreshEdgeSelection(); renderInspector(item); const kind = typeOf(item); if (kind === 'network' || kind === 'subnet') { state.network = idOf(item); state.net.value = state.network; state.zone = ''; state.zoneInput.value = ''; state.view = 'l2'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'zone') { state.zone = str(item.zone, idOf(item).replace(/^zone-/, '')); state.zoneInput.value = state.zone; state.network = ''; state.net.value = ''; state.view = 'l3'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'host' && !options.preserveTrace) { if (!state.sourcePinned) { state.source = idOf(item); state.sourceField.input.value = `${labelOf(item)} (${idOf(item)})`; } clearPathDisplay(); } }
+  function reconcileSelection(nodes) { if (!state.selected) { syncInspectorView(); return; } if (state.selected.__edge) { const id = idOf(state.selected); const edge = projectionEdges().find((candidate) => edgeKey(candidate) === id); if (edge) { state.selected.__edgeData = edge; renderInspector(state.selected); } else { state.selected = null; state.selectedEdge = null; renderInspector(null); refreshEdgeSelection(); } syncInspectorView(); return; } const id = idOf(state.selected); const kind = typeOf(state.selected); const match = nodes.find((item) => idOf(item) === id && typeOf(item) === kind); state.selected = match || null; if (match) renderInspector(match); else renderInspector(null); refreshEdgeSelection(); syncInspectorView(); }
   function syncInspectorView() { if (!state.content || !state.inspector) return; const hasSelection = Boolean(state.selected); const collapsed = !hasSelection || state.inspectorCollapsed; state.content.classList.toggle('has-selection', hasSelection); state.content.classList.toggle('is-inspector-collapsed', collapsed); state.inspector.setAttribute('aria-hidden', String(collapsed)); state.inspectorToggle.disabled = !hasSelection; state.inspectorToggle.textContent = collapsed ? 'Show details' : 'Hide details'; state.inspectorToggle.setAttribute('aria-expanded', String(!collapsed)); }
-  function refreshNodeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-node').forEach((node) => { const selected = state.selected && idOf(state.selected) === idOf(node.__item) && typeOf(state.selected) === typeOf(node.__item); node.classList.toggle('tl-selected', Boolean(selected)); node.setAttribute('aria-pressed', String(Boolean(selected))); node.setAttribute('aria-label', `${typeOf(node.__item)}: ${labelOf(node.__item)}${selected ? ', selected' : ''}`); }); }
+  function refreshNodeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-node').forEach((node) => { const selected = state.selected && !state.selected.__edge && idOf(state.selected) === idOf(node.__item) && typeOf(state.selected) === typeOf(node.__item); node.classList.toggle('tl-selected', Boolean(selected)); node.setAttribute('aria-pressed', String(Boolean(selected))); node.setAttribute('aria-label', `${typeOf(node.__item)}: ${labelOf(node.__item)}${selected ? ', selected' : ''}`); }); }
+  function refreshEdgeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-edge').forEach((edge) => { const selected = Boolean(state.selected && state.selected.__edge && state.selected.__edgeData && edgeKey(state.selected.__edgeData) === edge.dataset.linkId); edge.classList.toggle('tl-selected-edge', selected); edge.setAttribute('aria-pressed', String(selected)); }); }
   function renderInspector(item) {
     state.inspector.replaceChildren();
     if (!item) { state.inspector.append(el('div', 'tl-empty', 'Select a network, zone, or host to inspect its details.')); return; }
+    if (item.__edge) { renderEdgeInspector(item.__edgeData || item.edge); return; }
     const kind = typeOf(item); state.inspector.append(el('span', 'tl-eyebrow', `${kind} detail`), el('h3', '', labelOf(item)));
     const selectionActions = el('div', 'tl-selection-actions');
-    const clearSelection = button('tl-clear-selection', 'Clear selection'); clearSelection.addEventListener('click', () => { state.selected = null; syncInspectorView(); refreshNodeSelection(); renderInspector(null); }); selectionActions.append(clearSelection);
+    const clearSelection = button('tl-clear-selection', 'Clear selection'); clearSelection.addEventListener('click', () => { state.selected = null; state.selectedEdge = null; syncInspectorView(); refreshNodeSelection(); refreshEdgeSelection(); renderInspector(null); }); selectionActions.append(clearSelection);
     if (kind === 'host') {
       const sourceButton = button('', 'Use as source'); sourceButton.addEventListener('click', () => setTraceEndpoint('source', item));
       const destinationButton = button('', 'Use as destination'); destinationButton.addEventListener('click', () => setTraceEndpoint('destination', item));
@@ -279,17 +316,53 @@
     }
     state.inspector.append(selectionActions);
     const badge = el('span', 'tl-source-badge', str(first(item.source_badge, item.source, 'Synthetic lab dataset'))); state.inspector.append(badge);
-    const list = el('dl', 'tl-details'); const data = kind === 'host' ? [['Host ID', idOf(item)], ['IP address', first(item.ip, item.ip_address, item.address)], ['MAC address', first(item.mac, item.mac_address)], ['Network', first(item.network_id, item.network)], ['Zone', first(item.zone_id, item.zone)], ['VLAN', first(item.vlan, item.vlan_id)], ['Port', first(item.port, item.ports && portsText(item.ports))], ['Attachment', item.attachment]] : [['ID', idOf(item)], ['Type', first(item.role, item.type, item.kind)], ['CIDR', first(item.cidr, item.subnet, item.prefix)], ['Network ID', item.network_id], ['IP address', first(item.ip, item.ip_address)], ['Zone', first(item.zone_id, item.zone)], ['VLAN', first(item.vlan, item.vlan_id)], ['Ports', item.ports && portsText(item.ports)], ['Hosts', first(item.host_count, item.count)]];
+    const list = el('dl', 'tl-details'); const data = kind === 'host' ? [['Host ID', idOf(item)], ['IP address', first(item.ip, item.ip_address, item.address)], ['MAC address', first(item.mac, item.mac_address)], ['Network', first(item.network_id, item.network)], ['Zone', first(item.zone_id, item.zone)], ['VLAN', first(item.vlan, item.vlan_id)], ['VRF', item.vrf], ['VDOM', item.vdom], ['Port', first(item.port, item.ports && portsText(item.ports))], ['Attachment', item.attachment]] : [['ID', idOf(item)], ['Type', first(item.role, item.type, item.kind)], ['CIDR', first(item.cidr, item.subnet, item.prefix)], ['Network ID', item.network_id], ['IP address', first(item.ip, item.ip_address)], ['Zone', first(item.zone_id, item.zone)], ['VLAN', first(item.vlan, item.vlan_id)], ['VRF', item.vrf], ['VDOM', item.vdom], ['Ports', item.ports && portsText(item.ports)], ['Hosts', first(item.host_count, item.count)]];
     data.filter(([, value]) => value !== undefined && value !== null && value !== '').forEach(([k, v]) => { list.append(el('dt', '', k), el('dd', '', Array.isArray(v) ? v.join(', ') : String(v))); }); state.inspector.append(list);
     const itemId = idOf(item); const connections = projectionEdges().filter((edge) => str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)) === itemId || str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id)) === itemId);
     const connectionSection = el('section', 'tl-connections'); connectionSection.append(el('h4', '', `Connections · ${connections.length}`));
     if (connections.length) {
       const rows = el('ul', 'tl-connection-list');
-      connections.slice(0, 12).forEach((edge) => { const from = str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)); const to = str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id)); const peerId = from === itemId ? to : from; const peer = projectionNodes().find((node) => idOf(node) === peerId); const label = peer ? labelOf(peer) : peerId; const detail = first(edge.label, edge.kind, edge.type, edge.protocol); const row = el('li'); const navigate = button('', `${from === itemId ? '→' : '←'} ${label}`, 'tl-link-nav'); navigate.addEventListener('click', () => { if (peer) selectItem(peer); }); navigate.disabled = !peer; row.append(navigate); if (detail) row.append(el('small', '', String(detail))); rows.append(row); });
+      connections.slice(0, 12).forEach((edge) => { const from = str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)); const to = str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id)); const peerId = from === itemId ? to : from; const peer = projectionNodes().find((node) => idOf(node) === peerId); const label = peer ? labelOf(peer) : peerId; const localPort = str(first(from === itemId ? edge.from_port : edge.to_port, from === itemId ? edge.source_port : edge.destination_port)); const remotePort = str(first(from === itemId ? edge.to_port : edge.from_port, from === itemId ? edge.destination_port : edge.source_port)); const detail = first(edge.label, edge.kind, edge.type, edge.protocol); const row = el('li'); const navigate = button('', `${from === itemId ? '→' : '←'} ${label}`, 'tl-link-nav'); navigate.setAttribute('aria-label', `Inspect neighbor ${label} on ${localPort || 'connected port'}`); navigate.addEventListener('click', () => { if (peer) selectItem(peer); }); navigate.disabled = !peer; row.append(navigate); const inspect = button('', 'Ports & link', 'tl-link-nav tl-link-detail'); inspect.addEventListener('click', () => selectEdge(edge)); row.append(inspect); if (detail) row.append(el('small', '', String(detail))); rows.append(row); });
       if (connections.length > 12) rows.append(el('li', 'tl-muted', `${connections.length - 12} more connections in the projection`)); connectionSection.append(rows);
     } else connectionSection.append(el('p', 'tl-muted', 'No connections are present in this projection.'));
     state.inspector.append(connectionSection);
+    if (connections.length) {
+      const connectedPorts = el('section', 'tl-port-section'); connectedPorts.append(el('h4', '', `Connected ports · ${connections.length}`));
+      const connectedList = el('ul', 'tl-port-list');
+      connections.slice(0, 24).forEach((edge) => {
+        const from = str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)); const to = str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id));
+        const peerId = from === itemId ? to : from; const peer = projectionNodes().find((node) => idOf(node) === peerId); const localPort = str(first(from === itemId ? edge.from_port : edge.to_port, from === itemId ? edge.source_port : edge.destination_port), 'Port unavailable');
+        const row = el('li'); const inspectNeighbor = button('', `${localPort} → ${peer ? labelOf(peer) : peerId}`, peer ? 'tl-link-nav' : 'tl-port-label'); inspectNeighbor.setAttribute('aria-label', `Inspect neighbor ${peer ? labelOf(peer) : peerId} connected on ${localPort}`); if (peer) inspectNeighbor.addEventListener('click', () => selectItem(peer)); else inspectNeighbor.disabled = true;
+        row.append(inspectNeighbor); const inspectLink = button('', 'Inspect link ports', 'tl-link-nav tl-link-detail'); inspectLink.addEventListener('click', () => selectEdge(edge)); row.append(inspectLink); connectedList.append(row);
+      });
+      if (connections.length > 24) connectedList.append(el('li', 'tl-muted', `${connections.length - 24} more connected ports omitted`));
+      connectedPorts.append(connectedList); state.inspector.append(connectedPorts);
+    }
+    const ports = arr(item.ports);
+    if (ports.length) {
+      const portSection = el('section', 'tl-port-section'); portSection.append(el('h4', '', `Ports · ${ports.length}`));
+      const portList = el('ul', 'tl-port-list'); ports.slice(0, 24).forEach((port) => { const row = el('li'); const label = typeof port === 'object' ? portsText([port]) : String(port); const peerId = typeof port === 'object' ? str(first(port.peer_id, port.neighbor_id, port.remote_node_id, port.connected_to)) : ''; const peer = peerId && projectionNodes().find((node) => idOf(node) === peerId); const detail = button('', peer ? `${label} → ${labelOf(peer)}` : label, peer ? 'tl-link-nav' : 'tl-port-label'); if (peer) detail.addEventListener('click', () => selectItem(peer)); row.append(detail); if (typeof port === 'object' && first(port.vrf, port.vdom, port.status)) row.append(el('small', '', [port.vrf && `VRF ${port.vrf}`, port.vdom && `VDOM ${port.vdom}`, port.status].filter(Boolean).join(' · '))); portList.append(row); });
+      if (ports.length > 24) portList.append(el('li', 'tl-muted', `${ports.length - 24} more ports omitted`)); portSection.append(portList); state.inspector.append(portSection);
+    }
     const evidence = arr(first(item.evidence, item.sources, item.source_lines)); if (evidence.length) { const btn = button('tl-evidence-button', `View ${evidence.length} source references`); btn.addEventListener('click', () => showSources(resolveSources(evidence))); state.inspector.append(btn); }
+  }
+  function selectEdge(edge) {
+    const edgeId = edgeKey(edge);
+    state.selected = { id: edgeId, label: `Connection ${edgeId}`, role: 'connection', __edge: true, __edgeData: edge };
+    state.selectedEdge = edge; state.inspectorCollapsed = false; syncInspectorView(); refreshNodeSelection(); refreshEdgeSelection(); renderInspector(state.selected);
+  }
+  function edgeKey(edge) { return str(first(edge.id, edge.link_id, `${first(edge.source_id, edge.from, edge.source, edge.source_host_id)}-${first(edge.destination_id, edge.to, edge.target, edge.destination_host_id)}`)); }
+  function renderEdgeInspector(edge) {
+    if (!edge) return;
+    const fromId = str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)); const toId = str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id));
+    const from = projectionNodes().find((node) => idOf(node) === fromId); const to = projectionNodes().find((node) => idOf(node) === toId);
+    state.inspector.append(el('span', 'tl-eyebrow', 'connection detail'), el('h3', '', `${labelOf(from || { id: fromId })} → ${labelOf(to || { id: toId })}`));
+    const clear = button('tl-clear-selection', 'Clear selection'); clear.addEventListener('click', () => { state.selected = null; state.selectedEdge = null; syncInspectorView(); refreshNodeSelection(); refreshEdgeSelection(); renderInspector(null); }); state.inspector.append(clear);
+    const localPort = first(edge.from_port, edge.source_port, edge.local_port);
+    const remotePort = first(edge.to_port, edge.destination_port, edge.remote_port);
+    const list = el('dl', 'tl-details'); const data = [['Connection ID', first(edge.id, edge.link_id)], ['Type', first(edge.label, edge.kind, edge.type, edge.protocol)], ['Local port', localPort], ['Remote port', remotePort], ['VLAN', first(edge.vlan, edge.vlan_id)], ['VRF', edge.vrf], ['VDOM', edge.vdom]];
+    data.filter(([, value]) => value !== undefined && value !== null && value !== '').forEach(([key, value]) => list.append(el('dt', '', key), el('dd', '', String(value)))); state.inspector.append(list);
+    const evidence = arr(first(edge.evidence, edge.sources, edge.source_lines)); if (evidence.length) { const btn = button('tl-evidence-button', `View ${evidence.length} source references`); btn.addEventListener('click', () => showSources(resolveSources(evidence))); state.inspector.append(btn); }
   }
   function setTraceEndpoint(which, item) {
     const value = `${labelOf(item)} (${idOf(item)})`;
@@ -308,10 +381,17 @@
     const hops = arr(first(path.hops, path.nodes, path.path));
     if (hops.length) {
       const list = el('ol', 'tl-hop-list');
-      hops.forEach((hop) => {
+      hops.slice(0, 100).forEach((hop, index) => {
         const entry = el('li');
-        entry.append(el('strong', '', str(first(hop.label, hop.name, hop.node_id, hop.id))));
-        entry.append(el('span', 'tl-hop-ports', `${str(hop.ingress, 'Origin')} → ${str(hop.egress, 'Destination')} · VLAN ${str(hop.vlan, 'unavailable')}`));
+        const hopId = str(first(hop.host_id, hop.node_id, hop.id)); const hopNode = projectionNodes().find((node) => idOf(node) === hopId);
+        const hopSelect = button('', str(first(hop.label, hop.name, hop.node_id, hop.id)), hopNode ? 'tl-link-nav tl-hop-select' : 'tl-hop-select');
+        if (hopNode) hopSelect.addEventListener('click', () => selectItem(hopNode, { preserveTrace: true })); else hopSelect.disabled = true;
+        entry.append(hopSelect);
+        const portText = [`${str(hop.ingress, 'Origin')} → ${str(hop.egress, 'Destination')}`, hop.vlan !== undefined && `VLAN ${hop.vlan}`, hop.vrf && `VRF ${hop.vrf}`, hop.vdom && `VDOM ${hop.vdom}`].filter(Boolean).join(' · ');
+        entry.append(el('span', 'tl-hop-ports', portText));
+        const links = arr(path.links); const adjacentIds = [links[index - 1], links[index]].filter(Boolean).map((link) => typeof link === 'object' ? str(first(link.id, link.link_id)) : String(link));
+        const adjacent = projectionEdges().filter((edge) => adjacentIds.includes(str(first(edge.id, edge.link_id))));
+        adjacent.forEach((edge) => { const inspect = button('', 'Inspect link ports', 'tl-button tl-hop-link'); inspect.addEventListener('click', () => selectEdge(edge)); entry.append(inspect); });
         if (arr(hop.evidence).length) {
           const source = button('', 'Source', 'tl-button tl-hop-source');
           source.setAttribute('aria-label', `Source evidence for ${str(hop.node_id)}`);
@@ -320,9 +400,11 @@
         }
         list.append(entry);
       });
+      if (hops.length > 100) list.append(el('li', 'tl-muted', `${hops.length - 100} additional hops omitted`));
       state.traceStatus.append(list);
     }
     if (path.status === 'requires_l3') state.traceStatus.append(el('span', 'tl-callout', 'These hosts are on different networks or VLANs; an L2 path cannot be established.'));
+    else if (path.status === 'indeterminate' && path.reason === 'outside_selected_context') state.traceStatus.append(el('span', 'tl-callout', 'One or both selected endpoints are outside the current VRF/VDOM and filter context. Clear or change the scope to trace them.'));
     else if (path.status === 'indeterminate') state.traceStatus.append(el('span', 'tl-callout', 'The available link evidence does not establish a path.'));
     state.traceStatus.append(el('span', 'tl-callout', 'Runtime observations unavailable; this result uses the synthetic lab configuration.'));
     const pathIds = new Set(hops.map((hop) => str(first(hop.host_id, hop.id, hop.node_id, hop)))); state.stage.querySelectorAll('.tl-node').forEach((node) => { if (pathIds.has(idOf(node.__item))) node.classList.add('tl-on-path'); });
@@ -340,8 +422,9 @@
     if (!projection.path) state.traceStatus.textContent = 'The current projection did not include a path result.';
   }
   function fitGraph() { state.scale = 1; state.x = 0; state.y = 0; scheduleTransform(); }
-  function setZoom(value) { zoomAt(value, state.drawing ? state.drawing.viewBox.baseVal.width / 2 : 550, state.drawing ? state.drawing.viewBox.baseVal.height / 2 : 300); }
+  function setZoom(value) { const box = state.drawing && state.drawing.viewBox.baseVal; zoomAt(value, box ? box.x + box.width / 2 : 550, box ? box.y + box.height / 2 : 300); }
   function zoomAt(value, cx, cy) { const next = Math.max(.35, Math.min(3, value)); const ratio = next / state.scale; state.x = cx - (cx - state.x) * ratio; state.y = cy - (cy - state.y) * ratio; state.scale = next; scheduleTransform(); }
+  function screenPoint(event) { const matrix = state.drawing && state.drawing.getScreenCTM(); if (matrix) { const point = state.drawing.createSVGPoint(); point.x = event.clientX; point.y = event.clientY; const converted = point.matrixTransform(matrix.inverse()); return { x: converted.x, y: converted.y }; } const rect = state.graph.getBoundingClientRect(); const box = state.drawing.viewBox.baseVal; return { x: box.x + (event.clientX - rect.left) * box.width / rect.width, y: box.y + (event.clientY - rect.top) * box.height / rect.height }; }
   function scheduleTransform() { if (!state.stage || state.transformFrame) return; state.transformFrame = requestAnimationFrame(() => { state.transformFrame = 0; applyTransform(); }); }
   function applyTransform() { if (!state.stage) return; state.stage.setAttribute('transform', `translate(${state.x} ${state.y}) scale(${state.scale})`); const percent = Math.round(state.scale * 100); const mode = state.scale < .7 ? 'Overview' : state.scale > 1.45 ? 'Detail' : 'Balanced'; state.graph.classList.remove('tl-scale-overview', 'tl-scale-balanced', 'tl-scale-detail'); state.graph.classList.add(`tl-scale-${mode.toLowerCase()}`); state.zoomLabel.textContent = `${percent}%`; state.zoomLabel.setAttribute('aria-label', `${mode} scale, ${percent} zoom`); state.zoomLabel.title = `${mode} scale`; }
   function toggleFullscreen() { state.fullscreenActive = !state.fullscreenActive; state.root.classList.toggle('tl-fullscreen', state.fullscreenActive); state.fullscreenButton.setAttribute('aria-pressed', String(state.fullscreenActive)); state.fullscreenButton.textContent = state.fullscreenActive ? 'Exit full screen' : 'Full screen'; if (state.fullscreenActive) { state.fullscreenFocus = document.activeElement; state.bodyOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; state.graph.focus(); } else { document.body.style.overflow = state.bodyOverflow || ''; if (state.fullscreenFocus && state.fullscreenFocus.isConnected) state.fullscreenFocus.focus(); state.fullscreenFocus = null; } }

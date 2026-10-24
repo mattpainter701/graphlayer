@@ -305,3 +305,32 @@
   .tl-actions .tl-square { flex-basis: 42px; width: 42px; }
   .tl-graph { min-height: 320px; }
 }
+
+/* Scope filters and port/path drilldowns. */
+.tl-controls { grid-template-columns: repeat(4, minmax(140px, 1fr)); align-items: end; }
+.tl-controls .tl-field:nth-child(5) { grid-column: span 3; }
+.tl-controls .tl-reset-filters { grid-column: span 1; }
+.tl-edge { cursor: pointer; }
+.tl-edge:hover, .tl-edge:focus-visible { stroke: #176b9e; stroke-width: 4; opacity: 1; outline: none; }
+.tl-hop-list { display: grid; gap: 10px; padding-left: 24px; }
+.tl-hop-list > li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 10px 12px; border: 1px solid #dce7ed; border-radius: 10px; background: #f8fbfd; }
+.tl-hop-select { width: fit-content; min-height: 44px; padding: 5px 0; border: 0; background: transparent; color: #1b6089; font: 700 12px ui-sans-serif,system-ui,sans-serif; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.tl-hop-select:disabled { color: #49677d; cursor: default; }
+.tl-hop-link { justify-self: start; }
+.tl-port-section { padding-top: 12px; border-top: 1px solid #e4ebf0; }
+.tl-port-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tl-port-list li { display: grid; gap: 3px; min-width: 0; padding: 7px 9px; border: 1px solid #e0e8ee; border-radius: 8px; background: #f8fafc; }
+.tl-port-list .tl-port-label { width: 100%; min-height: 36px; border: 0; background: transparent; color: #344f65; font: 11px ui-monospace,SFMono-Regular,Consolas,monospace; text-align: left; overflow-wrap: anywhere; }
+.tl-port-list small { color: #63798c; font-size: 10px; }
+.tl-link-detail { min-height: 44px; padding: 6px 9px; }
+.tl-edge.tl-selected-edge { stroke: #7b4aa1; stroke-width: 5; opacity: 1; }
+@media (max-width: 1100px) {
+  .tl-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tl-controls .tl-field:nth-child(3) { grid-column: auto; }
+  .tl-controls .tl-field:nth-child(5), .tl-controls .tl-reset-filters { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  .tl-controls { grid-template-columns: minmax(0, 1fr); }
+  .tl-controls .tl-field:nth-child(5), .tl-controls .tl-reset-filters { grid-column: auto; }
+  .tl-hop-list > li { padding: 9px; }
+}
