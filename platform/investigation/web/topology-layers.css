@@ -316,7 +316,10 @@
 .tl-hop-list > li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 10px 12px; border: 1px solid #dce7ed; border-radius: 10px; background: #f8fbfd; }
 .tl-hop-select { width: fit-content; min-height: 44px; padding: 5px 0; border: 0; background: transparent; color: #1b6089; font: 700 12px ui-sans-serif,system-ui,sans-serif; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .tl-hop-select:disabled { color: #49677d; cursor: default; }
-.tl-hop-link { justify-self: start; }
+.tl-hop-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.tl-hop-link, .tl-hop-source { flex: 0 1 auto; max-width: 100%; min-height: 44px; text-align: left; overflow-wrap: anywhere; }
+.tl-graph.is-focused-path .tl-node-title { font-size: 11px; }
+.tl-graph.is-focused-path .tl-node-subtitle { font-size: 9px; }
 .tl-port-section { padding-top: 12px; border-top: 1px solid #e4ebf0; }
 .tl-port-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .tl-port-list li { display: grid; gap: 3px; min-width: 0; padding: 7px 9px; border: 1px solid #e0e8ee; border-radius: 8px; background: #f8fafc; }

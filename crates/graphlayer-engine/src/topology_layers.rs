@@ -1407,6 +1407,25 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
     if let Some(path) = path_result {
         result["path"] = path;
     }
+    if view == "l2" && result["path"]["status"] == "modeled_l2_path" {
+        let hops = result["path"]["hops"].as_array().ok_or("invalid_path")?;
+        let horizontal_nodes: Vec<Value> = hops
+            .iter()
+            .enumerate()
+            .map(|(i, hop)| json!({"id":hop["node_id"],"layout":{"x":i*220,"y":0,"width":168,"height":84}}))
+            .collect();
+        let vertical_nodes: Vec<Value> = hops
+            .iter()
+            .enumerate()
+            .map(|(i, hop)| json!({"id":hop["node_id"],"layout":{"x":0,"y":i*120,"width":168,"height":84}}))
+            .collect();
+        let horizontal_width = hops.len().saturating_sub(1) * 220 + 168;
+        let vertical_height = hops.len().saturating_sub(1) * 120 + 84;
+        result["path_layout"] = json!({
+            "horizontal":{"width":horizontal_width,"height":84,"nodes":horizontal_nodes},
+            "vertical":{"width":168,"height":vertical_height,"nodes":vertical_nodes}
+        });
+    }
     Ok(result)
 }
 
@@ -1734,6 +1753,54 @@ mod tests {
             .iter()
             .filter(|l| l["kind"] == "attachment")
             .all(|l| l["vrf"] == "lab-vrf-01" && l["vdom"] == "campus"));
+    }
+
+    #[test]
+    fn modeled_path_layouts_follow_hops_without_changing_path_or_sources() {
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let original_sources = d["sources"].clone();
+        let out = project_layers(json!({"dataset":d.clone(),"view":"l2","source_host_id":"host-0001","destination_host_id":"host-0075"})).unwrap();
+        let hops = out["path"]["hops"].as_array().unwrap();
+        let expected_ids: Vec<&str> = hops
+            .iter()
+            .map(|hop| hop["node_id"].as_str().unwrap())
+            .collect();
+        for (orientation, dx, dy) in [("horizontal", 220u64, 0u64), ("vertical", 0u64, 120u64)] {
+            let canvas = &out["path_layout"][orientation];
+            let layout_nodes = canvas["nodes"].as_array().unwrap();
+            let ids: Vec<&str> = layout_nodes
+                .iter()
+                .map(|node| node["id"].as_str().unwrap())
+                .collect();
+            assert_eq!(ids, expected_ids);
+            let mut previous_end = 0;
+            for (i, node) in layout_nodes.iter().enumerate() {
+                let card = &node["layout"];
+                let x = card["x"].as_u64().unwrap();
+                let y = card["y"].as_u64().unwrap();
+                assert_eq!(card["width"], 168);
+                assert_eq!(card["height"], 84);
+                assert_eq!(x, i as u64 * dx);
+                assert_eq!(y, i as u64 * dy);
+                if orientation == "horizontal" {
+                    assert!(x >= previous_end);
+                    previous_end = x + 168;
+                } else {
+                    assert!(y >= previous_end);
+                    previous_end = y + 84;
+                }
+            }
+            if orientation == "horizontal" {
+                assert_eq!(canvas["width"], (hops.len() - 1) as u64 * 220 + 168);
+                assert_eq!(canvas["height"], 84);
+            } else {
+                assert_eq!(canvas["width"], 168);
+                assert_eq!(canvas["height"], (hops.len() - 1) as u64 * 120 + 84);
+            }
+        }
+        assert_eq!(out["sources"], original_sources);
+        assert!(out["path"].get("layout").is_none());
+        assert!(hops.iter().all(|hop| hop.get("layout").is_none()));
     }
 
     #[test]

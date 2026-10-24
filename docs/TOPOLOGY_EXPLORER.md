@@ -70,6 +70,10 @@ establish real routing between VRFs or VDOMs.
 Network, zone and search narrow the displayed map; an explicit trace follows
 its selected endpoints within the VRF/VDOM boundary. A cross-network request
 still reports that Layer 3 analysis is required.
+Focused Layer 2 traces use a separate compact Rust layout, oriented vertically
+on narrow canvases and horizontally when space permits. Ingress and egress
+controls identify their returned ports separately; resizing or opening details
+keeps the focused trace readable without changing the investigation.
 
 Path-workbench facet chips narrow visible devices by zone, subnet, VRF or VDOM
 when the Rust projection supplies those facets. Find highlights matching devices

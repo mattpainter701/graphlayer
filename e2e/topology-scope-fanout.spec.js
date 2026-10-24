@@ -177,6 +177,23 @@ test('100-host fan-out retains port and source drilldowns through a real scoped 
   const last = traced.path.hops.at(-1);
   expect(last.node_id || last.id).toBe(dst.id);
   const posts = seen.requests.length;
+  for (const width of [375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect.poll(() => page.locator('#tl-svg .tl-node-box').evaluateAll((cards) => cards.every((card) => card.getBoundingClientRect().height >= 36))).toBe(true);
+    await expect.poll(() => page.locator('#tl-svg .tl-node-title').evaluateAll((labels) => labels.every((label) => label.getBoundingClientRect().height >= 8))).toBe(true);
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.locator('#tl-inspector-toggle').click();
+  await expect.poll(() => page.locator('#tl-svg').evaluate((svg) => svg.viewBox.baseVal.width > svg.viewBox.baseVal.height)).toBe(true);
+  await page.locator('#tl-inspector-toggle').click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect.poll(() => page.locator('#tl-svg').evaluate((svg) => svg.viewBox.baseVal.height > svg.viewBox.baseVal.width)).toBe(true);
+  const linksAtSwitch = page.locator('.tl-hop-list > li').nth(1).locator('.tl-hop-link');
+  await expect(linksAtSwitch).toHaveCount(2);
+  const linkLabels = await linksAtSwitch.allTextContents();
+  expect(new Set(linkLabels).size).toBe(2);
+  expect(linkLabels.join(' ')).toMatch(/ingress/i);
+  expect(linkLabels.join(' ')).toMatch(/egress/i);
   const focusedHeight = await page.locator('#tl-svg').evaluate((svg) => svg.viewBox.baseVal.height);
   await page.locator('#tl-focus-path').click();
   const completeHeight = await page.locator('#tl-svg').evaluate((svg) => svg.viewBox.baseVal.height);
