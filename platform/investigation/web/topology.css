@@ -308,11 +308,11 @@
 .topology-empty-state { position: absolute; z-index: 5; top: 50%; left: 50%; width: min(340px, calc(100% - 32px)); transform: translate(-50%,-50%); padding: 20px; border: 1px solid #dce8ef; border-radius: 12px; background: #f6fafc; box-shadow: 0 10px 30px rgb(20 43 61 / 12%); color: #4d687d; font-size: 12px; line-height: 1.5; }
 .topology-empty-reset { min-height: 42px; margin-top: 8px; }
 .topology-neighbor-list { display: grid; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }
-.topology-neighbor-button, .topology-endpoint-button { max-width: 100%; min-height: 44px; padding: 8px 11px; border: 1px solid #d3e0e8; border-radius: 9px; background: #f8fbfd; color: #2f5975; font: 600 12px ui-sans-serif,system-ui,sans-serif; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
-.topology-neighbor-button:hover, .topology-endpoint-button:hover { border-color: #90b5ca; background: #edf6fb; }
-.topology-neighbor-button:focus-visible, .topology-endpoint-button:focus-visible, .topology-filter-chip:focus-visible, .topology-empty-reset:focus-visible { outline: 3px solid rgb(33 133 208 / 28%); outline-offset: 2px; }
+.topology-neighbor-button, .topology-neighbor-link, .topology-endpoint-button { max-width: 100%; min-height: 44px; padding: 8px 11px; border: 1px solid #d3e0e8; border-radius: 9px; background: #f8fbfd; color: #2f5975; font: 600 12px ui-sans-serif,system-ui,sans-serif; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.topology-neighbor-button:hover, .topology-neighbor-link:hover, .topology-endpoint-button:hover { border-color: #90b5ca; background: #edf6fb; }
+.topology-neighbor-button:focus-visible, .topology-neighbor-link:focus-visible, .topology-endpoint-button:focus-visible, .topology-filter-chip:focus-visible, .topology-empty-reset:focus-visible { outline: 3px solid rgb(33 133 208 / 28%); outline-offset: 2px; }
 @media (max-width: 600px) {
   .topology-filter-count { padding-inline: 14px; }
   .topology-active-filters { padding-inline: 14px; }
-  .topology-neighbor-button, .topology-endpoint-button { width: 100%; }
+  .topology-neighbor-button, .topology-neighbor-link, .topology-endpoint-button { width: 100%; }
 }

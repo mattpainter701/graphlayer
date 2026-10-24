@@ -50,7 +50,8 @@ ownership stay attached to the inspected record.
 
 Follow a projected connection from the network-map inspector to inspect its
 other endpoint, or assign a selected host as the source or destination of a
-Layer 2 trace. In the path workbench, declared-connection buttons open connected
+Layer 2 trace. An explicitly chosen source remains selected while you inspect
+and assign the destination. In the path workbench, declared-connection buttons open connected
 devices and link details; each link inspector can open either endpoint. These
 actions navigate the existing projection and do not run another investigation.
 

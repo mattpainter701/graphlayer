@@ -204,9 +204,9 @@ test('path facets recover an empty canvas and endpoint navigation keeps saved ev
   await expect(page.locator('#topology-filter-count')).toContainText('All topology facets');
   await expect(page.locator('#topology-caption')).toContainText(/Adjusted filters to reveal north/i);
   await expect(page.locator('#exploration-topology .topology-node[data-node-id="north"]')).toBeVisible();
-  await expect(page.locator('#topology-inspector .topology-source-button').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Inspect sources', exact: true })).toBeVisible();
 
-  const inspectLink = page.locator('#topology-inspector .topology-neighbor-row .topology-source-button[data-link-index]').first();
+  const inspectLink = page.locator('#topology-inspector .topology-neighbor-row .topology-neighbor-link[data-link-index]').first();
   await expect(inspectLink).toBeVisible();
   await inspectLink.click();
   await expect(page.locator('#topology-inspector .topology-inspector-content')).toHaveAttribute('data-inspector-kind', 'link');
@@ -284,4 +284,40 @@ test('search invalidates an older in-flight projection and chip removal cancels 
   await page.clock.runFor(300);
   expect(observed.projectionRequests).toHaveLength(requestCount + 1);
   await expect(page.getByRole('button', { name: 'host: host-0001' })).toBeVisible();
+});
+
+test('host inspector endpoint buttons preserve the chosen source through a real L2 trace', async ({ page }) => {
+  const observed = await observeLayerApi(page);
+  const dataset = await loadSyntheticMap(page, observed);
+  await waitForProjection(page, observed, () => page.locator('#tl-tab-l2').click(), (projection) => projection.view === 'l2');
+
+  await page.getByRole('button', { name: 'host: host-0001' }).click();
+  await page.locator('#tl-inspector').getByRole('button', { name: 'Use as source' }).click();
+  await expect(page.locator('#tl-source')).toHaveValue('host-0001 (host-0001)');
+
+  await page.getByRole('button', { name: 'host: host-0002' }).click();
+  await page.locator('#tl-inspector').getByRole('button', { name: 'Use as destination' }).click();
+  await expect(page.locator('#tl-source')).toHaveValue('host-0001 (host-0001)');
+  await expect(page.locator('#tl-destination')).toHaveValue('host-0002 (host-0002)');
+
+  await waitForProjection(page, observed, () => page.locator('#tl-trace-button').click(), (projection) => projection.path && projection.path.status === 'modeled_l2_path');
+  const request = observed.projectionRequests.at(-1);
+  expect(request).toMatchObject({ source_host_id: 'host-0001', destination_host_id: 'host-0002' });
+  const traced = latestProjection(observed);
+  expect(traced.path.status).toBe('modeled_l2_path');
+  const hopIds = traced.path.hops.map((hop) => hop.node_id);
+  expect(hopIds).toEqual(expect.arrayContaining(['host-0001', 'host-0002']));
+  expect(traced.path.evidence.length).toBeGreaterThan(0);
+
+  const sourceHop = traced.path.hops.find((hop) => hop.node_id === 'host-0001');
+  expect(sourceHop.evidence.length).toBeGreaterThan(0);
+  const sourceRef = sourceHop.evidence[0];
+  const source = dataset.sources.find((item) => item.id === sourceRef.source_id);
+  expect(source).toBeTruthy();
+  const sourceLine = source.lines.find((line) => line.number === sourceRef.line);
+  expect(sourceLine).toBeTruthy();
+  await page.locator('#tl-trace-status .tl-hop-source[aria-label="Source evidence for host-0001"]').click();
+  await expect(page.locator('#tl-sources')).toHaveAttribute('open', '');
+  await expect(page.locator('#tl-source-body')).toContainText(`SHA-256 ${source.sha256}`);
+  await expect(page.locator('#tl-source-body')).toContainText(sourceLine.text);
 });
