@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { root: null, csrf: '', dataset: null, projection: null, view: 'l3', network: '', zone: '', search: '', offset: 0, limit: 25, source: '', destination: '', busy: false, seq: 0, timer: 0, controller: null, scale: 1, x: 0, y: 0, pan: null, selected: null, transformFrame: 0, inspectorCollapsed: true, fullscreenActive: false, fullscreenFocus: null, bodyOverflow: null };
+  const state = { root: null, csrf: '', dataset: null, projection: null, view: 'l3', network: '', zone: '', search: '', offset: 0, limit: 25, source: '', destination: '', busy: false, seq: 0, timer: 0, controller: null, scale: 1, x: 0, y: 0, pan: null, selected: null, preservePan: false, transformFrame: 0, inspectorCollapsed: true, fullscreenActive: false, fullscreenFocus: null, bodyOverflow: null };
   const NS = 'http://www.w3.org/2000/svg';
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = String(text); return e; };
   const button = (id, label, cls = 'tl-button') => { const b = el('button', cls, label); b.type = 'button'; if (id) b.id = id; return b; };
@@ -30,9 +30,13 @@
     const controls = el('div', 'tl-controls');
     const net = field('NETWORK', 'tl-network'); net.input.placeholder = 'All networks';
     const zone = field('ZONE', 'tl-zone'); zone.input.placeholder = 'All zones';
+    const networkOptions = el('datalist'); networkOptions.id = 'tl-network-options'; net.input.setAttribute('list', networkOptions.id);
+    const zoneOptions = el('datalist'); zoneOptions.id = 'tl-zone-options'; zone.input.setAttribute('list', zoneOptions.id);
     const search = field('SEARCH', 'tl-search', 'search'); search.input.placeholder = 'Host, IP, MAC…'; search.input.setAttribute('aria-label', 'Search hosts and networks');
     const resetFilters = button('tl-reset-filters', 'Reset filters'); resetFilters.classList.add('tl-reset-filters');
     controls.append(net.wrap, zone.wrap, search.wrap, resetFilters);
+    const activeFilters = el('div', 'tl-active-filters'); activeFilters.id = 'tl-active-filters'; activeFilters.setAttribute('aria-label', 'Active filters');
+    const filterCount = el('span', 'tl-filter-count', 'No active filters'); filterCount.id = 'tl-filter-count'; filterCount.setAttribute('aria-live', 'polite');
     const canvasHead = el('div', 'tl-canvas-head');
     const graphTitle = el('strong', '', 'Layer 3 overview');
     const actions = el('div', 'tl-actions');
@@ -64,17 +68,29 @@
     const note = el('p', 'tl-note', 'All lab devices and observations are synthetic. Configuration projections do not establish live reachability or runtime state.');
     const workspace = el('div', 'tl-workspace'); workspace.append(canvasHead, graph, legend, caption, pager);
     const content = el('div', 'tl-content'); content.append(workspace, inspector); content.classList.add('is-inspector-collapsed');
-    state.root.replaceChildren(header, summary, tabs, controls, content, lower, sourceDrawer, note);
-    Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, searchInput: search.input, resetFilters, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel });
+    state.root.replaceChildren(header, summary, tabs, controls, filterCount, activeFilters, networkOptions, zoneOptions, content, lower, sourceDrawer, note);
+    Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel });
     state.focusPath = true; state.focusToggle = focusPath;
     focusPath.addEventListener('click', () => { state.focusPath = !state.focusPath; render(); });
     load.addEventListener('click', loadDataset);
     exportButton.addEventListener('click', exportDataset);
     tabs.addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) chooseView(b.dataset.view); });
     tabs.addEventListener('keydown', (e) => { const active = e.target.closest('[data-view]'); if (!active) return; const buttons = [...tabs.querySelectorAll('[data-view]')]; let i = buttons.indexOf(active); if (e.key === 'ArrowRight') i = (i + 1) % buttons.length; else if (e.key === 'ArrowLeft') i = (i - 1 + buttons.length) % buttons.length; else if (e.key === 'Home') i = 0; else if (e.key === 'End') i = buttons.length - 1; else return; e.preventDefault(); chooseView(buttons[i].dataset.view); buttons[i].focus(); });
-    [net.input, zone.input].forEach((input) => input.addEventListener('change', () => { state.network = net.input.value.trim(); state.zone = zone.input.value.trim(); state.offset = 0; requestProjection(); }));
-    search.input.addEventListener('input', () => { state.search = search.input.value.trim(); state.offset = 0; clearTimeout(state.timer); state.timer = setTimeout(requestProjection, 180); });
-    resetFilters.addEventListener('click', () => { state.network = ''; state.zone = ''; state.search = ''; state.offset = 0; net.input.value = ''; zone.input.value = ''; search.input.value = ''; requestProjection(); });
+    [net.input, zone.input].forEach((input) => input.addEventListener('change', () => {
+      const network = net.input.value.trim(); const selectedZone = zone.input.value.trim();
+      if (network === state.network && selectedZone === state.zone) return;
+      clearTimeout(state.timer); state.timer = 0; state.network = network; state.zone = selectedZone; state.offset = 0; renderFilters(); requestProjection();
+    }));
+    search.input.addEventListener('input', () => {
+      state.search = search.input.value.trim(); state.offset = 0; renderFilters(); clearTimeout(state.timer); state.timer = 0;
+      if (state.controller) { state.seq += 1; state.controller.abort(); state.controller = null; }
+      if (state.csrf && state.dataset) {
+        state.busy = true; clearProjectionUI('Updating network map…'); state.inspector.replaceChildren(el('div', 'tl-empty', 'Updating selection details…')); setProjectionBusy(true); updateControls();
+        state.timer = setTimeout(() => { state.timer = 0; requestProjection(); }, 220);
+      }
+    });
+    resetFilters.addEventListener('click', resetAllFilters);
+    activeFilters.addEventListener('click', (e) => { const b = e.target.closest('[data-filter-kind]'); if (b) clearFilter(b.dataset.filterKind); });
     pageSize.addEventListener('change', () => { const nextLimit = Number(pageSize.value); if (![25, 50, 100].includes(nextLimit)) return; state.limit = nextLimit; state.offset = 0; requestProjection(); });
     prev.addEventListener('click', () => { if (state.offset >= state.limit) { state.offset -= state.limit; requestProjection(); } });
     next.addEventListener('click', () => { state.offset += state.limit; requestProjection(); });
@@ -94,11 +110,49 @@
     window.addEventListener('resize', scheduleTransform);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.fullscreenActive) toggleFullscreen(); });
     window.addEventListener('graphlayer:session', (e) => setSession(e.detail && e.detail.csrf));
-    drawTabs(); syncInspectorView(); state.caption.textContent = 'Load the synthetic lab to explore this map.'; state.pager.hidden = true; updateControls();
+    drawTabs(); syncInspectorView(); renderFilters(); state.caption.textContent = 'Load the synthetic lab to explore this map.'; state.pager.hidden = true; updateControls();
   }
 
-  function setSession(csrf) { const next = str(csrf); if (next !== state.csrf && state.controller) { state.seq += 1; state.controller.abort(); state.controller = null; state.busy = false; } state.csrf = next; if (!state.csrf && state.stage) clearProjectionUI('Waiting for the local session…'); updateControls(); }
+  function setSession(csrf) { const next = str(csrf); if (next !== state.csrf) { clearTimeout(state.timer); state.timer = 0; if (state.controller) { state.seq += 1; state.controller.abort(); state.controller = null; } state.busy = false; setProjectionBusy(false); } state.csrf = next; if (!state.csrf && state.stage) clearProjectionUI('Waiting for the local session…'); updateControls(); }
   function updateControls() { if (state.load) state.load.disabled = !state.csrf || state.busy; if (state.traceButton) state.traceButton.disabled = !state.csrf || state.busy || !state.dataset; }
+  function setProjectionBusy(busy) {
+    if (!state.inspector) return;
+    state.inspector.setAttribute('aria-busy', String(Boolean(busy)));
+    state.inspector.inert = Boolean(busy);
+  }
+  function renderFilters() {
+    if (!state.activeFilters) return;
+    const filters = [['network', state.network], ['zone', state.zone], ['search', state.search]].filter(([, value]) => value);
+    state.filterCount.textContent = filters.length ? `${filters.length} active filter${filters.length === 1 ? '' : 's'}` : 'No active filters';
+    const chips = new Map([...state.activeFilters.querySelectorAll('[data-filter-kind]')].map((chip) => [chip.dataset.filterKind, chip]));
+    const activeKinds = new Set();
+    filters.forEach(([kind, value]) => {
+      activeKinds.add(kind);
+      let chip = chips.get(kind);
+      if (!chip) { chip = button('', '', 'tl-filter-chip'); chip.dataset.filterKind = kind; }
+      chip.replaceChildren(el('span', '', `${kind === 'search' ? 'Search' : kind === 'network' ? 'Network' : 'Zone'}: ${value}`), el('span', 'tl-filter-remove', '×'));
+      chip.setAttribute('aria-label', `Remove ${kind} filter ${value}`);
+      if (chip.parentElement !== state.activeFilters) state.activeFilters.append(chip);
+    });
+    chips.forEach((chip, kind) => { if (!activeKinds.has(kind)) chip.remove(); });
+    const networks = arr(state.dataset && state.dataset.networks); state.networkOptions.replaceChildren();
+    networks.forEach((item) => { const option = el('option'); option.value = str(first(item.id, item.network_id, item.cidr, item.name)); option.label = [item.cidr, item.zone, item.name].filter(Boolean).join(' · '); if (option.value) state.networkOptions.append(option); });
+    const zones = new Set(arr(state.dataset && state.dataset.hosts).map((item) => str(first(item.zone, item.zone_id))).filter(Boolean));
+    arr(state.projection && state.projection.nodes).forEach((item) => { const value = str(first(item.zone, item.zone_id, typeOf(item) === 'zone' ? labelOf(item) : undefined)); if (value) zones.add(value); });
+    state.zoneOptions.replaceChildren(); [...zones].sort().forEach((value) => { const option = el('option'); option.value = value; state.zoneOptions.append(option); });
+  }
+  function clearFilter(kind) {
+    clearTimeout(state.timer); state.timer = 0;
+    if (kind === 'network') { state.network = ''; state.net.value = ''; }
+    else if (kind === 'zone') { state.zone = ''; state.zoneInput.value = ''; }
+    else if (kind === 'search') { state.search = ''; state.searchInput.value = ''; }
+    else return;
+    state.offset = 0; renderFilters(); requestProjection();
+  }
+  function resetAllFilters() {
+    state.network = ''; state.zone = ''; state.search = ''; state.offset = 0; clearTimeout(state.timer); state.timer = 0;
+    state.net.value = ''; state.zoneInput.value = ''; state.searchInput.value = ''; renderFilters(); requestProjection();
+  }
   async function post(url, body, signal) {
     const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrf }, body: JSON.stringify(body), signal });
     let payload; try { payload = await response.json(); } catch (_) { throw new Error(`Request failed (${response.status})`); }
@@ -107,26 +161,28 @@
   }
   async function loadDataset() {
     if (!state.csrf || state.busy) return;
+    clearTimeout(state.timer); state.timer = 0;
     const seq = ++state.seq; state.controller?.abort(); const controller = new AbortController(); state.controller = controller;
-    state.busy = true; state.dataset = null; state.projection = null; state.view = 'l3'; state.network = ''; state.zone = ''; state.search = ''; state.offset = 0; state.source = ''; state.destination = ''; state.selected = null; state.net.value = ''; state.zoneInput.value = ''; state.searchInput.value = ''; state.sourceField.input.value = ''; state.destinationField.input.value = ''; drawTabs(); clearProjectionUI('Generating synthetic lab dataset…'); state.load.textContent = 'Loading lab…'; updateControls();
+    state.busy = true; state.dataset = null; state.projection = null; state.view = 'l3'; state.network = ''; state.zone = ''; state.search = ''; state.offset = 0; state.source = ''; state.destination = ''; state.selected = null; state.net.value = ''; state.zoneInput.value = ''; state.searchInput.value = ''; state.sourceField.input.value = ''; state.destinationField.input.value = ''; renderFilters(); drawTabs(); clearProjectionUI('Generating synthetic lab dataset…'); setProjectionBusy(true); state.load.textContent = 'Loading lab…'; updateControls();
     try { const result = await post('/api/sample/topology-layers', {}, controller.signal); if (seq !== state.seq) return; const dataset = result.dataset || result; validateDataset(dataset); state.dataset = dataset; state.offset = 0; state.load.textContent = 'Reload lab dataset'; await requestProjection(); }
     catch (error) { if (seq === state.seq && error.name !== 'AbortError') showError(error); }
-    finally { if (seq === state.seq) { state.busy = false; state.load.textContent = state.dataset ? 'Reload lab dataset' : 'Load 1,000-host lab'; updateControls(); } }
+    finally { if (seq === state.seq) { state.busy = false; setProjectionBusy(false); state.load.textContent = state.dataset ? 'Reload lab dataset' : 'Load 1,000-host lab'; updateControls(); } }
   }
   function query() { return { dataset: state.dataset, view: state.view, network_id: state.network, zone: state.zone, search: state.search, offset: state.offset, limit: state.limit, source_host_id: state.traceRequested ? state.source : '', destination_host_id: state.traceRequested ? state.destination : '' }; }
   async function requestProjection(resetPath = true) {
     if (!state.csrf || !state.dataset) return;
+    clearTimeout(state.timer); state.timer = 0;
     if (resetPath) { state.traceRequested = false; state.focusPath = false; }
     const seq = ++state.seq; state.controller?.abort(); const controller = new AbortController(); state.controller = controller;
-    const request = query(); state.busy = true; state.projection = null; clearProjectionUI('Updating network map…'); updateControls();
+    const request = query(); state.busy = true; state.projection = null; renderFilters(); clearProjectionUI('Updating network map…'); state.inspector.replaceChildren(el('div', 'tl-empty', 'Updating selection details…')); setProjectionBusy(true); updateControls();
     try {
       const result = await post('/api/topology-layers', request, controller.signal);
       if (seq !== state.seq) return null;
       if (request.source_host_id && (!state.traceRequested || request.source_host_id !== state.source || request.destination_host_id !== state.destination)) return null;
-      const projection = result.projection || result; validateProjection(projection); state.projection = projection; render(); return projection;
+      const projection = result.projection || result; validateProjection(projection); state.projection = projection; renderFilters(); render(); return projection;
     }
     catch (error) { if (seq === state.seq && error.name !== 'AbortError') showError(error); return null; }
-    finally { if (seq === state.seq) { state.busy = false; state.controller = null; updateControls(); } }
+    finally { if (seq === state.seq) { state.busy = false; state.controller = null; setProjectionBusy(false); updateControls(); } }
   }
   function validateDataset(dataset) { if (!isObject(dataset) || dataset.schema_version !== 1 || dataset.synthetic !== true || !Array.isArray(dataset.hosts) || dataset.hosts.length > 10000 || !Array.isArray(dataset.networks) || !Array.isArray(dataset.sources) || dataset.sources.length > 100 || dataset.hosts.some((host) => !isObject(host) || !host.id) || dataset.sources.some((source) => !isObject(source) || !source.id || !Array.isArray(source.lines) || !source.sha256)) throw new Error('The lab response has an unsupported dataset shape.'); }
   function validateProjection(projection) { if (!isObject(projection) || projection.schema_version !== 1 || projection.synthetic !== true || !Array.isArray(projection.nodes) || projection.nodes.length > 140 || !Array.isArray(projection.links) || projection.links.length > 5000 || !Array.isArray(projection.sources) || !isObject(projection.counts) || !isObject(projection.pagination) || projection.nodes.some((item) => !isObject(item) || !idOf(item)) || projection.links.some((edge) => !isObject(edge) || !first(edge.id, edge.from, edge.source_id) || !first(edge.to, edge.target, edge.destination_id))) throw new Error('The topology response has an unsupported or unbounded shape.'); }
@@ -187,7 +243,7 @@
     state.summary.replaceChildren(); for (const [label, value] of [['Hosts', totalHosts], ['Networks', networks], ['Connections', allEdges.length], ['On map', shown]]) { const cell = el('div', 'tl-stat'); cell.append(el('span', '', label), el('strong', '', value)); state.summary.append(cell); }
     const viewLabels = { l3: 'Layer 3 overview', zone: 'Zone overview', l2: 'Host & Layer 2 detail' }; state.graphTitle.textContent = viewLabels[state.view];
     state.stage.replaceChildren();
-    if (!nodes.length) { state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.textContent = state.dataset ? (p.message || 'No elements match these filters.') : 'Load the synthetic lab to explore this map.'; renderInspector(state.selected); renderPager(p); state.exportButton.disabled = !state.dataset; return; }
+    if (!nodes.length) { state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.textContent = state.dataset ? (p.message || 'No elements match these filters. Remove a filter or reset filters to see results.') : 'Load the synthetic lab to explore this map.'; renderInspector(state.selected); renderPager(p); state.exportButton.disabled = !state.dataset; state.preservePan = false; return; }
     const width = 1100; const hostRows = Math.ceil(nodes.filter((item) => typeOf(item) === 'host').length / 5); const height = focused ? Math.max(600, Math.ceil(pathNodes.size / 5) * 160 + 100) : state.view === 'l2' ? Math.max(690, 280 + Math.max(0, hostRows - 1) * 82 + 68 + 32) : 600; state.drawing.setAttribute('viewBox', `0 0 ${width} ${height}`);
     const positions = focused ? new Map(p.path.hops.map((hop, i) => {
       const row = Math.floor(i / 5); const column = row % 2 ? 4 - i % 5 : i % 5;
@@ -201,12 +257,12 @@
     state.caption.textContent = str(first(p.caption, p.message), `${shown} elements in this projection · ${allEdges.length} projected connections · configuration-derived map · ${totalHosts} hosts in the synthetic dataset · live observations unavailable`);
     if (focused) state.caption.textContent = `${shown} of ${allNodes.length} elements · selected L2 path · live observations unavailable`;
     state.exportButton.disabled = !state.dataset;
-    renderPager(p); if (focused) state.pager.hidden = true; renderHostOptions(nodes); renderInspector(state.selected); state.scale = 1; state.x = 0; state.y = 0; applyTransform(); renderPath(p.path);
+    renderPager(p); if (focused) state.pager.hidden = true; renderHostOptions(nodes); renderInspector(state.selected); if (!state.preservePan) { state.scale = 1; state.x = 0; state.y = 0; } state.preservePan = false; applyTransform(); renderPath(p.path);
   }
   function renderPager(p) { const total = Number(first(p.pagination && p.pagination.total, p.total, p.total_count, p.filtered_count, 0)); const start = total ? state.offset + 1 : 0; state.pageLabel.textContent = `Hosts ${start}–${Math.min(state.offset + state.limit, total)} of ${total}`; state.prev.disabled = state.offset <= 0; state.next.disabled = p.pagination ? !p.pagination.has_more : state.offset + state.limit >= total; state.pager.hidden = state.view !== 'l2' || total <= state.limit; }
   function renderHostOptions(nodes) { state.options.replaceChildren(); const candidates = [...arr(state.dataset && state.dataset.hosts), ...nodes, ...arr(state.projection && state.projection.hosts)]; const seen = new Set(); candidates.filter((item) => typeOf(item) === 'host' && !seen.has(idOf(item)) && seen.add(idOf(item))).forEach((item) => { const option = el('option'); option.value = `${labelOf(item)} (${idOf(item)})`; option.dataset.id = idOf(item); option.dataset.host = labelOf(item); state.options.append(option); }); }
   function findHostId(value) { const match = [...state.options.options].find((o) => o.value === value || o.dataset.id === value || o.dataset.host === value); if (match) return match.dataset.id; const host = arr(state.dataset && state.dataset.hosts).find((item) => item.id === value || item.ip === value || item.mac === value); return host ? host.id : ''; }
-  function selectItem(item) { state.selected = item; state.inspectorCollapsed = false; syncInspectorView(); refreshNodeSelection(); renderInspector(item); const kind = typeOf(item); if (kind === 'network' || kind === 'subnet') { state.network = idOf(item); state.net.value = state.network; state.zone = ''; state.zoneInput.value = ''; state.view = 'l2'; state.offset = 0; drawTabs(); requestProjection(); } else if (kind === 'zone') { state.zone = str(item.zone, idOf(item).replace(/^zone-/, '')); state.zoneInput.value = state.zone; state.network = ''; state.net.value = ''; state.view = 'l3'; state.offset = 0; drawTabs(); requestProjection(); } else if (kind === 'host') { state.source = idOf(item); state.sourceField.input.value = `${labelOf(item)} (${idOf(item)})`; clearPathDisplay(); } }
+  function selectItem(item) { state.selected = item; state.inspectorCollapsed = false; syncInspectorView(); refreshNodeSelection(); renderInspector(item); const kind = typeOf(item); if (kind === 'network' || kind === 'subnet') { state.network = idOf(item); state.net.value = state.network; state.zone = ''; state.zoneInput.value = ''; state.view = 'l2'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'zone') { state.zone = str(item.zone, idOf(item).replace(/^zone-/, '')); state.zoneInput.value = state.zone; state.network = ''; state.net.value = ''; state.view = 'l3'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'host') { state.source = idOf(item); state.sourceField.input.value = `${labelOf(item)} (${idOf(item)})`; clearPathDisplay(); } }
   function reconcileSelection(nodes) { if (!state.selected) { syncInspectorView(); return; } const id = idOf(state.selected); const kind = typeOf(state.selected); const match = nodes.find((item) => idOf(item) === id && typeOf(item) === kind); state.selected = match || null; if (match) renderInspector(match); else renderInspector(null); syncInspectorView(); }
   function syncInspectorView() { if (!state.content || !state.inspector) return; const hasSelection = Boolean(state.selected); const collapsed = !hasSelection || state.inspectorCollapsed; state.content.classList.toggle('has-selection', hasSelection); state.content.classList.toggle('is-inspector-collapsed', collapsed); state.inspector.setAttribute('aria-hidden', String(collapsed)); state.inspectorToggle.disabled = !hasSelection; state.inspectorToggle.textContent = collapsed ? 'Show details' : 'Hide details'; state.inspectorToggle.setAttribute('aria-expanded', String(!collapsed)); }
   function refreshNodeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-node').forEach((node) => { const selected = state.selected && idOf(state.selected) === idOf(node.__item) && typeOf(state.selected) === typeOf(node.__item); node.classList.toggle('tl-selected', Boolean(selected)); node.setAttribute('aria-pressed', String(Boolean(selected))); node.setAttribute('aria-label', `${typeOf(node.__item)}: ${labelOf(node.__item)}${selected ? ', selected' : ''}`); }); }
@@ -214,6 +270,14 @@
     state.inspector.replaceChildren();
     if (!item) { state.inspector.append(el('div', 'tl-empty', 'Select a network, zone, or host to inspect its details.')); return; }
     const kind = typeOf(item); state.inspector.append(el('span', 'tl-eyebrow', `${kind} detail`), el('h3', '', labelOf(item)));
+    const selectionActions = el('div', 'tl-selection-actions');
+    const clearSelection = button('tl-clear-selection', 'Clear selection'); clearSelection.addEventListener('click', () => { state.selected = null; syncInspectorView(); refreshNodeSelection(); renderInspector(null); }); selectionActions.append(clearSelection);
+    if (kind === 'host') {
+      const sourceButton = button('', 'Use as source'); sourceButton.addEventListener('click', () => setTraceEndpoint('source', item));
+      const destinationButton = button('', 'Use as destination'); destinationButton.addEventListener('click', () => setTraceEndpoint('destination', item));
+      selectionActions.append(sourceButton, destinationButton);
+    }
+    state.inspector.append(selectionActions);
     const badge = el('span', 'tl-source-badge', str(first(item.source_badge, item.source, 'Synthetic lab dataset'))); state.inspector.append(badge);
     const list = el('dl', 'tl-details'); const data = kind === 'host' ? [['Host ID', idOf(item)], ['IP address', first(item.ip, item.ip_address, item.address)], ['MAC address', first(item.mac, item.mac_address)], ['Network', first(item.network_id, item.network)], ['Zone', first(item.zone_id, item.zone)], ['VLAN', first(item.vlan, item.vlan_id)], ['Port', first(item.port, item.ports && portsText(item.ports))], ['Attachment', item.attachment]] : [['ID', idOf(item)], ['Type', first(item.role, item.type, item.kind)], ['CIDR', first(item.cidr, item.subnet, item.prefix)], ['Network ID', item.network_id], ['IP address', first(item.ip, item.ip_address)], ['Zone', first(item.zone_id, item.zone)], ['VLAN', first(item.vlan, item.vlan_id)], ['Ports', item.ports && portsText(item.ports)], ['Hosts', first(item.host_count, item.count)]];
     data.filter(([, value]) => value !== undefined && value !== null && value !== '').forEach(([k, v]) => { list.append(el('dt', '', k), el('dd', '', Array.isArray(v) ? v.join(', ') : String(v))); }); state.inspector.append(list);
@@ -221,11 +285,18 @@
     const connectionSection = el('section', 'tl-connections'); connectionSection.append(el('h4', '', `Connections · ${connections.length}`));
     if (connections.length) {
       const rows = el('ul', 'tl-connection-list');
-      connections.slice(0, 12).forEach((edge) => { const from = str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)); const to = str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id)); const peerId = from === itemId ? to : from; const peer = projectionNodes().find((node) => idOf(node) === peerId); const label = peer ? labelOf(peer) : peerId; const detail = first(edge.label, edge.kind, edge.type, edge.protocol); const row = el('li'); row.append(el('span', '', `${from === itemId ? '→' : '←'} ${label}`)); if (detail) row.append(el('small', '', String(detail))); rows.append(row); });
+      connections.slice(0, 12).forEach((edge) => { const from = str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)); const to = str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id)); const peerId = from === itemId ? to : from; const peer = projectionNodes().find((node) => idOf(node) === peerId); const label = peer ? labelOf(peer) : peerId; const detail = first(edge.label, edge.kind, edge.type, edge.protocol); const row = el('li'); const navigate = button('', `${from === itemId ? '→' : '←'} ${label}`, 'tl-link-nav'); navigate.addEventListener('click', () => { if (peer) selectItem(peer); }); navigate.disabled = !peer; row.append(navigate); if (detail) row.append(el('small', '', String(detail))); rows.append(row); });
       if (connections.length > 12) rows.append(el('li', 'tl-muted', `${connections.length - 12} more connections in the projection`)); connectionSection.append(rows);
     } else connectionSection.append(el('p', 'tl-muted', 'No connections are present in this projection.'));
     state.inspector.append(connectionSection);
     const evidence = arr(first(item.evidence, item.sources, item.source_lines)); if (evidence.length) { const btn = button('tl-evidence-button', `View ${evidence.length} source references`); btn.addEventListener('click', () => showSources(resolveSources(evidence))); state.inspector.append(btn); }
+  }
+  function setTraceEndpoint(which, item) {
+    const value = `${labelOf(item)} (${idOf(item)})`;
+    if (which === 'source') { state.source = idOf(item); state.sourceField.input.value = value; }
+    else { state.destination = idOf(item); state.destinationField.input.value = value; }
+    clearPathDisplay();
+    state.traceStatus.textContent = `${which === 'source' ? 'Source' : 'Destination'} host selected. Choose the other endpoint, then trace.`;
   }
   function portsText(ports) { return arr(ports).map((p) => typeof p === 'object' ? `${str(first(p.name, p.id, p.port))}${p.vlan ? ` · VLAN ${p.vlan}` : ''}${p.mac ? ` · ${p.mac}` : ''}` : String(p)).join(', '); }
   function resolveSources(refs) { const available = arr(state.projection && state.projection.sources); const grouped = new Map(); for (const ref of refs) { const source = available.find((item) => item.id === ref.source_id || item.id === ref.id); const key = source ? source.id : str(ref.source_id, str(ref.id, 'unresolved')); if (!grouped.has(key)) grouped.set(key, { source, refs: [] }); grouped.get(key).refs.push(ref); } return [...grouped.values()]; }

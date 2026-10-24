@@ -14,6 +14,12 @@ Search by host name, IP or MAC, or use network and zone filters. Reset filters
 returns to the unfiltered projection. Host pages contain 25, 50 or 100 hosts;
 the total dataset count remains visible independently of the current page.
 
+Network and zone inputs suggest values from the loaded synthetic dataset.
+Active filters appear as removable chips, so you can clear one constraint
+without losing the others. An empty result offers a clear-filter action. Search
+updates are debounced, and an earlier response cannot replace the latest query.
+The map and inspector show an updating state while a new Rust projection loads.
+
 Pan on empty canvas space, zoom around the pointer, or use the controls. Focus
 the canvas to use the following keys:
 
@@ -41,6 +47,17 @@ shortcuts open interfaces, routes, selected path hops and source evidence. Saved
 configuration and path groups retain their bounded lists and report omitted
 records instead of implying complete display. Snapshot identity and source
 ownership stay attached to the inspected record.
+
+Follow a projected connection from the network-map inspector to inspect its
+other endpoint, or assign a selected host as the source or destination of a
+Layer 2 trace. In the path workbench, declared-connection buttons open connected
+devices and link details; each link inspector can open either endpoint. These
+actions navigate the existing projection and do not run another investigation.
+
+Path-workbench facet chips narrow visible devices by zone, subnet, VRF or VDOM
+when the Rust projection supplies those facets. Find highlights matching devices
+and narrows the device list. The filter status explains this distinction, and
+an empty map provides a reset action. Clearing a chip preserves other facets.
 
 Use the forward branch and return candidate controls to compare configured
 paths. An asymmetric return or an unproven session remains explicit. Link
