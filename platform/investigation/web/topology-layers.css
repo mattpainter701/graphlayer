@@ -237,6 +237,13 @@
 .tl-inspector > h3 { font-size: 21px; }
 .tl-details { gap: 9px 12px; font-size: 12px; }
 .tl-connection-list li { padding: 11px 12px; border-radius: 10px; }
+.tl-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.tl-selection-actions .tl-button { flex: 1 1 130px; }
+.tl-link-nav { display: block; width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #176b9e; font: 600 12px ui-sans-serif,system-ui,sans-serif; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.tl-link-nav:hover { border-color: #c7dfec; background: #e9f4fa; }
+.tl-link-nav:focus-visible { outline: 3px solid rgb(33 133 208 / 28%); outline-offset: 1px; }
+.tl-link-nav:disabled { color: #718696; cursor: default; }
+.tl-connection-list li small { display: block; padding-inline: 10px; color: #587186; }
 .tl-source-card { border-radius: 10px; background: #f6fafc; }
 .tl-sources { margin-top: 15px; padding: 0 14px; border: 1px solid #dbe6ed; border-radius: 12px; background: #fbfdfe; }
 .tl-sources summary { min-height: 46px; display: flex; align-items: center; color: #35566d; }
