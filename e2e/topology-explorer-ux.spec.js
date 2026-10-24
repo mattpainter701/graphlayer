@@ -58,6 +58,47 @@ async function loadAndExploreBranchSample(page) {
   return () => analysisPosts;
 }
 
+async function expectTopologyNodeGeometry(page, width) {
+  await page.setViewportSize({ width, height: 850 });
+  const geometry = await page.locator('#exploration-topology').evaluate((svg) => {
+    const nodes = [...svg.querySelectorAll('.topology-node')].filter((node) => getComputedStyle(node).display !== 'none');
+    const failures = [];
+    for (const node of nodes) {
+      const id = node.dataset.nodeId;
+      const icon = node.querySelector('.topology-device-icon').getBoundingClientRect();
+      const card = node.querySelector('.topology-node-card').getBoundingClientRect();
+      const label = node.querySelector('.topology-node-label');
+      const subtitle = node.querySelector('.topology-node-subtitle');
+      const labelRect = label.getBoundingClientRect();
+      const subtitleRect = subtitle.getBoundingClientRect();
+      const labelBox = label.getBBox();
+      const subtitleBox = subtitle.getBBox();
+      const labelAnchorX = Number(label.getAttribute('x'));
+      const subtitleAnchorX = Number(subtitle.getAttribute('x'));
+      const insideCard = (box) => box.left >= card.left - 1 && box.right <= card.right + 1
+        && box.top >= card.top - 1 && box.bottom <= card.bottom + 1;
+      const startsAtAnchor = (box, x) => Math.abs(box.x - x) <= 1;
+      const leftAnchored = getComputedStyle(label).textAnchor === 'start'
+        && getComputedStyle(subtitle).textAnchor === 'start'
+        && startsAtAnchor(labelBox, labelAnchorX)
+        && startsAtAnchor(subtitleBox, subtitleAnchorX);
+      const iconClear = icon.right <= Math.min(labelRect.left, subtitleRect.left) + 1;
+      const textInsideCard = insideCard(labelRect) && insideCard(subtitleRect);
+      if (!leftAnchored || !iconClear || !textInsideCard) {
+        failures.push({ id, leftAnchored, iconClear, textInsideCard,
+          icon: { left: icon.left, right: icon.right },
+          card: { left: card.left, right: card.right, top: card.top, bottom: card.bottom },
+          title: { left: labelRect.left, right: labelRect.right, top: labelRect.top, bottom: labelRect.bottom, bboxX: labelBox.x, anchorX: labelAnchorX },
+          subtitle: { left: subtitleRect.left, right: subtitleRect.right, top: subtitleRect.top, bottom: subtitleRect.bottom, bboxX: subtitleBox.x, anchorX: subtitleAnchorX },
+        });
+      }
+    }
+    return { nodeCount: nodes.length, failures };
+  });
+  expect(geometry.nodeCount, `visible topology nodes at ${width}px`).toBeGreaterThan(0);
+  expect(geometry.failures, `node label geometry at ${width}px: ${JSON.stringify(geometry.failures)}`).toEqual([]);
+}
+
 test('discovered network and zone filters combine into removable chips and recover from no matches', async ({ page }) => {
   const observed = await observeLayerApi(page);
   const dataset = await loadSyntheticMap(page, observed);
@@ -180,6 +221,8 @@ test('neighbor drilldown opens the peer and its evidence while canvas presentati
 test('path facets recover an empty canvas and endpoint navigation keeps saved evidence in view', async ({ page }) => {
   const analysisPosts = await loadAndExploreBranchSample(page);
   await expect(page.locator('#topology-active-filters')).toBeAttached();
+  for (const width of [1280, 768, 375]) await expectTopologyNodeGeometry(page, width);
+  await page.setViewportSize({ width: 1280, height: 900 });
   const zone = page.locator('#topology-filters select[data-filter="zone"]');
   const vdom = page.locator('#topology-filters select[data-filter="vdom"]');
   await expect(zone).toBeVisible();

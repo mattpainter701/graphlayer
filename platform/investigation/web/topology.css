@@ -122,6 +122,10 @@
 .topology-node-subtitle { fill: #536c80; font: 12px ui-sans-serif,system-ui,sans-serif; }
 .topology-node-status { fill: #415d72; font: 11px ui-sans-serif,system-ui,sans-serif; }
 .topology-node-traffic { fill: #176b4b; font: 700 11px ui-sans-serif,system-ui,sans-serif; }
+/* Device labels start beside the icon; port labels intentionally remain centered. */
+.topology-workbench .exploration-topology .topology-node-label,
+.topology-workbench .exploration-topology .topology-node-subtitle,
+.topology-workbench .exploration-topology .topology-node-status { text-anchor: start; }
 .topology-device-icon { fill: none; stroke: #396c8b; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .topology-device-icon[data-icon="firewall"] { stroke: #a85d23; }
 .topology-device-icon[data-icon="router"] { stroke: #315f9a; }
