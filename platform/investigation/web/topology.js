@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, inspectorCollapsed: true, fullscreen: false, fullscreenFocus: null, savedBodyOverflow: null, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {}, zoomFrame: 0, nodes: [], nodeIndex: new Map(), projectedIndex: new Map(), snapshotIndex: new Map(), renderedNodes: new Map(), portPanelSequence: 0 };
+  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, inspectorCollapsed: true, fullscreen: false, fullscreenFocus: null, savedBodyOverflow: null, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {}, zoomFrame: 0, nodes: [], nodeIndex: new Map(), projectedIndex: new Map(), snapshotIndex: new Map(), renderedNodes: new Map(), portPanelSequence: 0, history: [], historyIndex: -1, location: null, portQuery: '', disclosures: new Map(), expandedPorts: new Map(), activePorts: new Map() };
   const $ = (id) => document.getElementById(id);
   const node = (tag, className, text) => { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = String(text); return item; };
   const safeText = (value, fallback = 'Unavailable') => value === undefined || value === null || value === '' ? fallback : String(value);
@@ -254,15 +254,47 @@
   function portName(iface) { return iface && (iface.name || iface.physical || iface.interface) || ''; }
   function portFacts(iface) {
     const entries = [['Address',iface && (iface.address || iface.ip_address)],['Mask / subnet',iface && (iface.mask || iface.netmask || iface.subnet)],['Zone',iface && iface.zone],['VRF',iface && iface.vrf],['VDOM',iface && iface.vdom],['Configured status',iface && (iface.configured_status || iface.status || (iface.resolved === false ? 'unresolved' : iface.shutdown === true ? 'shutdown' : iface.configured === true ? 'configured' : null))]];
-    return entries.map(([label,value]) => `${label} · ${safeText(value)}`);
+    return entries.filter(([,value]) => value !== undefined && value !== null && value !== '').map(([label,value]) => `${label} · ${safeText(value)}`).concat(entries[5][1] === undefined || entries[5][1] === null || entries[5][1] === '' ? ['Configured status · Unavailable'] : []);
+  }
+  function locationKey(location) { return location ? `${location.kind}:${location.nodeId || ''}:${location.portName || ''}:${location.linkIndex ?? ''}:${location.snapshotId || ''}:${location.peerSnapshotId || ''}` : ''; }
+  function recordLocation(location) {
+    const snapshot = location.nodeId ? getSnapshot(location.nodeId) : null;
+    const peerSnapshot = location.peerNodeId ? getSnapshot(location.peerNodeId) : null;
+    const next = { ...location, snapshotId: String(snapshot && snapshot.id || ''), peerSnapshotId: String(peerSnapshot && peerSnapshot.id || '') };
+    if (state.historyIndex >= 0 && locationKey(state.history[state.historyIndex]) === locationKey(next)) return;
+    state.history = state.history.slice(0, state.historyIndex + 1); state.history.push(next);
+    if (state.history.length > 32) state.history.shift();
+    state.historyIndex = state.history.length - 1; state.location = next;
+  }
+  function renderNavigation(panel) {
+    const nav = node('nav','topology-inspector-history'); nav.setAttribute('aria-label','Inspector navigation');
+    const back = node('button','topology-history-button','Back'); back.type = 'button'; back.dataset.history = 'back'; back.disabled = state.historyIndex <= 0; back.addEventListener('click',() => moveHistory(-1));
+    const forward = node('button','topology-history-button','Forward'); forward.type = 'button'; forward.dataset.history = 'forward'; forward.disabled = state.historyIndex < 0 || state.historyIndex >= state.history.length - 1; forward.addEventListener('click',() => moveHistory(1));
+    nav.append(back,forward);
+    const crumb = node('div','topology-inspector-breadcrumb'); crumb.setAttribute('aria-label','Current inspection path');
+    const upto = state.history.slice(0,Math.max(0,state.historyIndex) + 1).slice(-5);
+    upto.forEach((item,index) => { if (index) crumb.append(node('span','topology-breadcrumb-separator','›')); const label = item.kind === 'port' ? `${item.nodeId} · ${item.portName}` : item.kind === 'link' ? `Link ${item.linkIndex + 1}` : item.nodeId; const button = node('button','topology-breadcrumb-button',label); button.type = 'button'; button.dataset.nodeId = item.nodeId || ''; button.dataset.portName = item.portName || ''; button.dataset.linkIndex = item.linkIndex === undefined ? '' : String(item.linkIndex); button.addEventListener('click',() => { const absolute = state.history.indexOf(item); if (absolute >= 0) state.historyIndex = absolute; showLocation(item); }); crumb.append(button); });
+    nav.append(crumb); panel.append(nav);
+  }
+  function rememberDisclosure(panel) { if (!panel) return; state.disclosures.set(`${panel.dataset.nodeId}\u0000${panel.dataset.snapshotId}`,{ nodeId: panel.dataset.nodeId, snapshotId: panel.dataset.snapshotId, groups: Array.from(panel.querySelectorAll('details[data-group][open]'), (group) => group.dataset.group), ports: Array.from(panel.querySelectorAll('.topology-port-detail.is-expanded'), (port) => port.dataset.portDetail) }); }
+  function moveHistory(delta) { const index = state.historyIndex + delta; if (index < 0 || index >= state.history.length) return; state.historyIndex = index; showLocation(state.history[index]); }
+  function showLocation(location) { if (!location || !location.nodeId || String((getSnapshot(location.nodeId) || {}).id || '') !== location.snapshotId || (location.peerNodeId && String((getSnapshot(location.peerNodeId) || {}).id || '') !== location.peerSnapshotId)) return; state.location = location; if (location.kind === 'link') selectLink(location.linkIndex,true); else { selectNode(location.nodeId,false,true,true); if (location.kind === 'port') expandPort(location.nodeId,location.portName); } }
+  function expandPort(nodeId, interfaceName) {
+    const key = `${nodeId}\u0000${String((getSnapshot(nodeId) || {}).id || '')}`; state.activePorts.set(key,interfaceName);
+    const target = Array.from(state.inspector.querySelectorAll('[data-port-detail]')).find((item) => item.dataset.portDetail === interfaceName);
+    if (target) { const ancestor = target.closest('details[data-group]'); if (ancestor) ancestor.open = true; const toggle = target.querySelector('.topology-port-toggle'); const detail = toggle && $(toggle.getAttribute('aria-controls')); if (toggle && detail) { toggle.setAttribute('aria-expanded','true'); target.classList.add('is-expanded'); detail.hidden = false; } target.scrollIntoView({block:'nearest',behavior:'instant'}); }
   }
   function renderPortDrilldown(host, nodeId, iface) {
     const name = portName(iface) || 'Interface'; const wrapper = node('div','topology-port-detail'); wrapper.dataset.portDetail = name; wrapper.dataset.nodeId = nodeId;
     const panelId = `topology-port-panel-${++state.portPanelSequence}`;
     const toggle = node('button','topology-port-toggle',`Inspect port · ${name}`); toggle.type = 'button'; toggle.setAttribute('aria-label',`Inspect ${name} on ${nodeId}`); toggle.setAttribute('aria-expanded','false'); toggle.setAttribute('aria-controls',panelId); wrapper.append(toggle);
     const detail = node('div','topology-port-detail-body'); detail.id = panelId; detail.hidden = true; detail.append(...portFacts(iface).map((fact) => node('p','topology-config-item',fact)));
-    toggle.addEventListener('click',() => { const open = toggle.getAttribute('aria-expanded') !== 'true'; toggle.setAttribute('aria-expanded',String(open)); wrapper.classList.toggle('is-expanded',open); detail.hidden = !open; });
+    toggle.addEventListener('click',() => { const open = toggle.getAttribute('aria-expanded') !== 'true'; toggle.setAttribute('aria-expanded',String(open)); wrapper.classList.toggle('is-expanded',open); detail.hidden = !open; const key = `${nodeId}\u0000${String((getSnapshot(nodeId) || {}).id || '')}`; const opened = state.expandedPorts.get(key) || new Set(); if (open) { opened.add(name); state.activePorts.set(key,name); } else { opened.delete(name); if (state.activePorts.get(key) === name) state.activePorts.set(key,[...opened].at(-1) || ''); } state.expandedPorts.set(key,opened); });
     const links = getTopology().links || getRequest().links || []; const exactLinks = links.map((link,index) => ({link,index})).filter(({link}) => link && link.a && link.b && ((link.a.node_id === nodeId && link.a.interface === name) || (link.b.node_id === nodeId && link.b.interface === name)));
+    const uses = [...getHops('forward').filter((hop) => hop.node_id === nodeId && [hop.path && (hop.path.ingress_interface || hop.path.ingress),hop.path && hop.path.egress_interface].includes(name)),...getHops('return').filter((hop) => hop.node_id === nodeId && [hop.path && (hop.path.ingress_interface || hop.path.ingress),hop.path && hop.path.egress_interface].includes(name))];
+    const status = iface && (iface.configured_status || iface.status || (iface.resolved === false ? 'unresolved' : iface.shutdown === true ? 'shutdown' : iface.configured === true ? 'configured' : null));
+    const summaryFacts = [`Port · ${name}`]; if (status) summaryFacts.push(`Configured status · ${status}`); summaryFacts.push(`Connected declared links · ${exactLinks.length}`,`Forward use · ${uses.filter((hop) => getHops('forward').includes(hop)).length}`,`Return use · ${uses.filter((hop) => getHops('return').includes(hop)).length}`);
+    const summary = node('p','topology-port-summary',summaryFacts.join(' · ')); toggle.after(summary);
     const linkSection = node('section','topology-port-subsection'); linkSection.append(node('h6','','Declared links for this port')); const linkList = node('div','topology-neighbor-list');
     if (!exactLinks.length) linkList.append(node('p','topology-config-status','No declared link returned for this port.'));
     exactLinks.slice(0,8).forEach(({link,index}) => { const btn = node('button','topology-neighbor-link',`${link.a.node_id} · ${link.a.interface || 'port unavailable'} ↔ ${link.b.node_id} · ${link.b.interface || 'port unavailable'}`); btn.type = 'button'; btn.dataset.linkIndex = String(index); btn.setAttribute('aria-label',`Inspect declared link for ${name}`); btn.addEventListener('click',() => selectLink(index)); linkList.append(btn); }); omittedNote(linkSection,Math.max(0,exactLinks.length-8),'declared links'); linkSection.append(linkList); detail.append(linkSection);
@@ -270,11 +302,10 @@
     const hopSection = node('section','topology-port-subsection'); hopSection.append(node('h6','','Selected path use')); if (!selectedHops.length) hopSection.append(node('p','topology-config-status','No selected forward or return hop uses this exact interface.'));
     selectedHops.slice(0,8).forEach(({hop,direction}) => appendHopCard(hop,direction,hopSection)); omittedNote(hopSection,Math.max(0,selectedHops.length-8),'selected hops'); detail.append(hopSection);
     evidenceRefs(iface && iface.snapshot_id || (getSnapshot(nodeId) || {}).id,iface && iface.evidence_refs,detail,`Port ${name} sources`); wrapper.append(detail); host.append(wrapper);
+    const key = `${nodeId}\u0000${String((getSnapshot(nodeId) || {}).id || '')}`; if (state.expandedPorts.get(key)?.has(name)) toggle.click();
   }
   function jumpToPort(nodeId, interfaceName) {
-    selectNode(nodeId,true,true);
-    const target = Array.from(state.inspector.querySelectorAll('[data-port-detail]')).find((item) => item.dataset.portDetail === interfaceName);
-    if (target) { const ancestor = target.closest('details[data-group]'); if (ancestor) ancestor.open = true; const toggle = target.querySelector('.topology-port-toggle'); const detail = toggle && $(toggle.getAttribute('aria-controls')); if (toggle && detail) { toggle.setAttribute('aria-expanded','true'); target.classList.add('is-expanded'); detail.hidden = false; } target.scrollIntoView({block:'nearest',behavior:'instant'}); if (toggle) toggle.focus({preventScroll:true}); }
+    recordLocation({kind:'port',nodeId,portName:interfaceName}); selectNode(nodeId,true,true,true); expandPort(nodeId,interfaceName);
   }
   function appendHopCard(hop,direction,host) {
     const p = hop.path || {}; const card = node('article','topology-hop-card'); card.dataset.hopDirection = direction.toLowerCase(); card.dataset.hopNodeId = hop.node_id || ''; const title = node('h6','topology-hop-title',`${direction} · ${safeText(p.disposition || hop.disposition,'status unavailable')}`); card.append(title);
@@ -285,7 +316,7 @@
     if (natDetails !== undefined && natDetails !== null) card.append(node('p','topology-config-item',`NAT / translation returned · ${modelValue(natDetails)}`));
     const tuple = (label,value) => { const fields = value && [value.source,value.destination,value.protocol,value.source_port,value.destination_port,value.icmp_type].filter((part) => part !== undefined && part !== null && part !== ''); card.append(node('p','topology-tuple',`${label} · ${fields && fields.length ? fields.join(' · ') : 'unavailable'}`)); };
     tuple('Original tuple',p.original_flow); tuple('Policy tuple',p.policy_flow); tuple('Post-NAT / egress tuple',p.egress_flow || p.final_flow);
-    const stages = p.stages || p.hops; if (Array.isArray(stages) && stages.length) boundedArray(card,stages,8,'path stages',(stage) => { card.append(node('p','topology-config-item',`${stage.name || stage.kind || 'Decision'} · ${stage.status || stage.disposition || 'status unavailable'} · ${stage.detail || stage.reason || 'No explanation returned'}`)); evidenceRefs(stage.snapshot_id || hop.snapshot_id,stage.evidence_refs || stage.evidence,card,`${stage.name || stage.kind || 'Stage'} sources`); }); else card.append(node('p','topology-config-status','Stage explanation unavailable.'));
+    const stages = p.stages || p.hops; if (Array.isArray(stages) && stages.length) { const group = node('div','topology-hop-stages'); const toggle = node('button','topology-hop-stages-toggle','Decision stages and evidence'); const body = node('div','topology-hop-stages-body'); body.id = `topology-hop-stages-${++state.portPanelSequence}`; body.hidden = true; toggle.type = 'button'; toggle.setAttribute('aria-expanded','false'); toggle.setAttribute('aria-controls',body.id); boundedArray(body,stages,8,'path stages',(stage) => { body.append(node('p','topology-config-item',`${stage.name || stage.kind || 'Decision'} · ${stage.status || stage.disposition || 'status unavailable'} · ${stage.detail || stage.reason || 'No explanation returned'}`)); evidenceRefs(stage.snapshot_id || hop.snapshot_id,stage.evidence_refs || stage.evidence,body,`${stage.name || stage.kind || 'Stage'} sources`); }); toggle.addEventListener('click',() => { const open = toggle.getAttribute('aria-expanded') !== 'true'; toggle.setAttribute('aria-expanded',String(open)); body.hidden = !open; }); group.append(toggle,body); card.append(group); } else card.append(node('p','topology-config-status','Stage explanation unavailable.'));
     evidenceRefs(hop.snapshot_id,hop.evidence || p.evidence_refs,card,`${direction} hop sources`); host.append(card);
   }
   function collectOwnedEvidence(snapshot, projected, hops) {
@@ -316,11 +347,13 @@
   }
   function renderInspector(nodeId) {
     const snapshot = getSnapshot(nodeId); const entry = (state.event && state.event.snapshots || []).find((item) => item && item.node_id === nodeId); const hops = [...getHops('forward'), ...getHops('return')].filter((hop) => hop.node_id === nodeId);
-    const retained = state.restoreDisclosure;
+    const current = state.inspector && state.inspector.querySelector('.topology-inspector-content[data-inspector-kind="device"]'); rememberDisclosure(current);
+    const retained = state.restoreDisclosure || state.disclosures.get(`${nodeId}\u0000${String(snapshot && snapshot.id || '')}`);
     const sameSnapshot = retained && retained.nodeId === nodeId && retained.snapshotId === String(snapshot && snapshot.id || '');
     const openGroups = new Set(sameSnapshot ? retained.groups : []);
     const openPorts = new Set(sameSnapshot ? retained.ports : []);
-    const panel = node('div', 'topology-inspector-content'); panel.dataset.inspectorKind = 'device'; const heading = node('div', 'topology-inspector-heading'); heading.append(node('div', 'topology-eyebrow', 'DEVICE INSPECTOR'), node('h4', '', nodeId)); panel.append(heading);
+    state.expandedPorts.set(`${nodeId}\u0000${String(snapshot && snapshot.id || '')}`,openPorts);
+    const panel = node('div', 'topology-inspector-content'); panel.dataset.inspectorKind = 'device'; const heading = node('div', 'topology-inspector-heading'); heading.append(node('div', 'topology-eyebrow', 'DEVICE INSPECTOR'), node('h4', '', nodeId)); panel.append(heading); renderNavigation(panel);
     const projected = getProjectedNode({ node_id: nodeId });
     const annotationKey = roleAnnotationKey(nodeId); const presentation = node('label','topology-role-annotation','Display icon'); const roleSelect = node('select','topology-role-select'); roleSelect.setAttribute('aria-label','Display icon annotation');
     [['','Use projected icon'],['firewall','Firewall'],['router','Router'],['switch','Switch'],['host','Host'],['server','Server'],['network','Network device']].forEach(([value,label]) => { const option = node('option','',label); option.value = value; roleSelect.append(option); }); roleSelect.value = state.roleAnnotations && state.roleAnnotations[annotationKey] || (projected.role_source === 'display_annotation' ? projected.icon : '') || ''; roleSelect.addEventListener('change', () => { const role = roleSelect.value; state.roleAnnotations = state.roleAnnotations || {}; if (role) state.roleAnnotations[annotationKey] = role; else delete state.roleAnnotations[annotationKey]; document.dispatchEvent(new CustomEvent('graphlayer:topology-role', { detail: { node_id: nodeId, role: role || null } })); if (renderGraph()) renderInspector(nodeId); }); presentation.append(roleSelect, node('span','topology-role-note','Display annotation only; does not change the saved model.')); panel.append(presentation);
@@ -333,7 +366,14 @@
     if (!connectionCount) neighbors.append(node('p','topology-config-status','No declared links for this device.')); connections.append(neighbors); omittedNote(connections,Math.max(0,connectionCount-12),'declared connections'); panel.append(connections);
     const path = snapshot && snapshot.path; const topologyFacts = node('section','topology-inspector-section'); topologyFacts.append(node('h5','','Projected topology attributes'));
     [['Role source',projected.role_source],['Zone',projected.zone],['Subnet',projected.subnet],['VRF',projected.vrf],['VDOM',projected.vdom]].forEach(([label,value]) => topologyFacts.append(node('p','topology-config-item',`${label} · ${safeText(value)}`)));
-    boundedArray(topologyFacts,projected.interfaces,12,'projected interfaces',(iface) => { evidenceRefs(iface.snapshot_id || snapshot && snapshot.id,iface.evidence_refs,topologyFacts,`Interface ${portName(iface)} sources`); renderPortDrilldown(topologyFacts,nodeId,iface); });
+    const interfaces = Array.isArray(projected.interfaces) ? projected.interfaces : [];
+    if (interfaces.length) {
+      const finder = node('div','topology-port-finder'); const label = node('label','','Find a port'); const input = node('input','topology-port-finder-input'); input.type = 'search'; input.value = state.portQuery; input.placeholder = 'Filter returned interfaces'; input.setAttribute('aria-label',`Filter ports on ${nodeId}`); label.append(input); const clear = node('button','topology-port-finder-clear','Clear'); clear.type = 'button'; clear.addEventListener('click',() => { state.portQuery = ''; input.value = ''; applyPortQuery(topologyFacts,''); input.focus(); }); finder.append(label,clear); topologyFacts.append(finder);
+      const results = node('div','topology-port-finder-results'); results.dataset.nodeId = nodeId; topologyFacts.append(results);
+      const renderPorts = (query) => { const key = `${nodeId}\u0000${String(snapshot && snapshot.id || '')}`; results.querySelectorAll('.topology-port-detail.is-expanded').forEach((item) => { const opened = state.expandedPorts.get(key) || new Set(); opened.add(item.dataset.portDetail); state.expandedPorts.set(key,opened); state.activePorts.set(key,item.dataset.portDetail); }); results.replaceChildren(); const normalized = query.trim().toLocaleLowerCase(); const selectedPort = state.activePorts.get(key) || (state.location && state.location.kind === 'port' && state.location.nodeId === nodeId ? state.location.portName : ''); const visible = interfaces.filter((iface) => !normalized || portName(iface).toLocaleLowerCase().includes(normalized) || String(iface.address || '').toLocaleLowerCase().includes(normalized) || portName(iface) === selectedPort); if (!visible.length) results.append(node('p','topology-port-empty','No returned interfaces match this filter. Clear the query to show all ports.')); const ordered = visible.slice(0,12); const selected = visible.find((iface) => portName(iface) === selectedPort); if (selected && !ordered.includes(selected)) ordered[ordered.length - 1] = selected; ordered.forEach((iface) => { evidenceRefs(iface.snapshot_id || snapshot && snapshot.id,iface.evidence_refs,results,`Interface ${portName(iface)} sources`); renderPortDrilldown(results,nodeId,iface); }); omittedNote(results,Math.max(0,visible.length-ordered.length),'interfaces'); };
+      const applyPortQuery = (host,query) => { if (host === topologyFacts) renderPorts(query); };
+      input.addEventListener('input',() => { state.portQuery = input.value; applyPortQuery(topologyFacts,input.value); }); renderPorts(state.portQuery);
+    } else topologyFacts.append(node('p','topology-config-status','No projected interface list was returned for this device.'));
     const topologyGroup = node('details','topology-inspector-group'); topologyGroup.dataset.group = 'topology'; topologyGroup.open = false; topologyGroup.append(node('summary','','Projected topology attributes'),topologyFacts); panel.append(topologyGroup);
     const facts = node('section', 'topology-inspector-section'); facts.append(node('h5', '', 'Saved configuration model'));
     if (!path || typeof path !== 'object') facts.append(node('p', 'topology-config-status', 'Routing, NAT, and interface model unavailable for this snapshot.'));
@@ -372,14 +412,14 @@
     detailMetrics.forEach(([label,value,group]) => { const shortcut = node('button','topology-inspector-metric'); shortcut.type = 'button'; shortcut.setAttribute('aria-label',`Inspect ${label.toLowerCase()}`); shortcut.append(node('strong','',value === null ? '—' : value),node('span','',label)); shortcut.addEventListener('click',() => { group.open = true; const summary = group.querySelector('summary'); if (summary) { summary.focus({preventScroll:true}); group.scrollIntoView({block:'nearest',behavior:'instant'}); } }); metrics.append(shortcut); }); panel.insertBefore(metrics,presentation);
     panel.dataset.nodeId = nodeId; panel.dataset.snapshotId = String(snapshot && snapshot.id || '');
     panel.querySelectorAll('details[data-group]').forEach((group) => { if (openGroups.has(group.dataset.group)) group.open = true; });
-    panel.querySelectorAll('.topology-port-detail').forEach((port) => { if (openPorts.has(port.dataset.portDetail)) port.querySelector('.topology-port-toggle').click(); });
     state.inspector.replaceChildren(panel);
   }
-  function selectLink(index) {
-    const link = (getTopology().links || getRequest().links || [])[index]; if (!link) return; state.selectedLink = index;
+  function selectLink(index, fromHistory = false) {
+    const link = (getTopology().links || getRequest().links || [])[index]; if (!link) return; rememberDisclosure(state.inspector.querySelector('.topology-inspector-content[data-inspector-kind="device"]')); state.selectedLink = index;
+    if (!fromHistory) recordLocation({kind:'link',nodeId:link.a.node_id,peerNodeId:link.b.node_id,linkIndex:index});
     setInspectorCollapsed(false);
     state.svg.querySelectorAll('.topology-link').forEach((item) => { const selected = Number(item.dataset.linkIndex) === index; item.classList.toggle('topology-link-selected',selected); item.setAttribute('aria-pressed',String(selected)); }); state.svg.querySelectorAll('.topology-node').forEach((item) => { item.classList.remove('topology-selected'); item.setAttribute('aria-pressed','false'); });
-    const panel = node('div','topology-inspector-content'); panel.dataset.inspectorKind = 'link'; const heading = node('div','topology-inspector-heading'); heading.append(node('div','topology-eyebrow','LINK INSPECTOR'),node('h4','',`${link.a.node_id} ↔ ${link.b.node_id}`)); panel.append(heading);
+    const panel = node('div','topology-inspector-content'); panel.dataset.inspectorKind = 'link'; const heading = node('div','topology-inspector-heading'); heading.append(node('div','topology-eyebrow','LINK INSPECTOR'),node('h4','',`${link.a.node_id} ↔ ${link.b.node_id}`)); panel.append(heading); renderNavigation(panel);
     const summary = node('dl','topology-summary'); const add = (label,value) => summary.append(node('dt','',label),node('dd','',safeText(value)));
     add('Endpoint A',link.a.node_id); add('Port A',link.a.interface); add('Endpoint B',link.b.node_id); add('Port B',link.b.interface); add('Provenance',link.provenance || (link.synthetic ? 'query endpoint' : 'declared topology'));
     if (link.direction) add('Direction',link.direction); if (link.direction_source) add('Direction source',link.direction_source); panel.append(summary);
@@ -420,7 +460,7 @@
       }
     });
   }
-  function selectNode(nodeId, focus, revealInspector) {
+  function selectNode(nodeId, focus, revealInspector, fromHistory = false) {
     if (!nodeId) return;
     const requested = state.nodeIndex.get(nodeId); if (!requested) return;
     if (focus) {
@@ -429,7 +469,7 @@
       if (state.search.value.trim() && !deviceSearchText(requested).includes(state.search.value.trim().toLocaleLowerCase())) { state.search.value = ''; changed = true; }
       if (changed) { renderFilters(); applyGraphFilters(); renderDeviceList(); state.caption.textContent = `Adjusted filters to reveal ${nodeId} · configured topology · runtime observations unavailable`; }
     }
-    state.selected = nodeId; state.selectedLink = -1; state.svg.querySelectorAll('.topology-link').forEach((item) => { item.classList.remove('topology-link-selected'); item.setAttribute('aria-pressed','false'); }); state.svg.querySelectorAll('.topology-node').forEach((item) => { const selected = item.dataset.nodeId === nodeId; item.classList.toggle('topology-selected', selected); item.setAttribute('aria-pressed', String(selected)); });
+    if (!fromHistory) { if (state.selected && state.selected !== nodeId) state.portQuery = ''; recordLocation({kind:'device',nodeId}); } state.selected = nodeId; state.selectedLink = -1; state.svg.querySelectorAll('.topology-link').forEach((item) => { item.classList.remove('topology-link-selected'); item.setAttribute('aria-pressed','false'); }); state.svg.querySelectorAll('.topology-node').forEach((item) => { const selected = item.dataset.nodeId === nodeId; item.classList.toggle('topology-selected', selected); item.setAttribute('aria-pressed', String(selected)); });
     if (revealInspector) setInspectorCollapsed(false);
     state.deviceList.querySelectorAll('.topology-device').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.nodeId === nodeId)));
     renderInspector(nodeId); if (focus) focusNode(nodeId);
@@ -462,13 +502,15 @@
   function onTopologyStatus(event) { const detail = event && event.detail || {}; showTopologyStatus(detail.status || 'error',detail.message || ''); }
   function update(event) {
     setup(); if (!state.root || !event || !event.detail) return;
+    const priorPanel = state.inspector && state.inspector.querySelector('.topology-inspector-content[data-inspector-kind="device"]');
+    const priorDisclosure = priorPanel ? { nodeId: priorPanel.dataset.nodeId, snapshotId: priorPanel.dataset.snapshotId, groups: Array.from(priorPanel.querySelectorAll('details[data-group][open]'), (group) => group.dataset.group), ports: Array.from(priorPanel.querySelectorAll('.topology-port-detail.is-expanded'), (port) => port.dataset.portDetail) } : null;
     const request = event.detail.request || event.detail.exploration && event.detail.exploration.request || {};
     const nextIdentity = event.detail.mode === 'draft' ? `draft:${JSON.stringify(request)}` : event.detail.mode === 'trace' ? `trace:${event.detail.investigation && event.detail.investigation.id || JSON.stringify(request)}` : `result:${event.detail.exploration && event.detail.exploration.id || JSON.stringify(request)}`;
     state.event = event.detail; indexPresentation();
     renderResultControls(event.detail);
     const changedIdentity = state.identity !== nextIdentity; state.identity = nextIdentity;
     const loadingView = state.loadingView; state.loadingView = null;
-    if (changedIdentity) { state.selected = ''; state.selectedLink = -1; }
+    if (changedIdentity) { state.selected = ''; state.selectedLink = -1; state.history = []; state.historyIndex = -1; state.location = null; state.portQuery = ''; state.disclosures.clear(); state.expandedPorts.clear(); state.activePorts.clear(); }
     showTopologyStatus('ready','');
     if (!renderGraph()) return;
     if (changedIdentity) { state.selected = ''; state.fit(); }
@@ -488,8 +530,10 @@
     }
     renderDeviceList();
     const candidateChanged = loadingView && (loadingView.branchIndex !== event.detail.branchIndex || loadingView.returnIndex !== event.detail.returnIndex);
-    state.restoreDisclosure = loadingView && loadingView.identity === nextIdentity && candidateChanged ? loadingView.disclosure : null;
-    if (state.selected && getNodes().some((item) => item.node_id === state.selected)) selectNode(state.selected, false);
+    state.restoreDisclosure = !changedIdentity ? (priorDisclosure || (loadingView && loadingView.identity === nextIdentity && candidateChanged ? loadingView.disclosure : null)) : null;
+    if (!changedIdentity && state.history.some((item) => item.nodeId && (String((getSnapshot(item.nodeId) || {}).id || '') !== item.snapshotId || (item.peerNodeId && String((getSnapshot(item.peerNodeId) || {}).id || '') !== item.peerSnapshotId)))) { state.history = []; state.historyIndex = -1; state.location = null; state.portQuery = ''; state.restoreDisclosure = null; state.disclosures.clear(); state.expandedPorts.clear(); }
+    if (state.location && state.location.nodeId && getNodes().some((item) => item.node_id === state.location.nodeId) && String((getSnapshot(state.location.nodeId) || {}).id || '') === state.location.snapshotId) showLocation(state.location);
+    else if (state.selected && getNodes().some((item) => item.node_id === state.selected)) selectNode(state.selected, false, false, state.history.length > 0);
     else if (getNodes().length) selectNode(getNodes()[0].node_id, false);
     else { state.selected = ''; state.inspector.replaceChildren(node('div', 'topology-inspector-empty', 'Add a device and select its saved snapshot to inspect configuration evidence.')); }
     state.restoreDisclosure = null;

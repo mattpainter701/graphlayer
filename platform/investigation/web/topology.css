@@ -338,3 +338,27 @@
   .topology-port-detail-body { padding-inline: 8px; }
   .topology-port-detail .topology-neighbor-list { min-width: 0; }
 }
+.topology-inspector-history { display: grid; grid-template-columns: auto auto minmax(0,1fr); align-items: center; gap: 6px; margin: 0 0 12px; min-width: 0; }
+.topology-history-button, .topology-breadcrumb-button, .topology-port-finder-clear { min-height: 36px; padding: 6px 9px; border: 1px solid #d1dfe8; border-radius: 8px; background: #fff; color: #31566f; font: 600 11px ui-sans-serif,system-ui,sans-serif; cursor: pointer; }
+.topology-history-button:disabled { opacity: .45; cursor: default; }
+.topology-inspector-breadcrumb { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; padding: 2px; }
+.topology-breadcrumb-button { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topology-breadcrumb-separator { flex: 0 0 auto; color: #8093a2; }
+.topology-history-button:focus-visible, .topology-breadcrumb-button:focus-visible, .topology-port-finder-clear:focus-visible, .topology-port-finder-input:focus-visible { outline: 3px solid rgb(33 133 208 / 28%); outline-offset: 2px; }
+.topology-port-finder { display: flex; align-items: end; gap: 7px; margin: 8px 0; min-width: 0; }
+.topology-port-finder label { display: grid; flex: 1 1 auto; gap: 4px; min-width: 0; color: #627a8d; font-size: 10px; font-weight: 700; }
+.topology-port-finder-input { width: 100%; min-width: 0; min-height: 38px; padding: 7px 9px; border: 1px solid #cddbe4; border-radius: 8px; background: #fff; color: #29465e; font: 12px ui-sans-serif,system-ui,sans-serif; }
+.topology-port-finder-clear { flex: 0 0 auto; }
+.topology-port-summary { margin: 0 10px 8px; color: #667d8e; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.topology-port-empty { margin: 8px 0; padding: 10px; border-radius: 8px; background: #f5f8fa; color: #687e8e; font-size: 11px; line-height: 1.5; }
+.topology-hop-stages { margin: 8px 0 2px; border-top: 1px solid #dce5ec; }
+.topology-hop-stages-toggle { width: 100%; min-height: 40px; padding: 10px 2px 6px; border: 0; background: transparent; color: #47657a; font: 700 11px ui-sans-serif,system-ui,sans-serif; text-align: left; cursor: pointer; }
+.topology-hop-stages-toggle::before { display: inline-block; width: 16px; content: '▸'; color: #738899; }
+.topology-hop-stages-toggle[aria-expanded="true"]::before { content: '▾'; }
+.topology-hop-stages-toggle:focus-visible { outline: 3px solid rgb(33 133 208 / 28%); outline-offset: 2px; }
+.topology-hop-stages-body { padding: 2px 0 7px; }
+@media (max-width: 600px) {
+  .topology-inspector-history { grid-template-columns: auto auto minmax(0,1fr); gap: 4px; }
+  .topology-history-button, .topology-breadcrumb-button { min-height: 40px; padding-inline: 7px; }
+  .topology-breadcrumb-button { max-width: 125px; }
+}

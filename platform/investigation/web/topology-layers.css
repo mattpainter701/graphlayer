@@ -298,6 +298,38 @@
   .tl-fullscreen { inset: 0; padding: 12px; border-radius: 0; }
   .tl-fullscreen .tl-graph { min-height: 330px; height: 52vh; }
 }
+
+/* Bounded host navigator beneath the map; keep the canvas visible on narrow screens. */
+.tl-breadcrumbs { display: flex; align-items: center; gap: 10px; min-width: 0; margin-top: 10px; color: #526b7f; font-size: 12px; }
+.tl-breadcrumb-current { min-width: 0; overflow-wrap: anywhere; }
+.tl-breadcrumbs #tl-navigation-back { flex: 0 0 auto; min-height: 38px; }
+.tl-pager { flex-wrap: wrap; justify-content: center; gap: 7px; }
+.tl-page-position { color: #526b7f; font-size: 12px; white-space: nowrap; }
+.tl-host-results { margin-top: 10px; border: 1px solid #dce6ed; border-radius: 10px; background: #fbfdfe; }
+.tl-host-results > summary { min-height: 42px; padding: 11px 13px; color: #29485f; font-size: 13px; font-weight: 700; cursor: pointer; }
+.tl-host-results-count { margin: 0; padding: 0 13px 8px; color: #587186; font-size: 11px; }
+.tl-host-results-list { display: grid; max-height: 280px; overflow: auto; border-top: 1px solid #e4ebf0; }
+.tl-host-result { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 10px; border-bottom: 1px solid #e8eef2; }
+.tl-host-result:last-child { border-bottom: 0; }
+.tl-host-result-details { display: grid; gap: 2px; min-width: 0; }
+.tl-host-result-details strong, .tl-host-result-details span, .tl-host-result-details small { overflow-wrap: anywhere; }
+.tl-host-result-details strong { color: #203e54; font-size: 12px; }
+.tl-host-result-details span { color: #526b7f; font-size: 11px; }
+.tl-host-result-details small { color: #718696; font-size: 10px; }
+.tl-host-result-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.tl-host-result-actions .tl-button { min-height: 44px; padding: 5px 8px; font-size: 10px; }
+.tl-host-results-empty { margin: 0; padding: 12px; color: #587186; font-size: 12px; }
+@media (max-width: 760px) {
+  .tl-host-results-list { max-height: 220px; }
+  .tl-host-result { align-items: flex-start; flex-direction: column; }
+  .tl-host-result-actions { justify-content: flex-start; width: 100%; }
+  .tl-host-result-actions .tl-button { flex: 1 1 100px; }
+}
+@media (max-width: 390px) {
+  .tl-pager { justify-content: flex-start; }
+  .tl-page-size { margin-left: auto; }
+  .tl-host-results-list { max-height: 180px; }
+}
 @media (max-width: 380px) {
   .topology-layers { padding: 11px; }
   .tl-workspace { padding: 7px; }

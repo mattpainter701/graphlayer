@@ -920,6 +920,7 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
                 "vdom",
                 "offset",
                 "limit",
+                "focus_host_id",
                 "source_host_id",
                 "destination_host_id",
             ]
@@ -936,6 +937,7 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
         "vdom",
         "source_host_id",
         "destination_host_id",
+        "focus_host_id",
     ] {
         if input.get(key).is_some_and(|v| !v.is_string()) {
             return Err("invalid_layer_request".into());
@@ -985,23 +987,105 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
         .collect();
     vdoms.sort();
     vdoms.dedup();
+    let host_matches_search = |h: &Value| {
+        search.is_empty()
+            || [
+                "id",
+                "label",
+                "role",
+                "ip",
+                "address",
+                "mac",
+                "mac_address",
+                "network_id",
+                "network",
+                "subnet",
+                "zone",
+                "vrf",
+                "vdom",
+                "context",
+                "vlan",
+                "port",
+                "interface",
+                "attachment",
+            ]
+            .iter()
+            .filter_map(|key| h.get(*key))
+            .filter_map(Value::as_str)
+            .any(|value| value.to_lowercase().contains(&search))
+            || h.get("vlan")
+                .is_some_and(|value| value.to_string().to_lowercase().contains(&search))
+    };
+    let host_matches = |h: &Value, omit_network: bool, omit_zone: bool| {
+        (omit_network || network.is_empty() || h["network_id"] == network)
+            && (omit_zone || zone.is_empty() || h["zone"] == zone)
+            && (vrf.is_empty() || h["vrf"].as_str() == Some(vrf))
+            && (vdom.is_empty() || h["vdom"].as_str() == Some(vdom))
+            && host_matches_search(h)
+    };
     let matching: Vec<&Value> = hosts
         .iter()
-        .filter(|h| {
-            (network.is_empty() || h["network_id"] == network)
-                && (zone.is_empty() || h["zone"] == zone)
-                && (vrf.is_empty() || h["vrf"].as_str().is_some_and(|v| v.to_lowercase() == vrf))
-                && (vdom.is_empty() || h["vdom"].as_str().is_some_and(|v| v.to_lowercase() == vdom))
-                && (search.is_empty() || h.to_string().to_lowercase().contains(&search))
-        })
+        .filter(|h| host_matches(h, false, false))
         .collect();
     let selected_network_ids: HashSet<String> = matching
         .iter()
         .filter_map(|h| h["network_id"].as_str().map(str::to_owned))
         .collect();
     let total = matching.len();
-    let offset = input["offset"].as_u64().unwrap_or(0).min(10000) as usize;
     let limit = input["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
+    let requested_offset = input["offset"].as_u64().unwrap_or(0).min(10000) as usize;
+    let page_count = total.div_ceil(limit);
+    let last_offset = page_count.saturating_sub(1) * limit;
+    let clamped_offset = if total == 0 {
+        0
+    } else if requested_offset >= total {
+        last_offset
+    } else {
+        requested_offset
+    };
+    let focus_host_id = input["focus_host_id"].as_str().unwrap_or("");
+    let focus_index = if focus_host_id.is_empty() {
+        None
+    } else {
+        matching.iter().position(|h| h["id"] == focus_host_id)
+    };
+    let offset = focus_index
+        .map(|index| index / limit * limit)
+        .unwrap_or(clamped_offset);
+    let focus_status = if focus_host_id.is_empty() {
+        "none"
+    } else if focus_index.is_some() {
+        "visible"
+    } else if hosts.iter().any(|h| h["id"] == focus_host_id) {
+        "outside_filters"
+    } else {
+        "not_found"
+    };
+    let page_index = if total == 0 { 0 } else { offset / limit + 1 };
+    let mut network_facets: Vec<Value> = hosts
+        .iter()
+        .filter(|h| host_matches(h, true, false))
+        .filter_map(|h| h["network_id"].as_str())
+        .fold(HashMap::<String, usize>::new(), |mut counts, value| {
+            *counts.entry(value.to_owned()).or_default() += 1;
+            counts
+        })
+        .into_iter()
+        .map(|(value, count)| json!({"value":value,"label":value,"count":count}))
+        .collect();
+    network_facets.sort_by(|a, b| a["value"].as_str().cmp(&b["value"].as_str()));
+    let mut zone_facets: Vec<Value> = hosts
+        .iter()
+        .filter(|h| host_matches(h, false, true))
+        .filter_map(|h| h["zone"].as_str())
+        .fold(HashMap::<String, usize>::new(), |mut counts, value| {
+            *counts.entry(value.to_owned()).or_default() += 1;
+            counts
+        })
+        .into_iter()
+        .map(|(value, count)| json!({"value":value,"label":value,"count":count}))
+        .collect();
+    zone_facets.sort_by(|a, b| a["value"].as_str().cmp(&b["value"].as_str()));
     let page: Vec<Value> = matching
         .iter()
         .skip(offset)
@@ -1013,6 +1097,8 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
     if view == "l2" {
         let requested_target = if !network.is_empty() {
             Some(network)
+        } else if let Some(focused) = focus_index.and_then(|index| matching.get(index)) {
+            focused["network_id"].as_str()
         } else {
             input["source_host_id"]
                 .as_str()
@@ -1072,10 +1158,8 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
                 (network.is_empty() || n["id"] == network)
                     && selected_network_ids.contains(n["id"].as_str().unwrap_or(""))
                     && (zone.is_empty() || n["zone"] == zone)
-                    && (vrf.is_empty()
-                        || n["vrf"].as_str().is_some_and(|v| v.to_lowercase() == vrf))
-                    && (vdom.is_empty()
-                        || n["vdom"].as_str().is_some_and(|v| v.to_lowercase() == vdom))
+                    && (vrf.is_empty() || n["vrf"].as_str() == Some(vrf))
+                    && (vdom.is_empty() || n["vdom"].as_str() == Some(vdom))
             })
             .filter_map(|n| n["id"].as_str().map(str::to_owned))
             .collect();
@@ -1403,7 +1487,7 @@ pub fn project_layers(input: Value) -> Result<Value, String> {
     } else {
         matching.iter().filter_map(|h| h["zone"].as_str()).collect()
     };
-    let mut result = json!({"schema_version":1,"synthetic":true,"view":view,"layout":{"width":canvas_width,"height":canvas_height},"facets":{"vrfs":vrfs,"vdoms":vdoms},"filters":filters,"counts":{"hosts":hosts.len(),"networks":d["networks"].as_array().unwrap().len(),"zones":d["zones"].as_array().unwrap().len(),"matched_networks":selected_network_ids.len(),"matched_zones":matched_zones.len(),"visible_nodes":nodes.len(),"visible_links":projected_links.len(),"matched_hosts":total},"nodes":nodes,"links":projected_links,"hosts":page,"pagination":{"offset":offset,"limit":limit,"total":total,"has_more":offset.saturating_add(limit)<total},"sources":sources});
+    let mut result = json!({"schema_version":1,"synthetic":true,"view":view,"layout":{"width":canvas_width,"height":canvas_height},"facets":{"vrfs":vrfs,"vdoms":vdoms,"networks":network_facets,"zones":zone_facets},"filters":filters,"counts":{"hosts":hosts.len(),"networks":d["networks"].as_array().unwrap().len(),"zones":d["zones"].as_array().unwrap().len(),"matched_networks":selected_network_ids.len(),"matched_zones":matched_zones.len(),"visible_nodes":nodes.len(),"visible_links":projected_links.len(),"matched_hosts":total},"nodes":nodes,"links":projected_links,"hosts":page,"pagination":{"offset":offset,"limit":limit,"total":total,"has_more":offset.saturating_add(limit)<total},"navigation":{"focus_host_id":focus_host_id,"focus_status":focus_status,"page_index":page_index,"page_count":page_count,"first_offset":0,"last_offset":last_offset,"previous_offset":if offset > 0 { Some(offset.saturating_sub(limit)) } else { None },"next_offset":if offset.saturating_add(limit)<total { Some(offset+limit) } else { None }},"sources":sources});
     if let Some(path) = path_result {
         result["path"] = path;
     }
@@ -1575,6 +1659,63 @@ mod tests {
             .enumerate()
             .map(|(i, line)| json!({"number":i+1,"text":line}))
             .collect::<Vec<_>>());
+    }
+    fn replace_vrf_context(d: &mut Value, old: &str, new: &str) {
+        for key in ["hosts", "devices", "networks", "links"] {
+            for row in d[key].as_array_mut().unwrap() {
+                if row["vrf"] == old {
+                    row["vrf"] = json!(new);
+                }
+            }
+        }
+        for source in d["sources"].as_array_mut().unwrap() {
+            if source["id"] != "synthetic-records" {
+                let text = source["text"].as_str().unwrap().replace(old, new);
+                replace_source_text(source, text);
+            }
+        }
+        let canonical = d["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(d["devices"].as_array().unwrap())
+            .chain(d["networks"].as_array().unwrap())
+            .chain(d["links"].as_array().unwrap())
+            .map(|row| canonical_record(row).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = d["sources"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|s| s["id"] == "synthetic-records")
+            .unwrap();
+        replace_source_text(source, canonical);
+        let digests: HashMap<String, String> = d["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| {
+                (
+                    s["id"].as_str().unwrap().to_owned(),
+                    s["sha256"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        for key in ["hosts", "devices", "networks", "links"] {
+            for row in d[key].as_array_mut().unwrap() {
+                for ev in row["evidence"].as_array_mut().unwrap() {
+                    let sid = ev["source_id"].as_str().unwrap().to_owned();
+                    let digest = &digests[&sid];
+                    ev["sha256"] = json!(digest);
+                    ev["ref"] = json!(format!(
+                        "{sid}:{}:L{}",
+                        &digest[..12],
+                        ev["line"].as_u64().unwrap()
+                    ));
+                }
+            }
+        }
     }
     fn legacy_dataset() -> Value {
         let mut d = layer_sample(json!({})).unwrap()["dataset"].clone();
@@ -1827,6 +1968,124 @@ mod tests {
             .unwrap()
             .iter()
             .any(|n| n["id"] == "host-0001"));
+    }
+
+    #[test]
+    fn semantic_search_and_pagination_navigation_are_scoped() {
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let out = project_layers(
+            json!({"dataset":d.clone(),"view":"l2","limit":25,"focus_host_id":"host-0999"}),
+        )
+        .unwrap();
+        assert_eq!(out["pagination"]["offset"], 975);
+        assert_eq!(out["navigation"]["focus_status"], "visible");
+        assert_eq!(out["navigation"]["page_index"], 40);
+        assert_eq!(out["navigation"]["page_count"], 40);
+        assert_eq!(out["navigation"]["previous_offset"], 950);
+        assert_eq!(out["navigation"]["next_offset"], Value::Null);
+        let out = project_layers(
+            json!({"dataset":d.clone(),"view":"l2","limit":100,"focus_host_id":"host-0999"}),
+        )
+        .unwrap();
+        assert_eq!(out["pagination"]["offset"], 900);
+        assert_eq!(out["hosts"][0]["id"], "host-0901");
+        let focused_over_source = project_layers(json!({"dataset":d.clone(),"view":"l2","limit":25,"focus_host_id":"host-0999","source_host_id":"host-0001"})).unwrap();
+        assert_eq!(focused_over_source["navigation"]["focus_status"], "visible");
+        assert!(focused_over_source["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["id"] == "host-0999"));
+        let filtered = project_layers(json!({"dataset":d.clone(),"view":"l2","limit":25,"focus_host_id":"host-0999","zone":"engineering"})).unwrap();
+        assert_eq!(filtered["navigation"]["focus_status"], "outside_filters");
+        assert!(filtered["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|h| h["zone"] == "engineering"));
+        let absent =
+            project_layers(json!({"dataset":d.clone(),"view":"l2","focus_host_id":"missing-host"}))
+                .unwrap();
+        assert_eq!(absent["navigation"]["focus_status"], "not_found");
+        let escaped = project_layers(json!({"dataset":d,"view":"l2","focus_host_id":"host-0999","vrf":"lab-vrf-01","source_host_id":"host-0001","destination_host_id":"host-0999"})).unwrap();
+        assert_eq!(escaped["navigation"]["focus_status"], "outside_filters");
+        assert_eq!(escaped["path"]["reason"], "outside_selected_context");
+        assert!(escaped["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|n| n["id"] != "host-0999"));
+    }
+
+    #[test]
+    fn stale_offsets_clamp_and_search_excludes_evidence_blobs() {
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let arbitrary =
+            project_layers(json!({"dataset":d.clone(),"view":"l2","limit":25,"offset":7})).unwrap();
+        assert_eq!(arbitrary["pagination"]["offset"], 7);
+        assert_eq!(arbitrary["hosts"][0]["id"], "host-0008");
+        assert_eq!(arbitrary["navigation"]["previous_offset"], 0);
+        let last_valid =
+            project_layers(json!({"dataset":d.clone(),"view":"l2","limit":25,"offset":980}))
+                .unwrap();
+        assert_eq!(last_valid["pagination"]["offset"], 980);
+        assert_eq!(last_valid["hosts"][0]["id"], "host-0981");
+        let stale =
+            project_layers(json!({"dataset":d.clone(),"view":"l2","limit":25,"offset":9999}))
+                .unwrap();
+        assert_eq!(stale["pagination"]["offset"], 975);
+        assert_eq!(stale["hosts"].as_array().unwrap().len(), 25);
+        let at_end =
+            project_layers(json!({"dataset":d.clone(),"view":"l2","limit":25,"offset":1000}))
+                .unwrap();
+        assert_eq!(at_end["pagination"]["offset"], 975);
+        let hash = d["hosts"][0]["evidence"][0]["sha256"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let evidence_ref = d["hosts"][0]["evidence"][0]["ref"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let by_hash =
+            project_layers(json!({"dataset":d.clone(),"view":"l2","search":hash})).unwrap();
+        assert_eq!(by_hash["pagination"]["total"], 0);
+        let by_evidence_ref =
+            project_layers(json!({"dataset":d,"view":"l2","search":evidence_ref})).unwrap();
+        assert_eq!(by_evidence_ref["pagination"]["total"], 0);
+    }
+
+    #[test]
+    fn network_and_zone_facets_intersect_other_filters() {
+        let d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        let out = project_layers(
+            json!({"dataset":d,"view":"l2","zone":"engineering","vrf":"lab-vrf-01","limit":25}),
+        )
+        .unwrap();
+        let networks = out["facets"]["networks"].as_array().unwrap();
+        assert_eq!(networks.len(), 1);
+        assert_eq!(
+            networks[0],
+            json!({"value":"net-01","label":"net-01","count":100})
+        );
+        let zones = out["facets"]["zones"].as_array().unwrap();
+        assert_eq!(zones.len(), 1);
+        assert_eq!(zones[0]["value"], "engineering");
+        assert_eq!(zones[0]["count"], 100);
+        assert_eq!(out["facets"]["vrfs"].as_array().unwrap().len(), 10);
+    }
+
+    #[test]
+    fn declared_mixed_case_context_matches_only_exactly() {
+        let mut d = layer_sample(json!({})).unwrap()["dataset"].clone();
+        replace_vrf_context(&mut d, "lab-vrf-01", "Lab-VRF-01");
+        assert_eq!(validate_dataset(&d).unwrap(), ());
+        let exact =
+            project_layers(json!({"dataset":d.clone(),"view":"l2","vrf":"Lab-VRF-01"})).unwrap();
+        assert_eq!(exact["pagination"]["total"], 100);
+        let wrong_case =
+            project_layers(json!({"dataset":d,"view":"l2","vrf":"lab-vrf-01"})).unwrap();
+        assert_eq!(wrong_case["pagination"]["total"], 0);
     }
 
     #[test]

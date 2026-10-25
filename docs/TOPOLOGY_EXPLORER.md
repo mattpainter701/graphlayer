@@ -14,6 +14,19 @@ Search by host name, IP or MAC, or use network, zone, VRF and VDOM filters. Rese
 returns to the unfiltered projection. Host pages contain 25, 50 or 100 hosts;
 the total dataset count remains visible independently of the current page.
 
+The collapsible **Host results** navigator lists the bounded host page in every
+view, including Layer 3 and Zones. Its count distinguishes matching hosts from
+the complete dataset. Use First, Previous, Next or Last to move through results,
+or change the page size. Rust clamps stale pages and selects the page containing
+a requested host; the browser does not scan or build a second topology.
+
+Inspect a result to read its inventory and source evidence, or choose **Show on
+map** to open its Layer 2 network and select that host. VRF, VDOM, zone and search
+constraints remain active. The map does not clear a restrictive context to make
+a host appear. **Back** restores the prior view, filters, host page, page size,
+selection and map position. This bounded navigation history is local to the
+current browser session and does not change saved investigations.
+
 Network and zone inputs suggest values from the loaded synthetic dataset.
 VRF and VDOM suggestions come from the Rust projection's declared context facets.
 Filters intersect: selecting a network in a different VRF or VDOM produces an
@@ -24,6 +37,12 @@ Active filters appear as removable chips, so you can clear one constraint
 without losing the others. An empty result offers a clear-filter action. Search
 updates are debounced, and an earlier response cannot replace the latest query.
 The map and inspector show an updating state while a new Rust projection loads.
+
+Network and zone suggestions include Rust-calculated matching-host counts under
+the other active constraints. Text search matches inventory identity, addresses,
+MAC, attachment and context fields without treating evidence hashes or source
+reference identifiers as host matches. Text matching ignores case; declared
+VRF and VDOM filters preserve their exact case.
 
 Pan on empty canvas space, zoom around the pointer, or use the controls. Focus
 the canvas to use the following keys:
@@ -60,6 +79,9 @@ and assign the destination. In the path workbench, declared-connection buttons o
 devices and link details; each link inspector can open either endpoint. These
 actions navigate the existing projection and do not run another investigation.
 
+Host results can assign either trace endpoint without first finding it on the
+canvas. A pinned source stays selected while searching for the destination.
+
 The host view groups its bounded fan-out by attachment using Rust-supplied
 positions. Select a connected port or link to inspect both endpoint ports,
 VLAN, available scope and source references. An ordered Layer 2 hop opens the
@@ -94,6 +116,18 @@ Interface buttons in a link inspector open the owning device's port details.
 Missing configuration facts remain unavailable, and evidence links retain their
 owning snapshot. None of these drilldowns executes another analysis or implies
 an observed port state or active session.
+
+The device inspector includes a port finder over its returned interface list.
+Port summaries show the declared connection and selected forward/return use
+counts. A selected port remains available while the finder is narrowed, and a
+clear action recovers from an empty match. Decision stages and their source
+references expand separately from the concise route and tuple summary.
+
+Inspector breadcrumbs and Back/Forward controls follow a device, its port, a
+declared link and either endpoint's port. The bounded trail retains disclosure
+state for the same saved analysis and snapshots. Loading another analysis or
+changing the owning snapshot discards stale history. Port and source navigation
+reuses the returned result and does not submit another path investigation.
 
 ## Scale and limits
 
