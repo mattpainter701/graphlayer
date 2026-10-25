@@ -227,7 +227,7 @@ test('bounded host results and navigation fit desktop, tablet and mobile without
   await page.screenshot({ path: 'test-results/topology-navigation-host-results.png', fullPage: true });
 });
 
-test('fullscreen keeps the footer below the canvas and inspector at crowded viewport sizes', async ({ page }) => {
+test('fullscreen keeps a bounded canvas and clear footer after restoring expanded port history', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   const seen = await explore(page);
   await page.locator('#topology-device-list [data-node-id="edge"]').click();
@@ -236,15 +236,27 @@ test('fullscreen keeps the footer below the canvas and inspector at crowded view
   await page.locator('#topology-fullscreen').click();
   for (const viewport of [{ width: 1280, height: 720 }, { width: 768, height: 850 }, { width: 375, height: 812 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.topology-fullscreen-active').evaluate((shell) => {
+    const port = page.locator('.topology-port-detail[data-port-detail="ethernet1/2"][data-node-id="edge"]');
+    await port.locator('.topology-neighbor-link[data-link-index="0"]').click();
+    await page.locator('.topology-endpoint-button[data-interface="left"]').click();
+    await page.locator('.topology-inspector-history [data-history="back"]').click();
+    await page.locator('.topology-inspector-history [data-history="back"]').click();
+    await expect(port.locator('.topology-port-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await page.locator('#topology-stage').scrollIntoViewIfNeeded();
+    const geometry = await page.locator('.topology-fullscreen-active').evaluate(async (shell) => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const stage = shell.querySelector('.topology-stage').getBoundingClientRect();
       const inspector = shell.querySelector('.topology-inspector').getBoundingClientRect();
       const footer = shell.querySelector('.topology-workbench-note').getBoundingClientRect();
+      const center = document.elementFromPoint(stage.left + stage.width / 2, stage.top + stage.height / 2);
       return { stageBottom: stage.bottom, inspectorBottom: inspector.bottom, footerTop: footer.top,
+        stageCenterPainted: shell.querySelector('.topology-stage').contains(center),
         stageHeight: stage.height, inspectorHeight: inspector.height, panelHeight: shell.clientHeight,
         panelScrollHeight: shell.scrollHeight, viewport: innerWidth, documentWidth: document.documentElement.scrollWidth };
     });
     expect(geometry.stageHeight, JSON.stringify({ viewport, geometry })).toBeGreaterThanOrEqual(300);
+    expect(geometry.stageHeight, JSON.stringify({ viewport, geometry })).toBeLessThanOrEqual(viewport.height);
+    expect(geometry.stageCenterPainted, JSON.stringify({ viewport, geometry })).toBe(true);
     expect(geometry.inspectorHeight, JSON.stringify({ viewport, geometry })).toBeGreaterThan(100);
     expect(geometry.footerTop, JSON.stringify({ viewport, geometry })).toBeGreaterThanOrEqual(Math.max(geometry.stageBottom, geometry.inspectorBottom) - 1);
     expect(geometry.documentWidth).toBe(geometry.viewport);
