@@ -226,3 +226,28 @@ test('bounded host results and navigation fit desktop, tablet and mobile without
   }
   await page.screenshot({ path: 'test-results/topology-navigation-host-results.png', fullPage: true });
 });
+
+test('fullscreen keeps the footer below the canvas and inspector at crowded viewport sizes', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const seen = await explore(page);
+  await page.locator('#topology-device-list [data-node-id="edge"]').click();
+  await openGroup(page, 'topology');
+  await page.locator('.topology-port-detail[data-port-detail="ethernet1/2"] .topology-port-toggle').click();
+  await page.locator('#topology-fullscreen').click();
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 768, height: 850 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.topology-fullscreen-active').evaluate((shell) => {
+      const stage = shell.querySelector('.topology-stage').getBoundingClientRect();
+      const inspector = shell.querySelector('.topology-inspector').getBoundingClientRect();
+      const footer = shell.querySelector('.topology-workbench-note').getBoundingClientRect();
+      return { stageBottom: stage.bottom, inspectorBottom: inspector.bottom, footerTop: footer.top,
+        stageHeight: stage.height, inspectorHeight: inspector.height, panelHeight: shell.clientHeight,
+        panelScrollHeight: shell.scrollHeight, viewport: innerWidth, documentWidth: document.documentElement.scrollWidth };
+    });
+    expect(geometry.stageHeight, JSON.stringify({ viewport, geometry })).toBeGreaterThanOrEqual(300);
+    expect(geometry.inspectorHeight, JSON.stringify({ viewport, geometry })).toBeGreaterThan(100);
+    expect(geometry.footerTop, JSON.stringify({ viewport, geometry })).toBeGreaterThanOrEqual(Math.max(geometry.stageBottom, geometry.inspectorBottom) - 1);
+    expect(geometry.documentWidth).toBe(geometry.viewport);
+  }
+  expect(seen.posts).toBe(1);
+});

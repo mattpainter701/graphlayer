@@ -58,6 +58,8 @@ The topology overview shows the full layout and current viewport. Click it to
 recenter, or activate it with the keyboard to fit the graph. Fine labels are
 reduced at overview zoom levels; zoom in for port and status details. These
 controls update presentation without rerunning path analysis.
+Crowded fullscreen layouts scroll the panel while retaining space for the
+canvas and inspector; the explanatory footer remains below both.
 
 ## Inspect configuration and evidence
 

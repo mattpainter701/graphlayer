@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Navigate matching hosts from every topology view with bounded result pages, First/Last controls, host focus and Back restoration. Show scoped network/zone counts and inventory-only search, and follow snapshot-bound inspector history through ports, links and path evidence without rerunning analysis.
+- Navigate matching hosts from every topology view with bounded result pages, First/Last controls, host focus and Back restoration. Show scoped network/zone counts and inventory-only search, and follow snapshot-bound inspector history through ports, links and path evidence without rerunning analysis. Keep the fullscreen footer below the canvas and inspector on crowded desktop, tablet and mobile layouts.
 - Filter synthetic host, network and zone maps by declared VRF/VDOM context; fan out host pages by attachment and inspect connected ports, ordered L2 hops and forward/return path decisions with owned source evidence. Keep traces outside the selected context unavailable and retain legacy datasets without assigning invented scope.
 - Refine topology layouts for desktop, tablet and mobile; keep path labels clear of device icons and add removable filter chips, suggested network and zone values, recoverable empty results, connected-device/link drilldowns and host endpoint shortcuts. Cancel stale search responses and hide old inspector evidence while a new projection loads.
 - Modernize topology canvas controls and responsive selection inspectors, with a viewport overview, keyboard navigation, source-detail shortcuts and clearer device/path states. Keep navigation separate from saved analysis and preserve evidence ownership.
