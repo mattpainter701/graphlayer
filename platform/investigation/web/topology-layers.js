@@ -45,11 +45,17 @@
     const graphTitle = el('strong', '', 'Layer 3 overview');
     const actions = el('div', 'tl-actions');
     const focusPath = button('tl-focus-path', 'Show all attachments'); focusPath.hidden = true;
-    const fit = button('tl-fit', 'Fit'); const zoomOut = button('tl-zoom-out', '−', 'tl-button tl-square'); const zoomLabel = el('output', 'tl-zoom', '100%'); zoomLabel.id = 'tl-zoom'; const zoomIn = button('tl-zoom-in', '+', 'tl-button tl-square'); const fullscreen = button('tl-fullscreen', 'Full screen'); fullscreen.setAttribute('aria-pressed', 'false');
+    const fit = button('tl-fit', 'Fit'); const focusSelection = button('tl-focus-selection', 'Focus selection'); focusSelection.disabled = true;
+    const zoomOut = button('tl-zoom-out', '−', 'tl-button tl-square'); const zoomLabel = el('output', 'tl-zoom', '100%'); zoomLabel.id = 'tl-zoom'; const zoomIn = button('tl-zoom-in', '+', 'tl-button tl-square'); const fullscreen = button('tl-fullscreen', 'Full screen'); fullscreen.setAttribute('aria-pressed', 'false');
     const inspectorToggle = button('tl-inspector-toggle', 'Details'); inspectorToggle.setAttribute('aria-controls', 'tl-inspector'); inspectorToggle.setAttribute('aria-expanded', 'false'); inspectorToggle.disabled = true;
-    actions.append(focusPath, fit, zoomOut, zoomLabel, zoomIn, inspectorToggle, fullscreen); canvasHead.append(graphTitle, actions);
+    actions.append(focusPath, fit, focusSelection, zoomOut, zoomLabel, zoomIn, inspectorToggle, fullscreen); canvasHead.append(graphTitle, actions);
     const graph = el('div', 'tl-graph'); graph.id = 'tl-graph'; graph.tabIndex = 0; graph.setAttribute('role', 'tabpanel'); graph.setAttribute('aria-labelledby', 'tl-tab-l3'); graph.setAttribute('aria-label', 'Interactive network map');
     const drawing = svg('svg', { id: 'tl-svg', role: 'group', 'aria-label': 'Network topology diagram' }); const stage = svg('g', { id: 'tl-stage' }); drawing.append(stage); graph.append(drawing);
+    const minimap = svg('svg', { id: 'tl-minimap', role: 'group', 'aria-label': 'Map overview', hidden: '' });
+    const miniTitle = svg('title'); miniTitle.textContent = 'Map overview: click to recenter. Focus the viewport and use arrow keys to move; Enter or Home fits the map.';
+    const miniContent = svg('g', { 'aria-hidden': 'true', class: 'tl-minimap-content' });
+    const miniViewport = svg('rect', { id: 'tl-minimap-viewport', tabindex: '0', role: 'button', 'aria-label': 'Map viewport. Arrow keys move the map; Enter fits the projection.' });
+    minimap.append(miniTitle, miniContent, miniViewport); graph.append(minimap);
     const legend = el('div', 'tl-legend'); legend.setAttribute('aria-label', 'Network map legend');
     for (const [kind, role, label] of [['host', '', 'Host'], ['network', '', 'Network'], ['device', 'router', 'Router'], ['device', 'switch', 'Switch'], ['device', 'firewall', 'Firewall'], ['zone', '', 'Zone']]) { const item = el('span', 'tl-legend-item'); const iconSvg = svg('svg', { viewBox: '-12 -12 24 24', 'aria-hidden': 'true' }); const icon = makeIcon(kind, { role }); icon.setAttribute('transform', ''); iconSvg.append(icon); item.append(iconSvg, el('span', '', label)); legend.append(item); }
     const caption = el('div', 'tl-caption'); caption.id = 'tl-caption'; caption.setAttribute('role', 'status');
@@ -80,6 +86,7 @@
     const content = el('div', 'tl-content'); content.append(workspace, inspector); content.classList.add('is-inspector-collapsed');
     state.root.replaceChildren(header, summary, tabs, controls, filterCount, activeFilters, networkOptions, zoneOptions, vrfOptions, vdomOptions, content, lower, sourceDrawer, note);
     Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, vrfInput: vrf.input, vdomInput: vdom.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, vrfOptions, vdomOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, firstPage, lastPage, pagePosition, breadcrumbs, back, hostResults, hostResultsCount, hostResultsList, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel });
+    Object.assign(state, { focusSelection, minimap, miniContent, miniViewport, rovingKey: '', focusCameraKey: '' });
     state.focusPath = true; state.focusToggle = focusPath;
     focusPath.addEventListener('click', () => { state.focusPath = !state.focusPath; render(); });
     load.addEventListener('click', loadDataset);
@@ -114,13 +121,19 @@
     back.addEventListener('click', navigateBack);
     hostResultsList.addEventListener('click', (event) => { const action = event.target.closest('button[data-action]'); const row = event.target.closest('[data-host-id]'); if (!action || !row) return; const host = arr(state.projection?.hosts).find((item) => idOf(item) === row.dataset.hostId); if (!host) return; if (action.dataset.action === 'inspect') inspectHost(host); else if (action.dataset.action === 'map') focusHostOnMap(host); else if (action.dataset.action === 'source') setTraceEndpoint('source', host); else if (action.dataset.action === 'destination') setTraceEndpoint('destination', host); });
     fit.addEventListener('click', fitGraph); zoomIn.addEventListener('click', () => setZoom(state.scale * 1.2)); zoomOut.addEventListener('click', () => setZoom(state.scale / 1.2));
+    focusSelection.addEventListener('click', () => focusGraphItem(selectedGraphItem()));
+    minimap.addEventListener('pointerdown', (event) => event.stopPropagation());
+    minimap.addEventListener('click', recenterFromOverview);
+    minimap.addEventListener('keydown', navigateOverview);
+    drawing.addEventListener('focusin', (event) => { const item = event.target.closest('.tl-node,.tl-edge'); if (item) syncGraphRover(item); });
+    drawing.addEventListener('keydown', navigateGraphItems);
     fullscreen.addEventListener('click', toggleFullscreen);
     inspectorToggle.addEventListener('click', () => { if (!state.selected) return; state.inspectorCollapsed = !state.inspectorCollapsed; syncInspectorView(); });
     graph.addEventListener('wheel', (e) => { e.preventDefault(); const point = screenPoint(e); zoomAt(state.scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12), point.x, point.y); }, { passive: false });
-    graph.addEventListener('pointerdown', (e) => { if (e.button !== 0 || e.target.closest('.tl-node,.tl-edge')) return; const point = screenPoint(e); state.pan = { x: point.x, y: point.y, ox: state.x, oy: state.y }; graph.setPointerCapture(e.pointerId); graph.classList.add('is-panning'); });
+    graph.addEventListener('pointerdown', (e) => { if (e.button !== 0 || e.target.closest('.tl-node,.tl-edge,#tl-minimap')) return; state.focusCameraKey = ''; const point = screenPoint(e); state.pan = { x: point.x, y: point.y, ox: state.x, oy: state.y }; graph.setPointerCapture(e.pointerId); graph.classList.add('is-panning'); });
     graph.addEventListener('pointermove', (e) => { if (!state.pan) return; const point = screenPoint(e); state.x = state.pan.ox + point.x - state.pan.x; state.y = state.pan.oy + point.y - state.pan.y; scheduleTransform(); });
     const stopPan = (e) => { if (e && graph.hasPointerCapture(e.pointerId)) graph.releasePointerCapture(e.pointerId); state.pan = null; graph.classList.remove('is-panning'); }; graph.addEventListener('pointerup', stopPan); graph.addEventListener('pointercancel', stopPan); graph.addEventListener('lostpointercapture', stopPan);
-    graph.addEventListener('keydown', (e) => { if (e.target.closest('.tl-node') || e.target.matches('button, input, select')) return; const step = e.shiftKey ? 80 : 32; if (e.key === '+' || e.key === '=') setZoom(state.scale * 1.2); else if (e.key === '-' || e.key === '_') setZoom(state.scale / 1.2); else if (e.key === 'Home') fitGraph(); else if (e.key === 'ArrowLeft') state.x += step; else if (e.key === 'ArrowRight') state.x -= step; else if (e.key === 'ArrowUp') state.y += step; else if (e.key === 'ArrowDown') state.y -= step; else return; e.preventDefault(); scheduleTransform(); });
+    graph.addEventListener('keydown', (e) => { if (e.target.closest('.tl-node') || e.target.matches('button, input, select')) return; const step = e.shiftKey ? 80 : 32; if (e.key === '+' || e.key === '=') setZoom(state.scale * 1.2); else if (e.key === '-' || e.key === '_') setZoom(state.scale / 1.2); else if (e.key === 'Home') fitGraph(); else if (e.key === 'ArrowLeft') state.x += step; else if (e.key === 'ArrowRight') state.x -= step; else if (e.key === 'ArrowUp') state.y += step; else if (e.key === 'ArrowDown') state.y -= step; else return; e.preventDefault(); state.focusCameraKey = ''; scheduleTransform(); });
     drawing.addEventListener('click', (e) => { const item = e.target.closest('.tl-node'); if (item) selectItem(item.__item); });
     drawing.addEventListener('keydown', (e) => { if (!['Enter', ' '].includes(e.key)) return; const item = e.target.closest('.tl-node'); if (item) { e.preventDefault(); selectItem(item.__item); } });
     traceButton.addEventListener('click', requestPath);
@@ -133,11 +146,12 @@
   }
 
   function setSession(csrf) { const next = str(csrf); if (next !== state.csrf) { clearTimeout(state.timer); state.timer = 0; if (state.controller) { state.seq += 1; state.controller.abort(); state.controller = null; } state.busy = false; state.focusHostId = ''; state.focusNotice = ''; setProjectionBusy(false); } state.csrf = next; if (!state.csrf && state.stage) clearProjectionUI('Waiting for the local session…'); updateControls(); }
-  function updateControls() { if (state.load) state.load.disabled = !state.csrf || state.busy; if (state.traceButton) state.traceButton.disabled = !state.csrf || state.busy || !state.dataset; }
+  function updateControls() { if (state.load) state.load.disabled = !state.csrf || state.busy; if (state.traceButton) state.traceButton.disabled = !state.csrf || state.busy || !state.dataset; updateViewportControls(); }
   function setProjectionBusy(busy) {
     if (!state.inspector) return;
     state.inspector.setAttribute('aria-busy', String(Boolean(busy)));
     state.inspector.inert = Boolean(busy);
+    updateViewportControls();
   }
   function renderFilters() {
     if (!state.activeFilters) return;
@@ -218,7 +232,7 @@
   function validateDataset(dataset) { if (!isObject(dataset) || dataset.schema_version !== 1 || dataset.synthetic !== true || !Array.isArray(dataset.hosts) || dataset.hosts.length > 10000 || !Array.isArray(dataset.networks) || !Array.isArray(dataset.sources) || dataset.sources.length > 100 || dataset.hosts.some((host) => !isObject(host) || !host.id) || dataset.sources.some((source) => !isObject(source) || !source.id || !Array.isArray(source.lines) || !source.sha256)) throw new Error('The lab response has an unsupported dataset shape.'); }
   function validateProjection(projection) { if (!isObject(projection) || projection.schema_version !== 1 || projection.synthetic !== true || !Array.isArray(projection.nodes) || projection.nodes.length > 140 || !Array.isArray(projection.links) || projection.links.length > 5000 || !Array.isArray(projection.sources) || !isObject(projection.counts) || !isObject(projection.pagination) || projection.nodes.some((item) => !isObject(item) || !idOf(item)) || projection.links.some((edge) => !isObject(edge) || !first(edge.id, edge.from, edge.source_id) || !first(edge.to, edge.target, edge.destination_id)) || (projection.hosts !== undefined && (!Array.isArray(projection.hosts) || projection.hosts.length > 100)) || (projection.navigation !== undefined && !isObject(projection.navigation))) throw new Error('The topology response has an unsupported or unbounded shape.'); }
   function isObject(value) { return Boolean(value && typeof value === 'object' && !Array.isArray(value)); }
-  function clearProjectionUI(message) { if (!state.stage) return; state.focusToggle.hidden = true; state.stage.replaceChildren(); state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.classList.remove('is-error'); state.caption.textContent = message; state.graphTitle.textContent = ({ l3: 'Layer 3 overview', zone: 'Zone overview', l2: 'Host & Layer 2 detail' })[state.view]; state.graph.setAttribute('aria-labelledby', `tl-tab-${state.view}`); state.pager.hidden = true; state.hostResultsList.replaceChildren(); state.hostResultsCount.textContent = state.busy ? 'Updating matching hosts…' : 'No host projection available.'; state.summary.replaceChildren(); for (const [label, value] of [['Hosts', '—'], ['Networks', '—'], ['Connections', '—'], ['On map', '—']]) { const cell = el('div', 'tl-stat'); cell.append(el('span', '', label), el('strong', '', value)); state.summary.append(cell); } state.traceStatus.replaceChildren(); state.sourceBody.replaceChildren(); document.getElementById('tl-sources').open = false; if (!state.dataset) state.options.replaceChildren(); state.exportButton.disabled = !state.dataset; if (!state.selected) renderInspector(null); syncInspectorView(); renderBreadcrumbs(); }
+  function clearProjectionUI(message) { if (!state.stage) return; if (state.stage.contains(document.activeElement)) { state.restoreGraphFocus = true; state.graph.focus({ preventScroll: true }); } state.focusCameraKey = ''; state.focusToggle.hidden = true; state.stage.replaceChildren(); state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.classList.remove('is-error'); state.caption.textContent = message; state.graphTitle.textContent = ({ l3: 'Layer 3 overview', zone: 'Zone overview', l2: 'Host & Layer 2 detail' })[state.view]; state.graph.setAttribute('aria-labelledby', `tl-tab-${state.view}`); state.pager.hidden = true; state.hostResultsList.replaceChildren(); state.hostResultsCount.textContent = state.busy ? 'Updating matching hosts…' : 'No host projection available.'; state.summary.replaceChildren(); for (const [label, value] of [['Hosts', '—'], ['Networks', '—'], ['Connections', '—'], ['On map', '—']]) { const cell = el('div', 'tl-stat'); cell.append(el('span', '', label), el('strong', '', value)); state.summary.append(cell); } state.traceStatus.replaceChildren(); state.sourceBody.replaceChildren(); document.getElementById('tl-sources').open = false; if (!state.dataset) state.options.replaceChildren(); state.exportButton.disabled = !state.dataset; if (!state.selected) renderInspector(null); syncInspectorView(); renderBreadcrumbs(); }
   function showError(error) { state.projection = null; state.focusHostId = ''; state.focusNotice = ''; state.selected = null; state.selectedEdge = null; renderInspector(null); syncInspectorView(); clearProjectionUI(`Could not load the network map: ${str(error && error.message, 'Request failed')}`); state.caption.classList.add('is-error'); }
   function drawTabs() { if (!state.tabs) return; state.tabs.querySelectorAll('[data-view]').forEach((b) => { const active = b.dataset.view === state.view; b.setAttribute('aria-selected', String(active)); b.tabIndex = active ? 0 : -1; }); if (state.graph) state.graph.setAttribute('aria-labelledby', `tl-tab-${state.view}`); }
   function chooseView(view) { if (!['l2', 'l3', 'zone'].includes(view) || view === state.view) return; state.view = view; state.offset = 0; drawTabs(); requestProjection(); }
@@ -265,6 +279,7 @@
   }
   function render() {
     state.caption.classList.remove('is-error');
+    const restoreGraphFocus = state.stage.contains(document.activeElement) || (state.restoreGraphFocus && document.activeElement === state.graph); state.restoreGraphFocus = false;
     const p = state.projection || {}; const allNodes = projectionNodes(); const allEdges = projectionEdges();
     reconcileSelection(allNodes);
     const hasPath = state.view === 'l2' && p.path && p.path.status === 'modeled_l2_path';
@@ -280,22 +295,23 @@
     const counts = p.counts || {}; const totalHosts = first(counts.hosts, p.total_hosts, p.host_count, '—'); const networks = first(counts.networks, p.network_count, '—'); const shown = nodes.length;
     state.summary.replaceChildren(); for (const [label, value] of [['Hosts', totalHosts], ['Networks', networks], ['Connections', allEdges.length], ['On map', shown]]) { const cell = el('div', 'tl-stat'); cell.append(el('span', '', label), el('strong', '', value)); state.summary.append(cell); }
     const viewLabels = { l3: 'Layer 3 overview', zone: 'Zone overview', l2: 'Host & Layer 2 detail' }; state.graphTitle.textContent = viewLabels[state.view];
-    state.stage.replaceChildren();
-    if (!nodes.length) { state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.textContent = state.dataset ? (p.message || 'No elements match these filters. Remove a filter or reset filters to see results.') : 'Load the synthetic lab to explore this map.'; renderInspector(state.selected); renderPager(p); renderHostResults(p); renderBreadcrumbs(); state.exportButton.disabled = !state.dataset; state.preservePan = false; renderPath(p.path); return; }
+    state.stage.replaceChildren(); state.focusCameraKey = '';
+    if (!nodes.length) { state.drawing.setAttribute('viewBox', '0 0 1100 600'); state.caption.textContent = state.dataset ? (p.message || 'No elements match these filters. Remove a filter or reset filters to see results.') : 'Load the synthetic lab to explore this map.'; renderInspector(state.selected); renderPager(p); renderHostResults(p); renderBreadcrumbs(); state.exportButton.disabled = !state.dataset; state.preservePan = false; renderPath(p.path); syncGraphRover(); updateViewportControls(); if (restoreGraphFocus) state.graph.focus({ preventScroll: true }); return; }
     const rustLayout = state.view === 'l2' && p.layout && Number.isFinite(Number(p.layout.width)) && Number.isFinite(Number(p.layout.height)) ? p.layout : null;
     const activeLayout = pathOrientation && p.path_layout[pathOrientation] ? p.path_layout[pathOrientation] : null;
     const width = focused && activeLayout ? Number(activeLayout.width) : rustLayout ? Math.max(1100, Number(rustLayout.width)) : 1100; const hostRows = Math.ceil(nodes.filter((item) => typeOf(item) === 'host').length / 5); const height = focused && activeLayout ? Number(activeLayout.height) : rustLayout ? Math.max(600, Number(rustLayout.height)) : state.view === 'l2' ? Math.max(690, 280 + Math.max(0, hostRows - 1) * 82 + 68 + 32) : 600; state.drawing.setAttribute('viewBox', `0 0 ${width} ${height}`);
     if (focused) { const bounds = activeLayout ? focusedLayoutBounds(activeLayout) : layoutBounds(nodes, rustLayout); if (bounds) state.drawing.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`); }
     const positions = focused && activeLayout ? layoutPathNodes(nodes, activeLayout) : layoutNodes(nodes, width, state.view);
-    edges.forEach((edge) => { const a = positions.get(str(first(edge.source_id, edge.source, edge.from, edge.source_host_id))); const b = positions.get(str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id))); if (!a || !b) return; const edgeId = edgeKey(edge); const selected = state.selected && state.selected.__edge && idOf(state.selected) === edgeId; const line = svg('path', { d: `M${a.x},${a.y} L${b.x},${b.y}`, class: `tl-edge ${edge.path ? 'tl-path-edge' : ''}${selected ? ' tl-selected-edge' : ''}`, 'data-link-id': edgeId, tabindex: '0', role: 'button', 'aria-pressed': String(Boolean(selected)), 'aria-label': `Inspect connection ${edgeId || 'between endpoints'}` }); line.__edge = edge; line.addEventListener('click', () => selectEdge(edge)); line.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectEdge(edge); } }); state.stage.append(line); });
-    nodes.forEach((item) => { const point = positions.get(idOf(item)); const kind = typeOf(item); const selected = state.selected && idOf(state.selected) === idOf(item) && typeOf(state.selected) === kind; const group = svg('g', { class: `tl-node tl-kind-${kind}${selected ? ' tl-selected' : ''}`, tabindex: '0', role: 'button', 'aria-pressed': String(Boolean(selected)), 'aria-label': `${kind}: ${labelOf(item)}${selected ? ', selected' : ''}`, transform: `translate(${point.x} ${point.y})` }); group.__item = item;
+    edges.forEach((edge) => { const a = positions.get(str(first(edge.source_id, edge.source, edge.from, edge.source_host_id))); const b = positions.get(str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id))); if (!a || !b) return; const edgeId = edgeKey(edge); const selected = state.selected && state.selected.__edge && idOf(state.selected) === edgeId; const line = svg('path', { d: `M${a.x},${a.y} L${b.x},${b.y}`, class: `tl-edge ${edge.path ? 'tl-path-edge' : ''}${selected ? ' tl-selected-edge' : ''}`, 'data-link-id': edgeId, tabindex: '-1', role: 'button', 'aria-pressed': String(Boolean(selected)), 'aria-label': `Inspect connection ${edgeId || 'between endpoints'}` }); line.__edge = edge; line.addEventListener('click', () => selectEdge(edge)); line.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectEdge(edge); } }); state.stage.append(line); });
+    nodes.forEach((item) => { const point = positions.get(idOf(item)); const kind = typeOf(item); const selected = state.selected && idOf(state.selected) === idOf(item) && typeOf(state.selected) === kind; const group = svg('g', { class: `tl-node tl-kind-${kind}${selected ? ' tl-selected' : ''}`, tabindex: '-1', role: 'button', 'aria-pressed': String(Boolean(selected)), 'aria-label': `${kind}: ${labelOf(item)}${selected ? ', selected' : ''}`, transform: `translate(${point.x} ${point.y})` }); group.__item = item;
       const box = svg('rect', { x: '-80', y: '-34', width: '160', height: '68', rx: '12', class: 'tl-node-box' }); const title = svg('text', { x: '-42', y: '-2', class: 'tl-node-title' }); title.textContent = clipped(labelOf(item), 19); const sub = svg('text', { x: '-42', y: '17', class: 'tl-node-subtitle' }); sub.textContent = clipped(str(first(item.subtitle, item.cidr, item.ip, item.host_count && `${item.host_count} hosts`), kind), 23); group.append(box, makeIcon(kind, item), title, sub); state.stage.append(group);
     });
     const total = Number(first(p.pagination && p.pagination.total, p.total, p.total_count, p.filtered_count, allNodes.length));
     state.caption.textContent = str(first(p.caption, p.message), `${shown} elements in this projection · ${allEdges.length} projected connections · configuration-derived map · ${totalHosts} hosts in the synthetic dataset · live observations unavailable`);
     if (focused) state.caption.textContent = `${shown} of ${allNodes.length} elements · selected L2 path · live observations unavailable`;
     state.exportButton.disabled = !state.dataset;
-    renderPager(p); if (focused) state.pager.hidden = true; renderHostOptions(nodes); renderHostResults(p); renderBreadcrumbs(); renderInspector(state.selected); if (!state.preservePan) { state.scale = 1; state.x = 0; state.y = 0; } state.preservePan = false; applyTransform(); renderPath(p.path);
+    renderPager(p); if (focused) state.pager.hidden = true; renderHostOptions(nodes); renderHostResults(p); renderBreadcrumbs(); renderInspector(state.selected); if (!state.preservePan) { state.scale = 1; state.x = 0; state.y = 0; } state.preservePan = false;
+    renderMinimap(nodes, edges, positions); syncGraphRover(null, restoreGraphFocus); applyTransform(); renderPath(p.path); updateViewportControls();
   }
   function renderPager(p) { const page = p.navigation || {}; const total = Number(first(p.pagination && p.pagination.total, p.total, p.total_count, p.filtered_count, 0)); const start = total ? state.offset + 1 : 0; const end = total ? Math.min(state.offset + arr(p.hosts).length, total) : 0; state.pageLabel.textContent = `Hosts ${start}–${end} of ${total}`; state.pagePosition.textContent = total ? `Page ${page.page_index || Math.floor(state.offset / state.limit) + 1} of ${page.page_count || Math.ceil(total / state.limit)}` : 'Page 0 of 0'; state.prev.disabled = state.busy || page.previous_offset == null; state.next.disabled = state.busy || page.next_offset == null; state.firstPage.disabled = state.busy || page.previous_offset == null; state.lastPage.disabled = state.busy || page.next_offset == null; state.pager.hidden = state.view === 'l2' && state.focusPath && p.path && p.path.status === 'modeled_l2_path'; }
   function renderHostResults(p) {
@@ -331,8 +347,8 @@
   function selectItem(item, options = {}) { state.selected = item; state.selectedEdge = null; state.inspectorCollapsed = false; syncInspectorView(); refreshNodeSelection(); refreshEdgeSelection(); renderInspector(item); const kind = typeOf(item); if (kind === 'network' || kind === 'subnet') { state.network = idOf(item); state.net.value = state.network; state.zone = ''; state.zoneInput.value = ''; state.view = 'l2'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'zone') { state.zone = str(item.zone, idOf(item).replace(/^zone-/, '')); state.zoneInput.value = state.zone; state.network = ''; state.net.value = ''; state.view = 'l3'; state.offset = 0; state.preservePan = true; drawTabs(); renderFilters(); requestProjection(); } else if (kind === 'host' && !options.preserveTrace) { if (!state.sourcePinned) { state.source = idOf(item); state.sourceField.input.value = `${labelOf(item)} (${idOf(item)})`; } clearPathDisplay(); } }
   function reconcileSelection(nodes) { if (!state.selected) { syncInspectorView(); return; } if (state.selected.__edge) { const id = idOf(state.selected); const edge = projectionEdges().find((candidate) => edgeKey(candidate) === id); if (edge) { state.selected.__edgeData = edge; renderInspector(state.selected); } else { state.selected = null; state.selectedEdge = null; renderInspector(null); refreshEdgeSelection(); } syncInspectorView(); return; } const id = idOf(state.selected); const kind = typeOf(state.selected); const candidates = kind === 'host' ? [...nodes, ...arr(state.projection && state.projection.hosts)] : nodes; const match = candidates.find((item) => idOf(item) === id && typeOf(item) === kind); state.selected = match || null; if (match) renderInspector(match); else renderInspector(null); refreshEdgeSelection(); syncInspectorView(); }
   function syncInspectorView() { if (!state.content || !state.inspector) return; const hasSelection = Boolean(state.selected); const collapsed = !hasSelection || state.inspectorCollapsed; state.content.classList.toggle('has-selection', hasSelection); state.content.classList.toggle('is-inspector-collapsed', collapsed); state.inspector.setAttribute('aria-hidden', String(collapsed)); state.inspectorToggle.disabled = !hasSelection; state.inspectorToggle.textContent = collapsed ? 'Show details' : 'Hide details'; state.inspectorToggle.setAttribute('aria-expanded', String(!collapsed)); scheduleResponsivePathLayout(); }
-  function refreshNodeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-node').forEach((node) => { const selected = state.selected && !state.selected.__edge && idOf(state.selected) === idOf(node.__item) && typeOf(state.selected) === typeOf(node.__item); node.classList.toggle('tl-selected', Boolean(selected)); node.setAttribute('aria-pressed', String(Boolean(selected))); node.setAttribute('aria-label', `${typeOf(node.__item)}: ${labelOf(node.__item)}${selected ? ', selected' : ''}`); }); }
-  function refreshEdgeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-edge').forEach((edge) => { const selected = Boolean(state.selected && state.selected.__edge && state.selected.__edgeData && edgeKey(state.selected.__edgeData) === edge.dataset.linkId); edge.classList.toggle('tl-selected-edge', selected); edge.setAttribute('aria-pressed', String(selected)); }); }
+  function refreshNodeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-node').forEach((node) => { const selected = state.selected && !state.selected.__edge && idOf(state.selected) === idOf(node.__item) && typeOf(state.selected) === typeOf(node.__item); node.classList.toggle('tl-selected', Boolean(selected)); node.setAttribute('aria-pressed', String(Boolean(selected))); node.setAttribute('aria-label', `${typeOf(node.__item)}: ${labelOf(node.__item)}${selected ? ', selected' : ''}`); }); syncGraphRover(); updateViewportControls(); }
+  function refreshEdgeSelection() { if (!state.stage) return; state.stage.querySelectorAll('.tl-edge').forEach((edge) => { const selected = Boolean(state.selected && state.selected.__edge && state.selected.__edgeData && edgeKey(state.selected.__edgeData) === edge.dataset.linkId); edge.classList.toggle('tl-selected-edge', selected); edge.setAttribute('aria-pressed', String(selected)); }); syncGraphRover(); updateViewportControls(); }
   function renderInspector(item) {
     state.inspector.replaceChildren();
     if (!item) { state.inspector.append(el('div', 'tl-empty', 'Select a network, zone, or host to inspect its details.')); return; }
@@ -454,14 +470,111 @@
     if (!projection) return;
     if (!projection.path) state.traceStatus.textContent = 'The current projection did not include a path result.';
   }
-  function fitGraph() { state.scale = 1; state.x = 0; state.y = 0; scheduleTransform(); }
+  // These controls navigate the rendered projection only. They never infer
+  // neighbors, change scope, or submit a new analysis request.
+  function graphItems() { return state.stage ? [...state.stage.querySelectorAll('.tl-node,.tl-edge')] : []; }
+  function graphItemKey(item) { return item && (item.__item ? `node:${idOf(item.__item)}` : item.__edge ? `edge:${edgeKey(item.__edge)}` : ''); }
+  function selectedGraphItem() {
+    if (!state.selected) return null;
+    const key = state.selected.__edge ? `edge:${idOf(state.selected)}` : `node:${idOf(state.selected)}`;
+    return graphItems().find((item) => graphItemKey(item) === key) || null;
+  }
+  function syncGraphRover(preferred, focus = false) {
+    const items = graphItems();
+    const current = preferred || items.find((item) => graphItemKey(item) === state.rovingKey) || selectedGraphItem() || items[0];
+    state.rovingKey = graphItemKey(current) || '';
+    items.forEach((item) => item.setAttribute('tabindex', item === current ? '0' : '-1'));
+    if (focus && current) current.focus({ preventScroll: true });
+  }
+  function navigateGraphItems(event) {
+    const current = event.target.closest('.tl-node,.tl-edge');
+    if (!current || !state.stage.contains(current)) return;
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); state.graph.focus({ preventScroll: true }); return; }
+    const items = graphItems(); const index = items.indexOf(current); let next;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = items[(index + 1) % items.length];
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = items[(index + items.length - 1) % items.length];
+    else if (event.key === 'Home') next = items[0];
+    else if (event.key === 'End') next = items.at(-1);
+    else return;
+    event.preventDefault(); event.stopPropagation(); syncGraphRover(next, true); focusGraphItem(next);
+  }
+  function updateViewportControls() {
+    if (!state.focusSelection) return;
+    state.focusSelection.disabled = state.busy || !selectedGraphItem();
+    state.minimap.toggleAttribute('hidden', state.busy || !state.projection || !state.stage.querySelector('.tl-node'));
+    const selectedKey = graphItemKey(selectedGraphItem());
+    state.miniContent.querySelectorAll('[data-mini-key]').forEach((item) => item.classList.toggle('is-selected', item.dataset.miniKey === selectedKey));
+    updateMinimapViewport();
+  }
+  function visibleDrawingBounds() {
+    const matrix = state.drawing.getScreenCTM(); if (!matrix) return null;
+    const rect = state.drawing.getBoundingClientRect(); const inverse = matrix.inverse();
+    const point = state.drawing.createSVGPoint(); point.x = rect.left; point.y = rect.top; const top = point.matrixTransform(inverse);
+    point.x = rect.right; point.y = rect.bottom; const bottom = point.matrixTransform(inverse);
+    return { x: top.x, y: top.y, width: bottom.x - top.x, height: bottom.y - top.y };
+  }
+  function renderedItemBounds(item) {
+    const stageMatrix = state.stage.getScreenCTM(); const itemMatrix = item && item.getScreenCTM();
+    if (!stageMatrix || !itemMatrix) return null;
+    const transform = stageMatrix.inverse().multiply(itemMatrix); const box = item.getBBox();
+    const point = state.drawing.createSVGPoint(); point.x = box.x; point.y = box.y; const top = point.matrixTransform(transform);
+    point.x = box.x + box.width; point.y = box.y + box.height; const bottom = point.matrixTransform(transform);
+    return { x: top.x, y: top.y, width: bottom.x - top.x, height: bottom.y - top.y };
+  }
+  function focusGraphItem(item) {
+    if (!item || state.busy) return;
+    const bounds = renderedItemBounds(item); const visible = visibleDrawingBounds(); const matrix = state.drawing.getScreenCTM();
+    if (!bounds || !visible || !matrix) return;
+    const screenScale = Math.min(1.25, Math.max(1, state.graph.clientWidth - 48) / Math.max(160, bounds.width), Math.max(1, state.graph.clientHeight - 64) / Math.max(68, bounds.height));
+    state.scale = Math.max(.35, Math.min(12, screenScale / Math.hypot(matrix.a, matrix.b)));
+    state.x = visible.x + visible.width / 2 - (bounds.x + bounds.width / 2) * state.scale;
+    state.y = visible.y + visible.height / 2 - (bounds.y + bounds.height / 2) * state.scale;
+    state.focusCameraKey = graphItemKey(item); scheduleTransform();
+  }
+  function renderMinimap(nodes, edges, positions) {
+    state.miniContent.replaceChildren(); state.minimap.setAttribute('viewBox', state.drawing.getAttribute('viewBox'));
+    edges.forEach((edge) => {
+      const a = positions.get(str(first(edge.source_id, edge.source, edge.from, edge.source_host_id)));
+      const b = positions.get(str(first(edge.destination_id, edge.target, edge.to, edge.destination_host_id)));
+      if (a && b) state.miniContent.append(svg('path', { d: `M${a.x},${a.y} L${b.x},${b.y}`, class: 'tl-mini-edge' }));
+    });
+    nodes.forEach((item) => {
+      const position = positions.get(idOf(item)); if (!position) return;
+      state.miniContent.append(svg('rect', { x: position.x - 64, y: position.y - 28, width: 128, height: 56, rx: 8, class: `tl-mini-node tl-mini-${typeOf(item)}`, 'data-mini-key': `node:${idOf(item)}` }));
+    });
+  }
+  function updateMinimapViewport() {
+    if (!state.minimap || state.minimap.hasAttribute('hidden')) return;
+    const visible = visibleDrawingBounds(); if (!visible) return;
+    state.miniViewport.setAttribute('x', (visible.x - state.x) / state.scale);
+    state.miniViewport.setAttribute('y', (visible.y - state.y) / state.scale);
+    state.miniViewport.setAttribute('width', visible.width / state.scale);
+    state.miniViewport.setAttribute('height', visible.height / state.scale);
+  }
+  function recenterFromOverview(event) {
+    event.preventDefault(); event.stopPropagation();
+    const matrix = state.minimap.getScreenCTM(); const visible = visibleDrawingBounds(); if (!matrix || !visible || state.busy) return;
+    const point = state.drawing.createSVGPoint(); point.x = event.clientX; point.y = event.clientY; const center = point.matrixTransform(matrix.inverse());
+    state.focusCameraKey = ''; state.x = visible.x + visible.width / 2 - center.x * state.scale; state.y = visible.y + visible.height / 2 - center.y * state.scale; scheduleTransform();
+  }
+  function navigateOverview(event) {
+    const visible = visibleDrawingBounds(); if (!visible || state.busy) return;
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Home') fitGraph();
+    else if (event.key === 'ArrowLeft') state.x += visible.width / 10;
+    else if (event.key === 'ArrowRight') state.x -= visible.width / 10;
+    else if (event.key === 'ArrowUp') state.y += visible.height / 10;
+    else if (event.key === 'ArrowDown') state.y -= visible.height / 10;
+    else return;
+    event.preventDefault(); event.stopPropagation(); state.focusCameraKey = ''; scheduleTransform();
+  }
+  function fitGraph() { state.focusCameraKey = ''; state.scale = 1; state.x = 0; state.y = 0; scheduleTransform(); }
   function setZoom(value) { const box = state.drawing && state.drawing.viewBox.baseVal; zoomAt(value, box ? box.x + box.width / 2 : 550, box ? box.y + box.height / 2 : 300); }
-  function zoomAt(value, cx, cy) { const next = Math.max(.35, Math.min(3, value)); const ratio = next / state.scale; state.x = cx - (cx - state.x) * ratio; state.y = cy - (cy - state.y) * ratio; state.scale = next; scheduleTransform(); }
+  function zoomAt(value, cx, cy) { state.focusCameraKey = ''; const next = Math.max(.35, Math.min(12, value)); const ratio = next / state.scale; state.x = cx - (cx - state.x) * ratio; state.y = cy - (cy - state.y) * ratio; state.scale = next; scheduleTransform(); }
   function screenPoint(event) { const matrix = state.drawing && state.drawing.getScreenCTM(); if (matrix) { const point = state.drawing.createSVGPoint(); point.x = event.clientX; point.y = event.clientY; const converted = point.matrixTransform(matrix.inverse()); return { x: converted.x, y: converted.y }; } const rect = state.graph.getBoundingClientRect(); const box = state.drawing.viewBox.baseVal; return { x: box.x + (event.clientX - rect.left) * box.width / rect.width, y: box.y + (event.clientY - rect.top) * box.height / rect.height }; }
   function scheduleTransform() { if (!state.stage || state.transformFrame) return; state.transformFrame = requestAnimationFrame(() => { state.transformFrame = 0; applyTransform(); }); }
-  function scheduleResponsivePathLayout() { if (state.responsivePathFrame) return; state.responsivePathFrame = requestAnimationFrame(() => { state.responsivePathFrame = 0; const projection = state.projection || {}; const hasFocusedPath = state.focusPath && state.view === 'l2' && projection.path && projection.path.status === 'modeled_l2_path' && projection.path_layout; const desired = hasFocusedPath ? (state.graph.clientWidth < 850 ? 'vertical' : 'horizontal') : ''; if (desired && desired !== state.renderedPathOrientation) { state.preservePan = false; render(); return; } if (!desired) { state.renderedPathOrientation = ''; state.graph.classList.remove('is-focused-path'); } scheduleTransform(); }); }
-  function applyTransform() { if (!state.stage) return; state.stage.setAttribute('transform', `translate(${state.x} ${state.y}) scale(${state.scale})`); const percent = Math.round(state.scale * 100); const mode = state.scale < .7 ? 'Overview' : state.scale > 1.45 ? 'Detail' : 'Balanced'; state.graph.classList.remove('tl-scale-overview', 'tl-scale-balanced', 'tl-scale-detail'); state.graph.classList.add(`tl-scale-${mode.toLowerCase()}`); state.zoomLabel.textContent = `${percent}%`; state.zoomLabel.setAttribute('aria-label', `${mode} scale, ${percent} zoom`); state.zoomLabel.title = `${mode} scale`; }
-  function toggleFullscreen() { state.fullscreenActive = !state.fullscreenActive; state.root.classList.toggle('tl-fullscreen', state.fullscreenActive); state.fullscreenButton.setAttribute('aria-pressed', String(state.fullscreenActive)); state.fullscreenButton.textContent = state.fullscreenActive ? 'Exit full screen' : 'Full screen'; if (state.fullscreenActive) { state.fullscreenFocus = document.activeElement; state.bodyOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; state.graph.focus(); } else { document.body.style.overflow = state.bodyOverflow || ''; if (state.fullscreenFocus && state.fullscreenFocus.isConnected) state.fullscreenFocus.focus(); state.fullscreenFocus = null; } }
+  function scheduleResponsivePathLayout() { if (state.responsivePathFrame) return; state.responsivePathFrame = requestAnimationFrame(() => { state.responsivePathFrame = 0; const projection = state.projection || {}; const hasFocusedPath = state.focusPath && state.view === 'l2' && projection.path && projection.path.status === 'modeled_l2_path' && projection.path_layout; const desired = hasFocusedPath ? (state.graph.clientWidth < 850 ? 'vertical' : 'horizontal') : ''; if (desired && desired !== state.renderedPathOrientation) { state.preservePan = false; render(); return; } if (!desired) { state.renderedPathOrientation = ''; state.graph.classList.remove('is-focused-path'); } const focused = state.focusCameraKey && graphItems().find((item) => graphItemKey(item) === state.focusCameraKey); if (focused) focusGraphItem(focused); else scheduleTransform(); }); }
+  function applyTransform() { if (!state.stage) return; state.stage.setAttribute('transform', `translate(${state.x} ${state.y}) scale(${state.scale})`); const percent = Math.round(state.scale * 100); const mode = state.scale < .7 ? 'Overview' : state.scale > 1.45 ? 'Detail' : 'Balanced'; state.graph.classList.remove('tl-scale-overview', 'tl-scale-balanced', 'tl-scale-detail'); state.graph.classList.add(`tl-scale-${mode.toLowerCase()}`); state.zoomLabel.textContent = `${percent}%`; state.zoomLabel.setAttribute('aria-label', `${mode} scale, ${percent} zoom`); state.zoomLabel.title = `${mode} scale`; updateMinimapViewport(); }
+  function toggleFullscreen() { state.fullscreenActive = !state.fullscreenActive; state.root.classList.toggle('tl-fullscreen', state.fullscreenActive); state.fullscreenButton.setAttribute('aria-pressed', String(state.fullscreenActive)); state.fullscreenButton.textContent = state.fullscreenActive ? 'Exit full screen' : 'Full screen'; if (state.fullscreenActive) { state.fullscreenFocus = document.activeElement; state.bodyOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; state.graph.focus(); } else { document.body.style.overflow = state.bodyOverflow || ''; if (state.fullscreenFocus && state.fullscreenFocus.isConnected) state.fullscreenFocus.focus(); state.fullscreenFocus = null; } scheduleResponsivePathLayout(); }
   function exportDataset() { if (!state.dataset) return; const blob = new Blob([JSON.stringify(state.dataset, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = el('a'); link.href = url; link.download = 'graphlayer-synthetic-topology-lab.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); }
   function idOf(item) { return str(first(item.id, item.node_id, item.host_id, item.network_id, item.zone_id, item.subnet_id)); }
   function labelOf(item) { return str(first(item.label, item.name, item.hostname, item.display_name, item.cidr, idOf(item)), 'Network element'); }

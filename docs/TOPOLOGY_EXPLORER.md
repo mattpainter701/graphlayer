@@ -49,15 +49,29 @@ the canvas to use the following keys:
 
 | Action | Network map | Network topology |
 | --- | --- | --- |
-| Pan | Arrow keys; Shift for larger steps | Arrow keys |
+| Pan | Arrow keys on the canvas; Shift for larger steps | Arrow keys on the canvas |
 | Zoom | `+` / `-` | `+` / `-` |
 | Fit | `Home` | `0` or `Home` |
-| Inspect a focused device or link | `Enter` or Space | `Enter` or Space |
+| Move between graph items | Right/Down next; Left/Up previous; Home/End first/last | Right/Down next; Left/Up previous; Home/End first/last |
+| Inspect the focused graph item | `Enter` or Space | `Enter` or Space |
+| Return focus to canvas | `Escape` | `Escape` |
 
-The topology overview shows the full layout and current viewport. Click it to
-recenter, or activate it with the keyboard to fit the graph. Fine labels are
-reduced at overview zoom levels; zoom in for port and status details. These
-controls update presentation without rerunning path analysis.
+The maps use one keyboard tab stop for graph items. Arrow navigation moves
+focus through visible items and centers the focused item in the canvas; Home
+and End move to the first and last visible items. Enter or Space inspects the
+focused item, and Escape returns focus to the canvas. With the canvas focused,
+arrow keys pan instead. The overview shows the full layout and current
+viewport; click or keyboard activation recenters the canvas there. Fine labels
+are reduced at overview zoom levels; zoom in for port and status details. Focus
+and camera controls update presentation without rerunning a projection or path
+analysis. Fit returns to the whole current projection.
+
+On dense 100-host pages, focus a host to make its card easier to inspect, then
+use the overview to recenter or Fit to return to the whole projection. A mobile
+viewport cannot make every label in a dense overview readable at once; use host
+focus and zoom for individual details. The 25, 50 and 100 host page sizes remain
+bounded, and navigation does not change the underlying topology or run domain
+analysis again.
 Crowded fullscreen layouts scroll the panel while retaining bounded space for
 the canvas and inspector. Restoring an expanded port does not enlarge the
 canvas; the explanatory footer remains below both.
