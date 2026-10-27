@@ -47,10 +47,10 @@ async function exploreBranchSample(page, extraEdgePorts = 0) {
         return `set network interface ethernet ethernet1/${index} layer3 ip 10.250.0.${index}/24`;
       }).join('\n');
       // Keep the route-selected interface after the synthetic fan-out so a path jump must page to it.
-      edge.config = `${extraInterfaces}\n${edge.config.replaceAll('ethernet1/2', 'ethernet1/30')}`;
+      edge.config = `${extraInterfaces}\n${edge.config.replaceAll('ethernet1/2', 'ethernet1/99')}`;
       sample.links.forEach((link) => {
         for (const endpoint of [link.a, link.b]) {
-          if (endpoint.node_id === 'edge' && endpoint.interface === 'ethernet1/2') endpoint.interface = 'ethernet1/30';
+          if (endpoint.node_id === 'edge' && endpoint.interface === 'ethernet1/2') endpoint.interface = 'ethernet1/99';
         }
       });
       await route.fulfill({ response, json: sample });
@@ -149,7 +149,7 @@ test('scope edits stay drafts until Apply commits a Rust projection over the ful
     (projection) => projection.path?.reason === 'outside_selected_context');
   expect(unavailable.path).toMatchObject({ status: 'indeterminate', hops: [], links: [], evidence: [] });
   await expect(page.locator('#tl-source')).toHaveValue(/host-0001/);
-  await expect(page.locator('#tl-trace-status')).toContainText(/outside.*selected context|selected context/i);
+  await expect(page.locator('#tl-trace-status')).toContainText(/outside the current VRF\/VDOM and filter context/i);
 });
 
 test('a late projection response cannot erase filter-draft status', async ({ page }) => {
@@ -213,7 +213,7 @@ test('focused firewall port remains discoverable across bounded pages with path 
   expect(new Set(edgeNames).size).toBe(edgeNames.length);
   const forwardEdgeHop = selection.branch.forward.hops.find((hop) => hop.node_id === 'edge');
   const routePort = forwardEdgeHop.path.egress_interface;
-  expect(routePort).toBe('ethernet1/30');
+  expect(routePort).toBe('ethernet1/99');
   expect(edgeNames.indexOf(routePort)).toBeGreaterThanOrEqual(24);
 
   await page.locator('#topology-device-list [data-node-id="edge"]').click();
