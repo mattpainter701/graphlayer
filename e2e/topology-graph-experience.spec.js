@@ -55,7 +55,7 @@ async function expectMapNodeCentered(page, id) {
 }
 
 async function exploreSample(page, { omitNode, emptyReturn = false, holdBranchView = false, facetHideNode } = {}) {
-  const seen = { analyses: [], views: [], holdNextView: null, waitForHeldView: null, releaseHeldView: null };
+  const seen = { analyses: [], views: [], holdNextView: false, waitForHeldView: null, releaseHeldView: null };
   let releaseView;
   let capturedView;
   const heldView = new Promise((resolve) => { releaseView = resolve; });
@@ -95,7 +95,7 @@ async function exploreSample(page, { omitNode, emptyReturn = false, holdBranchVi
         if (Array.isArray(values)) values.push(target.vrf);
       }
     }
-    if (holdBranchView && seen.views.length > 1 && !seen.heldView) {
+    if (holdBranchView && seen.holdNextView && !seen.heldView) {
       seen.heldView = true;
       capturedView();
       await heldView;
@@ -231,6 +231,7 @@ test('changing branches hides and inerts the navigator until the new projection 
   await page.locator(`#topology-path-hop-buttons .topology-path-hop-button[data-hop-index="${portBearing}"]`).click();
   const shortcuts = page.locator('#topology-path-port-shortcuts .topology-path-port-button');
   await expect(shortcuts).not.toHaveCount(0);
+  seen.holdNextView = true;
   await page.locator('#topology-branch-select').selectOption(String(second));
   await seen.waitForHeldView();
   const navigator = page.locator('#topology-path-navigator');
@@ -264,7 +265,9 @@ test('hop navigation into a facet-hidden node preserves filter chips and navigat
   expect(chips).toHaveLength(1);
   await page.locator('#topology-path-next').click();
   await expect(page.locator('#topology-path-status')).toContainText(/north is unavailable under the active filters/i);
-  await expect(page.locator('#topology-path-hop-buttons .topology-path-hop-button[aria-label*="unavailable under the active filters"]')).toBeDisabled();
+  const filteredHop = page.locator(`#topology-path-hop-buttons .topology-path-hop-button[data-hop-index="${hiddenIndex}"]`);
+  await expect(filteredHop).toHaveAttribute('aria-label', /north is unavailable under the active filters/i);
+  await expect(filteredHop).toBeDisabled();
   await expect(page.locator('#topology-path-port-shortcuts .topology-path-port-button')).toHaveCount(0);
   await expect(page.locator('#topology-path-next')).toBeFocused();
   expect(await page.locator('#topology-active-filters .topology-filter-chip').allTextContents()).toEqual(chips);

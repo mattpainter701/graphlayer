@@ -186,7 +186,8 @@ test('100-host fan-out retains port and source drilldowns through a real scoped 
   await page.locator('#tl-inspector-toggle').click();
   await expect.poll(() => page.locator('#tl-svg').evaluate((svg) => svg.viewBox.baseVal.width > svg.viewBox.baseVal.height)).toBe(true);
   await page.locator('#tl-inspector-toggle').click();
-  await page.setViewportSize({ width: 1280, height: 900 });
+  // Inspector stacking can leave a wide canvas at 1280px; exercise the narrow layout explicitly.
+  await page.setViewportSize({ width: 768, height: 900 });
   await expect.poll(() => page.locator('#tl-svg').evaluate((svg) => svg.viewBox.baseVal.height > svg.viewBox.baseVal.width)).toBe(true);
   const linksAtSwitch = page.locator('.tl-hop-list > li').nth(1).locator('.tl-hop-link');
   await expect(linksAtSwitch).toHaveCount(2);
