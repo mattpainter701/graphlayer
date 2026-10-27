@@ -351,6 +351,7 @@
 .topology-port-finder-clear { flex: 0 0 auto; }
 .topology-port-summary { margin: 0 10px 8px; color: #667d8e; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .topology-port-empty { margin: 8px 0; padding: 10px; border-radius: 8px; background: #f5f8fa; color: #687e8e; font-size: 11px; line-height: 1.5; }
+.topology-port-unavailable { margin: 10px 0 14px; padding: 11px 12px; border: 1px dashed #c7d4dd; border-radius: 9px; background: #f6f9fb; color: #5b7182; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .topology-port-pager { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 7px; margin: 8px 0 12px; padding: 8px; border: 1px solid #dce6ed; border-radius: 9px; background: #f8fbfd; }
 .topology-port-page-button { min-height: 40px; padding: 7px 10px; border: 1px solid #cddbe4; border-radius: 8px; background: #fff; color: #31566f; font: 600 11px ui-sans-serif,system-ui,sans-serif; cursor: pointer; }
 .topology-port-page-button:disabled { opacity: .45; cursor: default; }

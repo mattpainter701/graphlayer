@@ -153,12 +153,13 @@
   }
   function applyFilterInputs() {
     clearTimeout(state.timer); state.timer = 0;
-    if (!state.csrf || !state.dataset) { updateControls(); return; }
     if (!hasPendingFilters()) { renderFilters(); updateControls(); return; }
     const draft = filterDraft();
     Object.assign(state, draft); state.offset = 0;
     clearScopeSelection();
     renderFilters(); updateControls();
+    // Filters are local view state and can be edited before a lab/session is
+    // ready. Projection requests remain guarded until both are available.
     if (state.csrf && state.dataset) requestProjection();
   }
   function renderFilters() {
@@ -187,14 +188,15 @@
     state.vdomOptions.replaceChildren(); arr(facets.vdoms).forEach((value) => { const option = el('option'); option.value = String(value); state.vdomOptions.append(option); });
   }
   function clearFilter(kind) {
-    clearTimeout(state.timer); state.timer = 0;
-    if (kind === 'network') { state.network = ''; state.net.value = ''; }
-    else if (kind === 'zone') { state.zone = ''; state.zoneInput.value = ''; }
-    else if (kind === 'search') { state.search = ''; state.searchInput.value = ''; }
-    else if (kind === 'vrf') { state.vrf = ''; state.vrfInput.value = ''; clearScopeSelection(); }
-    else if (kind === 'vdom') { state.vdom = ''; state.vdomInput.value = ''; clearScopeSelection(); }
-    else return;
-    state.offset = 0; renderFilters(); requestProjection();
+    const input = ({ network: state.net, zone: state.zoneInput, search: state.searchInput, vrf: state.vrfInput, vdom: state.vdomInput })[kind];
+    if (!input) return;
+    input.value = '';
+    // Apply the remaining draft values too. Otherwise removing a chip cancels
+    // the debounce while leaving other edited filters stranded in the inputs.
+    applyFilterInputs();
+    // renderFilters removes the activated chip. Return keyboard and pointer
+    // users to the corresponding field rather than letting focus fall to body.
+    input.focus({ preventScroll: true });
   }
   function resetAllFilters() {
     state.network = ''; state.zone = ''; state.vrf = ''; state.vdom = ''; state.search = ''; state.offset = 0; clearTimeout(state.timer); state.timer = 0; clearScopeSelection();

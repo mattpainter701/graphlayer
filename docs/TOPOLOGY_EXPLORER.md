@@ -39,6 +39,8 @@ five filter fields update together after a short typing pause. Press Enter or
 choose **Apply filters** to commit edits immediately. Pending edits are labeled;
 chips continue to describe the applied scope until the edits are committed.
 An earlier response cannot replace the latest query.
+Removing a chip commits the other edited fields together and returns keyboard
+focus to the cleared filter field, so a pending search is not left unapplied.
 The map and inspector show an updating state while a new Rust projection loads.
 
 Network and zone suggestions include Rust-calculated matching-host counts under
@@ -133,6 +135,9 @@ zone, context, configured status, exact declared connections and selected path
 hops. Expand a forward or return hop to inspect ingress/egress, the selected
 route, flow tuples, returned NAT information and decision-stage evidence.
 Interface buttons in a link inspector open the owning device's port details.
+Explicit port jumps and history returns focus the expanded port control. If a
+declared endpoint has no returned interface facts, a focused status names that
+endpoint and explains that its configuration and path details are unavailable.
 Missing configuration facts remain unavailable, and evidence links retain their
 owning snapshot. None of these drilldowns executes another analysis or implies
 an observed port state or active session.
