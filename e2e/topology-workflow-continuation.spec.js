@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+test.use({ baseURL: 'http://127.0.0.1:8089' });
 
 async function loadLayerLab(page) {
   const seen = { dataset: null, requests: [], projections: [] };
@@ -136,7 +137,13 @@ test('scope edits stay drafts until Apply commits a Rust projection over the ful
   expect(changed.filters.vdom).toBe('campus');
   await expect(page.locator('#tl-source')).toHaveValue(/host-0001/);
   await expect(page.locator('#tl-destination')).toHaveValue('');
-  expect(changed.counts).toMatchObject({ hosts: 1000, matched_hosts: 100 });
+  expect(changed.counts).toMatchObject({ hosts: 1000, matched_hosts: 0 });
+  await expect(page.locator('#tl-host-results-summary')).toContainText('No hosts match');
+  const recovered = await applyFilters(page, seen,
+    () => page.locator('#tl-active-filters [data-filter-kind="vdom"]').click(),
+    (projection) => projection.filters.vrf === 'lab-vrf-02' && projection.filters.vdom === '' && projection.counts.matched_hosts === 100);
+  expect(recovered.hosts).toHaveLength(25);
+  await expect(page.locator('#tl-vdom')).toHaveValue('');
   await page.locator('.tl-host-result[data-host-id="host-0101"] [data-action="destination"]').click();
   const unavailable = await applyFilters(page, seen, () => page.locator('#tl-trace-button').click(),
     (projection) => projection.path?.reason === 'outside_selected_context');
@@ -149,38 +156,44 @@ test('a late projection response cannot erase filter-draft status', async ({ pag
   const seen = await loadLayerLab(page);
   let releaseResponse;
   let capturedResponse;
+  const intercepted = { requests: [], projections: [] };
   const held = new Promise((resolve) => { releaseResponse = resolve; });
   const captured = new Promise((resolve) => { capturedResponse = resolve; });
   let heldOnce = false;
   let released = false;
   await page.route('**/api/topology-layers', async (route) => {
+    const request = route.request().postDataJSON();
     const response = await route.fetch();
+    const body = await response.json();
+    const projection = body.projection || body;
+    intercepted.requests.push(request);
+    intercepted.projections.push(projection);
     if (!heldOnce && route.request().method() === 'POST') {
       heldOnce = true;
       capturedResponse();
       await held;
       released = true;
     }
-    await route.fulfill({ response });
+    await route.fulfill({ response, json: body });
   });
   await page.clock.install();
-  const previousCount = seen.projections.length;
   await page.locator('#tl-tab-l2').click();
   await captured;
   await page.locator('#tl-vrf').fill('lab-vrf-01');
   await expect(page.locator('#tl-filter-count')).toContainText('pending');
-  expect(seen.requests.at(-1).view).toBe('l2');
-  expect(seen.requests.at(-1).vrf).toBe('');
+  expect(intercepted.requests.at(-1).view).toBe('l2');
+  expect(intercepted.requests.at(-1).vrf).toBe('');
 
   releaseResponse();
   await expect.poll(() => released).toBe(true);
   await expect(page.locator('#tl-inspector')).toHaveAttribute('aria-busy', 'false');
   await expect(page.locator('#tl-filter-count')).toContainText('pending');
   await expect(page.locator('#tl-active-filters .tl-filter-chip')).toHaveCount(0);
-  expect(seen.projections.length).toBeGreaterThan(previousCount);
+  expect(intercepted.projections.length).toBeGreaterThan(0);
+  expect(intercepted.projections[0].view).toBe('l2');
 
   await page.clock.runFor(220);
-  await expect.poll(() => seen.projections.some((projection) => projection.filters.vrf === 'lab-vrf-01')).toBe(true);
+  await expect.poll(() => intercepted.projections.some((projection) => projection.filters.vrf === 'lab-vrf-01')).toBe(true);
   await expect(page.locator('#tl-filter-count')).toHaveText('1 active filter');
 });
 
