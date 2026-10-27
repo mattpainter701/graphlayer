@@ -399,7 +399,7 @@
 }
 
 /* Keep the selected path navigator compact while giving every hop and port a touch target. */
-.topology-path-navigator { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; flex: 0 0 calc(100% + 48px); min-width: 0; width: calc(100% + 48px); margin-inline: -24px; padding: 10px 24px; border-top: 1px solid #dce5ec; border-bottom: 1px solid #e7edf2; background: #f8fbfd; }
+.topology-path-navigator { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; flex: 0 0 auto; min-width: 0; width: 100%; margin-inline: 0; padding: 10px 24px; border-top: 1px solid #dce5ec; border-bottom: 1px solid #e7edf2; background: #f8fbfd; box-sizing: border-box; }
 .topology-path-navigator[hidden] { display: none; }
 .topology-path-direction-label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: #4e667a; font-size: 11px; font-weight: 650; }
 .topology-path-direction { min-height: 40px; max-width: min(230px,45vw); padding: 6px 28px 6px 9px; border: 1px solid #cbdbe5; border-radius: 8px; background: #fff; color: #29485f; font: 12px ui-sans-serif,system-ui,sans-serif; }
@@ -412,7 +412,7 @@
 .topology-path-port-button { overflow-wrap: anywhere; text-align: left; }
 .topology-path-navigator :focus-visible { outline: 3px solid #176b9e; outline-offset: 2px; }
 @media (max-width: 600px) {
-  .topology-path-navigator { flex-basis: calc(100% + 28px); width: calc(100% + 28px); margin-inline: -14px; padding: 10px 14px; }
+  .topology-path-navigator { flex-basis: auto; width: 100%; margin-inline: 0; padding: 10px 14px; }
   .topology-path-direction-label { flex: 1 1 100%; justify-content: space-between; }
   .topology-path-direction { flex: 1 1 auto; max-width: none; }
   .topology-path-previous, .topology-path-next { min-height: 44px; }

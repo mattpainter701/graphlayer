@@ -296,6 +296,72 @@ test('path controls remain reachable and the topology page has no horizontal ove
   expect(seen.analyses).toHaveLength(1);
 });
 
+test('fullscreen keeps path controls compact and the canvas and inspector usable across widths', async ({ page }) => {
+  const seen = await exploreSample(page);
+  const exploration = seen.analyses[0];
+  const branchIndex = findBranch(exploration, (branch) => branch.forward.hops.length === 3);
+  expect(branchIndex).toBeGreaterThanOrEqual(0);
+  await selectBranch(page, branchIndex);
+  const hops = exploration.result.branches[branchIndex].forward.hops;
+  const hopIndex = hops.findIndex((hop) => hop.path && (hop.path.ingress_interface || hop.path.ingress || hop.path.egress_interface));
+  expect(hopIndex).toBeGreaterThanOrEqual(0);
+  await page.locator(`#topology-path-hop-buttons .topology-path-hop-button[data-hop-index="${hopIndex}"]`).click();
+  const navigator = page.locator('#topology-path-navigator');
+  const controls = navigator.locator('.topology-path-hop-button, .topology-path-port-button');
+  await expect(controls).not.toHaveCount(0);
+  await expect(page.locator('#topology-inspector-toggle')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#topology-inspector')).toBeVisible();
+  await page.locator('#topology-fullscreen').click();
+  const workbench = page.locator('.topology-workbench');
+  await expect(workbench).toHaveClass(/topology-fullscreen-active/);
+
+  for (const [width, height] of [[1280, 900], [768, 900], [375, 720]]) {
+    await page.setViewportSize({ width, height });
+    await navigator.scrollIntoViewIfNeeded();
+    await expect(navigator).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const root = document.querySelector('.topology-workbench');
+      const nav = document.querySelector('#topology-path-navigator');
+      const body = document.querySelector('.topology-workbench-body');
+      const stage = document.querySelector('.topology-stage');
+      const inspector = document.querySelector('#topology-inspector');
+      const rect = (element) => { const value = element.getBoundingClientRect(); return { x: value.x, y: value.y, width: value.width, height: value.height, right: value.right, bottom: value.bottom }; };
+      return {
+        viewport: { width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth },
+        root: { ...rect(root), scrollWidth: root.scrollWidth, clientWidth: root.clientWidth }, nav: rect(nav), body: rect(body), stage: rect(stage), inspector: rect(inspector),
+        controls: [...nav.querySelectorAll('.topology-path-hop-button, .topology-path-port-button')].map((element) => ({ ...rect(element), text: element.textContent, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight })),
+      };
+    });
+    expect(layout.viewport.documentWidth).toBeLessThanOrEqual(width + 1);
+    expect(layout.root.width).toBeLessThanOrEqual(width);
+    expect(layout.root.scrollWidth).toBeLessThanOrEqual(layout.root.clientWidth + 1);
+    expect(layout.nav.height, `navigator height at ${width}px`).toBeLessThan(width < 600 ? 400 : 300);
+    expect(layout.body.height).toBeGreaterThanOrEqual(300);
+    expect(layout.stage.height).toBeGreaterThanOrEqual(300);
+    expect(layout.controls.length).toBeGreaterThan(0);
+    for (const control of layout.controls) {
+      expect(control.x).toBeGreaterThanOrEqual(layout.nav.x - 1);
+      expect(control.right).toBeLessThanOrEqual(layout.nav.right + 1);
+      expect(control.y).toBeGreaterThanOrEqual(layout.nav.y - 1);
+      expect(control.bottom).toBeLessThanOrEqual(layout.nav.bottom + 1);
+      expect(control.scrollWidth).toBeLessThanOrEqual(control.clientWidth + 1);
+      expect(control.scrollHeight).toBeLessThanOrEqual(control.clientHeight + 1);
+      expect(control.text.trim().length).toBeGreaterThan(0);
+    }
+    if (width <= 800) expect(layout.inspector.y).toBeGreaterThanOrEqual(layout.stage.bottom - 1);
+    else expect(layout.inspector.x).toBeGreaterThanOrEqual(layout.stage.right - 1);
+    await expect(controls.last()).toBeVisible();
+  }
+
+  await page.locator('#topology-fullscreen').click();
+  await expect(workbench).not.toHaveClass(/topology-fullscreen-active/);
+  await expect(navigator).toBeVisible();
+  await navigator.scrollIntoViewIfNeeded();
+  await page.locator('#topology-path-direction').focus();
+  await expect(page.locator('#topology-path-direction')).toBeFocused();
+  expect(seen.analyses).toHaveLength(1);
+});
+
 test('Show on map centers the exact returned host on a 100 host page and preserves VRF/VDOM scope', async ({ page }) => {
   const seen = await observeMap(page);
   await updateMap(page, seen, () => page.locator('#tl-tab-l2').click(), (projection) => projection.view === 'l2');

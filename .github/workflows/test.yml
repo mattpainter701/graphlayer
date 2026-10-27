@@ -25,7 +25,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           cd platform
-          TMPDIR=${RUNNER_TEMP} go test -coverprofile=coverage.out -coverpkg=./correlation/...,./comparison/...,./graph/...,./intelligence/...,./scoring/...,./vendors/shared/...,./models/...,./reference/iana/...,./policy/...,./cmd/graphlayer-policy/...,./vendors/cisco/asa/...,./firewall/...,./investigation/...,./cmd/graphlayer-investigate/...,./pathanalysis/...,./networkpath/... \
+          TMPDIR=${RUNNER_TEMP} go test -count=1 -coverprofile=coverage.out -coverpkg=./correlation/...,./comparison/...,./graph/...,./intelligence/...,./scoring/...,./vendors/shared/...,./models/...,./reference/iana/...,./policy/...,./cmd/graphlayer-policy/...,./vendors/cisco/asa/...,./firewall/...,./investigation/...,./cmd/graphlayer-investigate/...,./pathanalysis/...,./networkpath/... \
             ./correlation/... ./comparison/... ./graph/... \
             ./intelligence/... ./scoring/... ./vendors/shared/... \
             ./models/... ./reference/iana/... ./policy/... ./cmd/graphlayer-policy/... \
@@ -46,6 +46,7 @@ jobs:
           fi
 
       - name: Upload coverage
+        if: always()
         uses: ./.github/actions/archive-ci-artifact
         with:
           name: coverage
