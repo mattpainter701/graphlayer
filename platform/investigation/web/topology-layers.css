@@ -349,7 +349,7 @@
 
 /* Scope filters and port/path drilldowns. */
 .tl-controls { grid-template-columns: repeat(4, minmax(140px, 1fr)); align-items: end; }
-.tl-controls .tl-field:nth-child(5) { grid-column: span 3; }
+.tl-controls .tl-field:nth-child(5) { grid-column: span 2; }
 .tl-controls .tl-reset-filters { grid-column: span 1; }
 .tl-edge { cursor: pointer; }
 .tl-edge:hover, .tl-edge:focus-visible { stroke: #176b9e; stroke-width: 4; opacity: 1; outline: none; }
@@ -378,3 +378,7 @@
   .tl-controls .tl-field:nth-child(5), .tl-controls .tl-reset-filters { grid-column: auto; }
   .tl-hop-list > li { padding: 9px; }
 }
+
+.tl-controls .tl-apply-filters { grid-column: span 1; min-height: 44px; }
+@media (max-width: 1100px) { .tl-controls .tl-field:nth-child(5) { grid-column: 1 / -1; } .tl-controls .tl-reset-filters, .tl-controls .tl-apply-filters { grid-column: auto; } }
+@media (max-width: 520px) { .tl-controls .tl-apply-filters { grid-column: auto; width: 100%; } }

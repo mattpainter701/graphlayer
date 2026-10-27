@@ -38,7 +38,8 @@
     const vdomOptions = el('datalist'); vdomOptions.id = 'tl-vdom-options'; vdom.input.setAttribute('list', vdomOptions.id);
     const search = field('SEARCH', 'tl-search', 'search'); search.input.placeholder = 'Host, IP, MAC…'; search.input.setAttribute('aria-label', 'Search hosts and networks');
     const resetFilters = button('tl-reset-filters', 'Reset filters'); resetFilters.classList.add('tl-reset-filters');
-    controls.append(net.wrap, zone.wrap, vrf.wrap, vdom.wrap, search.wrap, resetFilters);
+    const applyFilters = button('tl-apply-filters', 'Apply filters', 'tl-button tl-apply-filters');
+    controls.append(net.wrap, zone.wrap, vrf.wrap, vdom.wrap, search.wrap, resetFilters, applyFilters);
     const activeFilters = el('div', 'tl-active-filters'); activeFilters.id = 'tl-active-filters'; activeFilters.setAttribute('aria-label', 'Active filters');
     const filterCount = el('span', 'tl-filter-count', 'No active filters'); filterCount.id = 'tl-filter-count'; filterCount.setAttribute('aria-live', 'polite');
     const canvasHead = el('div', 'tl-canvas-head');
@@ -85,7 +86,7 @@
     const workspace = el('div', 'tl-workspace'); workspace.append(canvasHead, graph, legend, caption, breadcrumbs, pager, hostResults);
     const content = el('div', 'tl-content'); content.append(workspace, inspector); content.classList.add('is-inspector-collapsed');
     state.root.replaceChildren(header, summary, tabs, controls, filterCount, activeFilters, networkOptions, zoneOptions, vrfOptions, vdomOptions, content, lower, sourceDrawer, note);
-    Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, vrfInput: vrf.input, vdomInput: vdom.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, vrfOptions, vdomOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, firstPage, lastPage, pagePosition, breadcrumbs, back, hostResults, hostResultsCount, hostResultsList, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel });
+    Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, vrfInput: vrf.input, vdomInput: vdom.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, vrfOptions, vdomOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, firstPage, lastPage, pagePosition, breadcrumbs, back, hostResults, hostResultsCount, hostResultsList, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel, applyFilters });
     Object.assign(state, { focusSelection, minimap, miniContent, miniViewport, rovingKey: '', focusCameraKey: '' });
     state.focusPath = true; state.focusToggle = focusPath;
     focusPath.addEventListener('click', () => { state.focusPath = !state.focusPath; render(); });
@@ -93,25 +94,12 @@
     exportButton.addEventListener('click', exportDataset);
     tabs.addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) chooseView(b.dataset.view); });
     tabs.addEventListener('keydown', (e) => { const active = e.target.closest('[data-view]'); if (!active) return; const buttons = [...tabs.querySelectorAll('[data-view]')]; let i = buttons.indexOf(active); if (e.key === 'ArrowRight') i = (i + 1) % buttons.length; else if (e.key === 'ArrowLeft') i = (i - 1 + buttons.length) % buttons.length; else if (e.key === 'Home') i = 0; else if (e.key === 'End') i = buttons.length - 1; else return; e.preventDefault(); chooseView(buttons[i].dataset.view); buttons[i].focus(); });
-    [net.input, zone.input].forEach((input) => input.addEventListener('change', () => {
-      const network = net.input.value.trim(); const selectedZone = zone.input.value.trim();
-      if (network === state.network && selectedZone === state.zone) return;
-      clearTimeout(state.timer); state.timer = 0; state.network = network; state.zone = selectedZone; state.offset = 0; renderFilters(); requestProjection();
-    }));
-    [vrf.input, vdom.input].forEach((input) => input.addEventListener('change', () => {
-      const vrfValue = vrf.input.value.trim(); const vdomValue = vdom.input.value.trim();
-      if (vrfValue === state.vrf && vdomValue === state.vdom) return;
-      state.vrf = vrfValue; state.vdom = vdomValue; state.offset = 0;
-      clearScopeSelection(); renderFilters(); requestProjection();
-    }));
-    search.input.addEventListener('input', () => {
-      state.search = search.input.value.trim(); state.offset = 0; renderFilters(); clearTimeout(state.timer); state.timer = 0;
-      if (state.controller) { state.seq += 1; state.controller.abort(); state.controller = null; }
-      if (state.csrf && state.dataset) {
-        state.busy = true; clearProjectionUI('Updating network map…'); state.inspector.replaceChildren(el('div', 'tl-empty', 'Updating selection details…')); setProjectionBusy(true); updateControls();
-        state.timer = setTimeout(() => { state.timer = 0; requestProjection(); }, 220);
-      }
+    const filterInputs = [net.input, zone.input, vrf.input, vdom.input, search.input];
+    filterInputs.forEach((input) => {
+      input.addEventListener('input', scheduleFilterApply);
+      input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); applyFilterInputs(); } });
     });
+    applyFilters.addEventListener('click', applyFilterInputs);
     resetFilters.addEventListener('click', resetAllFilters);
     activeFilters.addEventListener('click', (e) => { const b = e.target.closest('[data-filter-kind]'); if (b) clearFilter(b.dataset.filterKind); });
     pageSize.addEventListener('change', () => { const nextLimit = Number(pageSize.value); if (![25, 50, 100].includes(nextLimit)) return; state.limit = nextLimit; state.offset = 0; requestProjection(); });
@@ -146,19 +134,42 @@
   }
 
   function setSession(csrf) { const next = str(csrf); if (next !== state.csrf) { clearTimeout(state.timer); state.timer = 0; if (state.controller) { state.seq += 1; state.controller.abort(); state.controller = null; } state.busy = false; state.focusHostId = ''; state.focusNotice = ''; setProjectionBusy(false); } state.csrf = next; if (!state.csrf && state.stage) clearProjectionUI('Waiting for the local session…'); updateControls(); }
-  function updateControls() { if (state.load) state.load.disabled = !state.csrf || state.busy; if (state.traceButton) state.traceButton.disabled = !state.csrf || state.busy || !state.dataset; updateViewportControls(); }
+  function updateControls() { if (state.applyFilters) state.applyFilters.disabled = !hasPendingFilters() || !state.csrf || !state.dataset; if (state.load) state.load.disabled = !state.csrf || state.busy; if (state.traceButton) state.traceButton.disabled = !state.csrf || state.busy || !state.dataset; updateViewportControls(); }
   function setProjectionBusy(busy) {
     if (!state.inspector) return;
     state.inspector.setAttribute('aria-busy', String(Boolean(busy)));
     state.inspector.inert = Boolean(busy);
     updateViewportControls();
   }
+  function filterDraft() { return { network: state.net.value.trim(), zone: state.zoneInput.value.trim(), vrf: state.vrfInput.value.trim(), vdom: state.vdomInput.value.trim(), search: state.searchInput.value.trim() }; }
+  function hasPendingFilters() { const draft = filterDraft(); return draft.network !== state.network || draft.zone !== state.zone || draft.vrf !== state.vrf || draft.vdom !== state.vdom || draft.search !== state.search; }
+  function scheduleFilterApply() {
+    clearTimeout(state.timer); state.timer = 0;
+    const pending = hasPendingFilters();
+    const draft = pending ? filterDraft() : null;
+    if (pending) state.filterCount.textContent = `Filter edits pending · ${Object.values(draft).filter(Boolean).length} active filters`; else renderFilters();
+    updateControls();
+    if (pending && state.csrf && state.dataset) state.timer = setTimeout(applyFilterInputs, 220);
+  }
+  function applyFilterInputs() {
+    clearTimeout(state.timer); state.timer = 0;
+    if (!state.csrf || !state.dataset) { updateControls(); return; }
+    if (!hasPendingFilters()) { renderFilters(); updateControls(); return; }
+    const draft = filterDraft();
+    Object.assign(state, draft); state.offset = 0;
+    clearScopeSelection();
+    renderFilters(); updateControls();
+    if (state.csrf && state.dataset) requestProjection();
+  }
   function renderFilters() {
     if (!state.activeFilters) return;
     const filters = [['network', state.network], ['zone', state.zone], ['vrf', state.vrf], ['vdom', state.vdom], ['search', state.search]].filter(([, value]) => value);
-    state.filterCount.textContent = filters.length ? `${filters.length} active filter${filters.length === 1 ? '' : 's'}` : 'No active filters';
-    const chips = new Map([...state.activeFilters.querySelectorAll('[data-filter-kind]')].map((chip) => [chip.dataset.filterKind, chip]));
+    const pending = hasPendingFilters();
+    const draft = pending ? filterDraft() : null;
+    const draftCount = pending ? Object.values(draft).filter(Boolean).length : filters.length;
+    state.filterCount.textContent = pending ? `Filter edits pending · ${draftCount} active filters` : (filters.length ? `${filters.length} active filter${filters.length === 1 ? '' : 's'}` : 'No active filters');
     const activeKinds = new Set();
+    const chips = new Map([...state.activeFilters.querySelectorAll('[data-filter-kind]')].map((chip) => [chip.dataset.filterKind, chip]));
     filters.forEach(([kind, value]) => {
       activeKinds.add(kind);
       let chip = chips.get(kind);
@@ -215,6 +226,7 @@
   }
   function query() { return { dataset: state.dataset, view: state.view, network_id: state.network, zone: state.zone, vrf: state.vrf, vdom: state.vdom, search: state.search, offset: state.offset, limit: state.limit, focus_host_id: state.focusHostId, source_host_id: state.traceRequested ? state.source : '', destination_host_id: state.traceRequested ? state.destination : '' }; }
   async function requestProjection(resetPath = true) {
+    if (hasPendingFilters()) { applyFilterInputs(); return; }
     if (!state.csrf || !state.dataset) return;
     clearTimeout(state.timer); state.timer = 0;
     if (resetPath) { state.traceRequested = false; state.focusPath = false; }

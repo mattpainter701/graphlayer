@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apply network, zone, VRF, VDOM and search edits together after typing, or immediately with Enter and Apply filters. Distinguish pending edits from the applied map scope, and browse all returned device interfaces through bounded port pages with keyboard focus and link/history navigation to the owning port.
 - Navigate visible map items with one graph tab stop, arrow-key focus, first/last shortcuts and keyboard inspection; center focused items for closer reading, recenter from the viewport overview, and fit back to the full projection without rerunning analysis. Dense 100-host pages remain bounded; use focus and zoom for individual labels on mobile.
 - Navigate matching hosts from every topology view with bounded result pages, First/Last controls, host focus and Back restoration. Show scoped network/zone counts and inventory-only search, and follow snapshot-bound inspector history through ports, links and path evidence without rerunning analysis. Keep the fullscreen canvas bounded when restoring expanded ports and the footer below the canvas and inspector on desktop, tablet and mobile layouts.
 - Filter synthetic host, network and zone maps by declared VRF/VDOM context; fan out host pages by attachment and inspect connected ports, ordered L2 hops and forward/return path decisions with owned source evidence. Keep traces outside the selected context unavailable and retain legacy datasets without assigning invented scope.

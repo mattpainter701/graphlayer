@@ -34,8 +34,11 @@ empty result. Clearing one chip preserves the remaining constraints. Legacy
 datasets without context metadata still load; selecting a named context does
 not assign those records to an invented default.
 Active filters appear as removable chips, so you can clear one constraint
-without losing the others. An empty result offers a clear-filter action. Search
-updates are debounced, and an earlier response cannot replace the latest query.
+without losing the others. An empty result offers a clear-filter action. All
+five filter fields update together after a short typing pause. Press Enter or
+choose **Apply filters** to commit edits immediately. Pending edits are labeled;
+chips continue to describe the applied scope until the edits are committed.
+An earlier response cannot replace the latest query.
 The map and inspector show an updating state while a new Rust projection loads.
 
 Network and zone suggestions include Rust-calculated matching-host counts under
@@ -136,8 +139,12 @@ an observed port state or active session.
 
 The device inspector includes a port finder over its returned interface list.
 Port summaries show the declared connection and selected forward/return use
-counts. A selected port remains available while the finder is narrowed, and a
-clear action recovers from an empty match. Decision stages and their source
+counts. Previous and Next move through bounded pages of twelve returned
+interfaces, with a range and total count. Filtering resets the page, and a
+link endpoint or history jump opens the page containing the requested port.
+Keyboard focus stays on the pager when changing pages. A selected port remains
+available while the finder is narrowed, and a clear action recovers from an
+empty match. Decision stages and their source
 references expand separately from the concise route and tuple summary.
 
 Inspector breadcrumbs and Back/Forward controls follow a device, its port, a
