@@ -35,42 +35,6 @@ async function waitForProjection(page, seen, action, predicate) {
   return seen.projections.at(-1);
 }
 
-async function loadBranchSampleWithUnmodeledLinkEndpoint(page) {
-  const missingInterface = 'unreported-synthetic-port';
-  let sample;
-  let exploration;
-  let analyses = 0;
-  await page.route('**/api/sample/network-exploration', async (route) => {
-    const response = await route.fetch();
-    sample = await response.json();
-    sample.links.push({
-      a: { node_id: 'edge', interface: missingInterface },
-      b: { node_id: 'north', interface: 'left' },
-    });
-    await route.fulfill({ response, json: sample });
-  });
-  await page.route('**/api/network-explorations', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue();
-    analyses += 1;
-    const response = await route.fetch();
-    expect(response.ok()).toBe(true);
-    exploration = (await response.json()).exploration;
-    await route.fulfill({ response });
-  });
-  await page.goto('/#network-path');
-  await page.locator('#network-load-exploration-sample').click();
-  await expect(page.locator('#network-status')).toContainText('4 sample firewall snapshots imported');
-  await expect(page.locator('.network-link-row')).toHaveCount(sample.links.length);
-  await page.locator('#network-explore').click();
-  await expect(page.locator('#exploration-result')).toBeVisible();
-  await expect.poll(() => analyses).toBe(1);
-  expect(exploration.request.links).toContainEqual({
-    a: { node_id: 'edge', interface: missingInterface },
-    b: { node_id: 'north', interface: 'left' },
-  });
-  return { exploration, missingInterface };
-}
-
 async function loadBranchSample(page) {
   let exploration;
   let analyses = 0;
@@ -89,6 +53,29 @@ async function loadBranchSample(page) {
   await expect(page.locator('#exploration-result')).toBeVisible();
   await expect.poll(() => analyses).toBe(1);
   return exploration;
+}
+
+async function loadBranchSampleWithOmittedProjectedPort(page, interfaceName) {
+  let capturedProjection;
+  await page.route('**/api/topology-view', async (route) => {
+    const request = route.request().postDataJSON();
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    const body = await response.json();
+    if (request.exploration_id) {
+      const edgeNode = body.topology.nodes.find((node) => node.node_id === 'edge');
+      expect(edgeNode).toBeTruthy();
+      const originalInterface = edgeNode.interfaces.find((iface) => (iface.name || iface.physical) === interfaceName);
+      expect(originalInterface).toBeTruthy();
+      const originalTopology = structuredClone(body.topology);
+      edgeNode.interfaces = edgeNode.interfaces.filter((iface) => (iface.name || iface.physical) !== interfaceName);
+      capturedProjection = { request, originalTopology, returnedTopology: structuredClone(body.topology) };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  const exploration = await loadBranchSample(page);
+  await expect.poll(() => capturedProjection).toBeTruthy();
+  return { exploration, capturedProjection };
 }
 
 async function snapshotForNode(page, nodeId) {
@@ -221,34 +208,44 @@ test('following a filtered link endpoint reveals and focuses the real returned p
   expect(viewport).toEqual({ width: 375, document: 375 });
 });
 
-test('a declared link to an unprojected interface remains navigable without inventing port facts', async ({ page }) => {
-  const { exploration, missingInterface } = await loadBranchSampleWithUnmodeledLinkEndpoint(page);
+test('partial topology projection omission stays safe while the valid saved port remains evidence-owned', async ({ page }) => {
+  const interfaceName = 'ethernet1/2';
+  const { exploration, capturedProjection } = await loadBranchSampleWithOmittedProjectedPort(page, interfaceName);
   const edge = await snapshotForNode(page, 'edge');
-  const projectedNames = edge.path.interfaces.map((iface) => iface.name || iface.physical);
-  expect(projectedNames).not.toContain(missingInterface);
-  expect(exploration.request.links.some((link) => link.a.node_id === 'edge' && link.a.interface === missingInterface)).toBe(true);
+  const savedInterface = edge.path.interfaces.find((iface) => (iface.name || iface.physical) === interfaceName);
+  expect(savedInterface).toBeTruthy();
+  expect(savedInterface.evidence_refs.length).toBeGreaterThan(0);
+  expect(capturedProjection.request.exploration_id).toBe(exploration.id);
+  const originalEdge = capturedProjection.originalTopology.nodes.find((node) => node.node_id === 'edge');
+  const returnedEdge = capturedProjection.returnedTopology.nodes.find((node) => node.node_id === 'edge');
+  expect(originalEdge.interfaces.some((iface) => (iface.name || iface.physical) === interfaceName)).toBe(true);
+  expect(returnedEdge.interfaces.some((iface) => (iface.name || iface.physical) === interfaceName)).toBe(false);
+  expect(returnedEdge).toEqual({
+    ...originalEdge,
+    interfaces: originalEdge.interfaces.filter((iface) => (iface.name || iface.physical) !== interfaceName),
+  });
+  expect(capturedProjection.returnedTopology.links).toEqual(capturedProjection.originalTopology.links);
+  expect(exploration.request.links.some((link) => (link.a.node_id === 'edge' && link.a.interface === interfaceName)
+    || (link.b.node_id === 'edge' && link.b.interface === interfaceName))).toBe(true);
 
-  await page.locator('#topology-device-list [data-node-id="north"]').click();
-  const linkRow = page.locator('#topology-inspector .topology-neighbor-row')
-    .filter({ hasText: missingInterface });
-  await expect(linkRow).toBeVisible();
-  await linkRow.locator('.topology-neighbor-link[data-link-index]').click();
+  await page.locator('#topology-device-list [data-node-id="edge"]').click();
+  await page.locator('#topology-inspector .topology-neighbor-link[data-link-index]').first().click();
   const linkInspector = page.locator('#topology-inspector .topology-inspector-content[data-inspector-kind="link"]');
-  await expect(linkInspector).toContainText(missingInterface);
-  await linkInspector.getByRole('button', { name: `Inspect interface ${missingInterface} on edge`, exact: true }).click();
+  await expect(linkInspector).toContainText(interfaceName);
+  await linkInspector.getByRole('button', { name: `Inspect interface ${interfaceName} on edge`, exact: true }).click();
 
   const unavailable = page.locator('#topology-inspector .topology-port-unavailable[role="status"]');
   await expect(unavailable).toBeVisible();
-  await expect(unavailable).toContainText(`No matching projected interface facts were returned for declared link endpoint ${missingInterface} on edge; port configuration and path details are unavailable.`);
+  await expect(unavailable).toContainText(`No matching projected interface facts were returned for declared link endpoint ${interfaceName} on edge; port configuration and path details are unavailable.`);
   await expect(unavailable).toBeFocused();
-  await expect(page.locator(`#topology-inspector .topology-port-detail[data-port-detail="${missingInterface}"]`)).toHaveCount(0);
+  await expect(page.locator(`#topology-inspector .topology-port-detail[data-port-detail="${interfaceName}"]`)).toHaveCount(0);
 
   const history = page.locator('#topology-inspector .topology-inspector-history');
   await history.locator('[data-history="back"]').click();
   await expect(linkInspector).toBeVisible();
-  await expect(linkInspector).toContainText(missingInterface);
+  await expect(linkInspector).toContainText(interfaceName);
   await history.locator('[data-history="forward"]').click();
   await expect(unavailable).toBeVisible();
   await expect(unavailable).toBeFocused();
-  await expect(page.locator(`#topology-inspector .topology-port-detail[data-port-detail="${missingInterface}"]`)).toHaveCount(0);
+  await expect(page.locator(`#topology-inspector .topology-port-detail[data-port-detail="${interfaceName}"]`)).toHaveCount(0);
 });
