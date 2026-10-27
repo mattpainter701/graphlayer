@@ -144,6 +144,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"/topology.css": "text/css; charset=utf-8",
 		"/topology-layers.css": "text/css; charset=utf-8",
 		"/topology-layers.js": "text/javascript; charset=utf-8",
+		"/graph-export.js": "text/javascript; charset=utf-8",
 	}
 	contentType, allowed := contentTypes[path]
 	if !allowed {

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Center requested hosts and navigate dense maps from overview nodes. Step through configured forward/return hops with owned port shortcuts, export the displayed graph as a standalone SVG, and browse responsive inspectors with clearer focus, contrast and compact-screen scrolling.
 - Keep filter edits together when removing a scope chip and return keyboard focus to its field. Focus the owning port after link or history drilldowns, and explain when a declared endpoint has no returned interface facts.
 - Apply network, zone, VRF, VDOM and search edits together after typing, or immediately with Enter and Apply filters. Distinguish pending edits from the applied map scope, and browse all returned device interfaces through bounded port pages with keyboard focus and link/history navigation to the owning port.
 - Navigate visible map items with one graph tab stop, arrow-key focus, first/last shortcuts and keyboard inspection; center focused items for closer reading, recenter from the viewport overview, and fit back to the full projection without rerunning analysis. Dense 100-host pages remain bounded; use focus and zoom for individual labels on mobile.

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, inspectorCollapsed: true, fullscreen: false, fullscreenFocus: null, savedBodyOverflow: null, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {}, zoomFrame: 0, nodes: [], nodeIndex: new Map(), projectedIndex: new Map(), snapshotIndex: new Map(), renderedNodes: new Map(), portPanelSequence: 0, history: [], historyIndex: -1, location: null, portQuery: '', disclosures: new Map(), expandedPorts: new Map(), activePorts: new Map(), portPages: new Map() };
+  const state = { event: null, identity: '', selected: '', selectedLink: -1, loadingView: null, root: null, svg: null, list: null, stage: null, inspector: null, inspectorCollapsed: true, fullscreen: false, fullscreenFocus: null, savedBodyOverflow: null, zoomOutput: null, scale: 1, x: 0, y: 0, base: null, pointers: new Map(), dragging: false, moved: false, filters: {}, zoomFrame: 0, nodes: [], nodeIndex: new Map(), projectedIndex: new Map(), snapshotIndex: new Map(), renderedNodes: new Map(), portPanelSequence: 0, history: [], historyIndex: -1, location: null, portQuery: '', disclosures: new Map(), expandedPorts: new Map(), activePorts: new Map(), portPages: new Map(), pathDirection: 'forward', pathHopIndex: 0, pathNavigatorKey: '' };
   const $ = (id) => document.getElementById(id);
   const node = (tag, className, text) => { const item = document.createElement(tag); if (className) item.className = className; if (text !== undefined) item.textContent = String(text); return item; };
   const safeText = (value, fallback = 'Unavailable') => value === undefined || value === null || value === '' ? fallback : String(value);
@@ -22,15 +22,25 @@
     const searchWrap = node('div', 'topology-search-wrap'); searchWrap.append(searchLabel, search);
     const toolButton = (id, text, label) => { const button = node('button', 'topology-tool-button', text); button.id = id; button.type = 'button'; button.setAttribute('aria-label', label); return button; };
     const fit = toolButton('topology-fit', 'Fit', 'Fit topology to view'); const zoomOut = toolButton('topology-zoom-out', '−', 'Zoom out'); const zoom = node('output', 'topology-zoom', '100%'); zoom.id = 'topology-zoom'; zoom.setAttribute('aria-live', 'polite'); const zoomIn = toolButton('topology-zoom-in', '+', 'Zoom in'); const focus = toolButton('topology-focus', 'Focus selected', 'Focus the selected device');
+    const exportView = toolButton('topology-export-view', 'Export SVG', 'Export topology SVG'); exportView.disabled = true; exportView.addEventListener('click', () => { const exporter = window.GraphLayerGraphExport; if (!state.base || !exporter || typeof exporter.download !== 'function') return; try { exporter.download(state.svg, { filename: 'graphlayer-network-topology.svg', title: 'GraphLayer network topology', description: pathExportDescription() }); } catch (_) { state.caption.textContent = 'Topology SVG export failed. The current view is unchanged.'; } });
     const layer = (id, label, checked) => { const wrap = node('label', 'topology-layer'); const input = node('input'); input.type = 'checkbox'; input.id = id; input.checked = checked; wrap.append(input, document.createTextNode(label)); return { wrap, input }; };
     const forward = layer('topology-show-forward', 'Forward', true); const returned = layer('topology-show-return', 'Return', true);
     const inspectorToggle = toolButton('topology-inspector-toggle', 'Details', 'Show selected device details'); inspectorToggle.setAttribute('aria-controls','topology-inspector'); inspectorToggle.setAttribute('aria-expanded','false');
     const fullscreenToggle = toolButton('topology-fullscreen','Full screen','Expand topology canvas'); fullscreenToggle.setAttribute('aria-pressed','false');
-    const controls = node('div', 'topology-toolbar-actions'); controls.append(fit, zoomOut, zoom, zoomIn, focus, inspectorToggle, fullscreenToggle, forward.wrap, returned.wrap);
+    const controls = node('div', 'topology-toolbar-actions'); controls.append(fit, zoomOut, zoom, zoomIn, focus, exportView, inspectorToggle, fullscreenToggle, forward.wrap, returned.wrap);
     const filters = node('div', 'topology-filter-bar'); filters.id = 'topology-filters'; filters.setAttribute('aria-label', 'Topology filters');
     const resultControls = node('div','topology-result-controls'); resultControls.id = 'topology-result-controls'; resultControls.hidden = true;
     const resultSelector = (id,label,sourceId) => { const wrap = node('label','topology-result-select-label',label); const select = node('select','topology-result-select'); select.id = id; select.setAttribute('aria-label',label); wrap.append(select); select.addEventListener('change',() => { const source = $(sourceId); if (!source || source.value === select.value) return; source.value = select.value; source.dispatchEvent(new Event('change',{bubbles:true})); }); return {wrap,select}; };
-    const branchControl = resultSelector('topology-branch-select','Forward branch','exploration-branch'); const returnControl = resultSelector('topology-return-select','Return candidate','exploration-return'); const resultStatus = node('span','topology-result-status'); resultStatus.id = 'topology-result-status'; resultStatus.setAttribute('aria-live','polite'); resultControls.append(branchControl.wrap,returnControl.wrap,resultStatus);
+    const branchControl = resultSelector('topology-branch-select','Forward branch','exploration-branch'); const returnControl = resultSelector('topology-return-select','Return candidate','exploration-return'); const resultStatus = node('span','topology-result-status'); resultStatus.id = 'topology-result-status'; resultStatus.setAttribute('aria-live','polite');
+    const pathNavigator = node('section','topology-path-navigator'); pathNavigator.id = 'topology-path-navigator'; pathNavigator.setAttribute('aria-label','Selected path hop navigator');
+    const directionLabel = node('label','topology-path-direction-label','Path direction'); const directionSelect = node('select','topology-path-direction'); directionSelect.id = 'topology-path-direction'; directionSelect.setAttribute('aria-label','Path direction'); [['forward','Forward'],['return','Return']].forEach(([value,label]) => { const option = node('option','',label); option.value = value; directionSelect.append(option); }); directionLabel.append(directionSelect);
+    const previousHop = node('button','topology-path-previous','Previous hop'); previousHop.type = 'button'; previousHop.id = 'topology-path-previous';
+    const hopStatus = node('span','topology-path-status','No selected path hops'); hopStatus.id = 'topology-path-status'; hopStatus.setAttribute('role','status'); hopStatus.setAttribute('aria-live','polite');
+    const nextHop = node('button','topology-path-next','Next hop'); nextHop.type = 'button'; nextHop.id = 'topology-path-next';
+    const hopButtons = node('div','topology-path-hop-buttons'); hopButtons.id = 'topology-path-hop-buttons'; hopButtons.setAttribute('role','group'); hopButtons.setAttribute('aria-label','Selected path hops');
+    const portShortcuts = node('div','topology-path-port-shortcuts'); portShortcuts.id = 'topology-path-port-shortcuts'; pathNavigator.append(directionLabel,previousHop,hopStatus,nextHop,hopButtons,portShortcuts); resultControls.append(branchControl.wrap,returnControl.wrap,resultStatus);
+    directionSelect.addEventListener('change', () => { state.pathDirection = directionSelect.value; state.pathHopIndex = 0; state.pathPortShortcuts.replaceChildren(); renderPathNavigator(); });
+    previousHop.addEventListener('click', () => setPathHop(state.pathHopIndex - 1, true)); nextHop.addEventListener('click', () => setPathHop(state.pathHopIndex + 1, true));
     const traceBadge = node('div','topology-trace-badge'); traceBadge.id = 'topology-trace-badge'; traceBadge.hidden = true; traceBadge.setAttribute('role','status');
     toolbar.append(searchWrap, controls);
     const deviceList = node('div', 'topology-device-list'); deviceList.id = 'topology-device-list'; deviceList.setAttribute('role', 'group'); deviceList.setAttribute('aria-label', 'Device search results');
@@ -46,9 +56,9 @@
     const help = node('p', 'topology-workbench-note', 'Declared links come from the supplied topology. Forward and return overlays show configured route analysis; live session observations are unavailable.');
     const trafficStatus = node('span', 'topology-traffic-status', 'Traffic observations unavailable'); trafficStatus.dataset.available = 'false'; trafficStatus.setAttribute('aria-live', 'polite'); help.append(document.createTextNode(' '), trafficStatus);
     state.list.replaceChildren();
-    state.root.append(overview, toolbar, resultControls, traceBadge, filters, deviceList, body, help);
+    state.root.append(overview, toolbar, resultControls, pathNavigator, traceBadge, filters, deviceList, body, help);
     state.overview = overview; state.minimap = minimap; state.miniSvg = miniSvg;
-    state.deviceList = deviceList; state.stage = stage; state.inspector = inspector; state.inspectorToggle = inspectorToggle; state.fullscreenToggle = fullscreenToggle; state.body = body; state.zoomOutput = zoom; state.search = search; state.caption = caption; state.forwardToggle = forward.input; state.returnToggle = returned.input; state.toolbar = toolbar; state.filtersHost = filters; state.resultControls = resultControls; state.branchSelect = branchControl.select; state.returnSelect = returnControl.select; state.resultStatus = resultStatus; state.traceBadge = traceBadge;
+    state.deviceList = deviceList; state.stage = stage; state.inspector = inspector; state.inspectorToggle = inspectorToggle; state.fullscreenToggle = fullscreenToggle; state.body = body; state.zoomOutput = zoom; state.search = search; state.caption = caption; state.forwardToggle = forward.input; state.returnToggle = returned.input; state.toolbar = toolbar; state.filtersHost = filters; state.resultControls = resultControls; state.branchSelect = branchControl.select; state.returnSelect = returnControl.select; state.resultStatus = resultStatus; state.traceBadge = traceBadge; state.pathNavigator = pathNavigator; state.pathDirectionSelect = directionSelect; state.pathHopStatus = hopStatus; state.pathHopButtons = hopButtons; state.pathPrevious = previousHop; state.pathNext = nextHop; state.pathPortShortcuts = portShortcuts; state.exportView = exportView;
     inspectorToggle.addEventListener('click', () => setInspectorCollapsed(!state.inspectorCollapsed));
     fullscreenToggle.addEventListener('click', () => setFullscreen(!state.fullscreen));
     const applyZoom = () => { if (state.zoomFrame) return; state.zoomFrame = requestAnimationFrame(() => { state.zoomFrame = 0; if (!state.base) return; const width = state.base.width / state.scale; const height = state.base.height / state.scale; state.svg.setAttribute('viewBox', `${state.x} ${state.y} ${width} ${height}`); state.svg.classList.toggle('topology-compact-labels', state.scale < .65); state.zoomOutput.value = `${Math.round(state.scale * 100)}%`; state.zoomOutput.textContent = `${Math.round(state.scale * 100)}%`; if (state.miniViewport) { state.miniViewport.setAttribute('x',state.x); state.miniViewport.setAttribute('y',state.y); state.miniViewport.setAttribute('width',width); state.miniViewport.setAttribute('height',height); } }); };
@@ -84,6 +94,57 @@
   function getReturn() { if (state.event && state.event.mode === 'trace') return getTraceResult() && getTraceResult().return || null; const branch = getBranch(); return branch && branch.returns && branch.returns[state.event.returnIndex] || null; }
   function getTraceResult() { return state.event && state.event.investigation && state.event.investigation.result || null; }
   function getHops(direction) { if (state.event && state.event.mode === 'trace') { const side = getTraceResult() && getTraceResult()[direction]; return side && side.hops || []; } if (direction === 'forward') return getBranch() && getBranch().forward && getBranch().forward.hops || []; return getReturn() && getReturn().direction && getReturn().direction.hops || []; }
+  function pathExportDescription() {
+    const event = state.event || {}; const forward = event.mode === 'trace' ? getTraceResult() && getTraceResult().forward : getBranch() && getBranch().forward; const returned = getReturn();
+    const summary = event.mode === 'draft' ? 'Declared topology draft; analysis has not run.' : event.mode === 'trace'
+      ? `Configured trace; forward ${forward && forward.disposition || 'status unavailable'}, return ${returned && returned.disposition || returned && returned.direction && returned.direction.disposition || 'status unavailable'}.`
+      : `Configured branch ${Number(event.branchIndex || 0) + 1}; forward ${forward && forward.disposition || 'status unavailable'}, return ${returned && (returned.disposition || returned.direction && returned.direction.disposition) || 'status unavailable'}.`;
+    return `${summary} Model-derived configuration only; not live traffic.`;
+  }
+  function pathNavigatorKey() {
+    const snapshots = (state.event && state.event.snapshots || []).map((item) => `${item.node_id}:${item.snapshot && item.snapshot.id || ''}`).join('|');
+    return `${state.identity}:${(state.event && state.event.branchIndex) ?? ''}:${(state.event && state.event.returnIndex) ?? ''}:${snapshots}`;
+  }
+  function setPathHop(index, activate) {
+    const hops = getHops(state.pathDirection); if (!hops.length) return;
+    const active = document.activeElement; const focusControl = active === state.pathPrevious ? state.pathPrevious : active === state.pathNext ? state.pathNext : active && active.classList.contains('topology-path-hop-button') ? 'hop' : null;
+    state.pathHopIndex = Math.max(0, Math.min(hops.length - 1, index)); renderPathNavigator();
+    state.pathPortShortcuts.replaceChildren(); state.pathPortShortcuts.removeAttribute('aria-label');
+    const hop = hops[state.pathHopIndex] || {}; const nodeId = hop.node_id;
+    const graphNode = nodeId && state.renderedNodes.get(nodeId);
+    if (!activate || !nodeId || !state.nodeIndex.has(nodeId) || graphNode && graphNode.classList.contains('topology-filtered')) {
+      if (focusControl === state.pathPrevious) state.pathPrevious.focus();
+      else if (focusControl === state.pathNext) state.pathNext.focus();
+      else if (focusControl === 'hop') state.pathHopButtons.querySelector(`[data-hop-index="${state.pathHopIndex}"]:not(:disabled)`)?.focus();
+      if (graphNode && graphNode.classList.contains('topology-filtered')) state.pathHopStatus.textContent = `${state.pathDirection === 'forward' ? 'Forward' : 'Return'} hop ${state.pathHopIndex + 1} of ${hops.length} · ${nodeId} is unavailable under the active filters`;
+      return;
+    }
+    selectNode(nodeId, true, true);
+    if (focusControl === state.pathPrevious || focusControl === state.pathNext) {
+      const same = focusControl; const other = same === state.pathPrevious ? state.pathNext : state.pathPrevious;
+      if (!same.disabled) same.focus(); else if (!other.disabled) other.focus(); else { state.pathHopStatus.tabIndex = -1; state.pathHopStatus.focus(); }
+    }
+    const path = hop.path || {}; const ports = [[path.ingress_interface || path.ingress, 'Ingress'], [path.egress_interface, 'Egress']].filter(([name], index, entries) => name && entries.findIndex(([other]) => other === name) === index);
+    state.pathPortShortcuts.replaceChildren();
+    ports.forEach(([name, label]) => { const button = node('button','topology-path-port-button',`${label} · ${name}`); button.type = 'button'; button.dataset.portName = name; button.addEventListener('click',() => jumpToPort(nodeId,name)); state.pathPortShortcuts.append(button); });
+    if (ports.length) state.pathPortShortcuts.setAttribute('aria-label',`Returned ingress and egress ports on ${nodeId}`);
+    else state.pathPortShortcuts.removeAttribute('aria-label');
+  }
+  function renderPathNavigator() {
+    if (!state.pathNavigator) return;
+    const key = pathNavigatorKey(); if (key !== state.pathNavigatorKey) { state.pathNavigatorKey = key; state.pathDirection = 'forward'; state.pathHopIndex = 0; state.pathPortShortcuts.replaceChildren(); state.pathPortShortcuts.removeAttribute('aria-label'); }
+    const hops = getHops(state.pathDirection); state.pathDirectionSelect.value = state.pathDirection;
+    state.pathHopIndex = hops.length ? Math.max(0, Math.min(hops.length - 1, state.pathHopIndex)) : 0;
+    state.pathNavigator.hidden = !(state.event && (state.event.mode === 'result' || state.event.mode === 'trace'));
+    const hasAnyHops = getHops('forward').length > 0 || getHops('return').length > 0;
+    state.pathDirectionSelect.disabled = !hasAnyHops; state.pathPrevious.disabled = !hops.length || state.pathHopIndex <= 0; state.pathNext.disabled = !hops.length || state.pathHopIndex >= hops.length - 1;
+    state.pathHopStatus.textContent = hops.length ? `${state.pathDirection === 'forward' ? 'Forward' : 'Return'} hop ${state.pathHopIndex + 1} of ${hops.length}` : `No selected ${state.pathDirection} path hops`;
+    state.pathHopButtons.replaceChildren();
+    hops.forEach((hop,index) => { const nodeId = hop && hop.node_id; const exists = Boolean(nodeId && state.nodeIndex.has(nodeId)); const filtered = exists && state.renderedNodes.get(nodeId)?.classList.contains('topology-filtered'); const button = node('button','topology-path-hop-button',`${index + 1} · ${nodeId || 'Unavailable'}`); button.type = 'button'; button.dataset.hopIndex = String(index); button.setAttribute('aria-label', exists && !filtered ? `${state.pathDirection === 'forward' ? 'Forward' : 'Return'} hop ${index + 1}: ${nodeId}` : `${state.pathDirection === 'forward' ? 'Forward' : 'Return'} hop ${index + 1}: ${nodeId || 'node ID unavailable'} is unavailable ${filtered ? 'under the active filters' : 'in the current topology projection'}`); button.setAttribute('aria-current',index === state.pathHopIndex ? 'step' : 'false'); button.disabled = !exists || filtered; if (!exists || filtered) button.title = `${nodeId || 'Node ID unavailable'} ${filtered ? 'is hidden by the active filters' : 'is not present in the current topology projection'}`; button.addEventListener('click',() => setPathHop(index,true)); state.pathHopButtons.append(button); });
+    const current = hops[state.pathHopIndex]; const nodeId = current && current.node_id;
+    if (!nodeId || !state.nodeIndex.has(nodeId)) state.pathHopStatus.textContent += ` · ${nodeId || 'Node ID unavailable'} is unavailable in the current topology projection`;
+    else if (state.renderedNodes.get(nodeId)?.classList.contains('topology-filtered')) { state.pathHopStatus.textContent += ` · ${nodeId} is unavailable under the active filters`; state.pathPortShortcuts.replaceChildren(); state.pathPortShortcuts.removeAttribute('aria-label'); }
+  }
   function getSnapshot(id) { return state.snapshotIndex.get(id) || null; }
   function getTopology() { const e = state.event || {}; return e.topology || e.projection || {}; }
   function renderResultControls(detail) {
@@ -116,6 +177,7 @@
       const derived = candidate ? `Return ${candidate.disposition || candidate.direction && candidate.direction.disposition || 'status unavailable'}${candidate.asymmetric ? ' · asymmetric' : ''}${candidate.session_status ? ` · session ${candidate.session_status}` : ''}` : branch ? 'Return candidate unavailable' : '';
       state.resultStatus.textContent = status && status.textContent.trim() ? status.textContent.trim() : derived;
     } else state.resultStatus.textContent = '';
+    renderPathNavigator();
   }
   function getProjectedNode(requestNode) { return state.projectedIndex.get(requestNode.node_id) || {}; }
   function projectedValue(item, key) { const projected = getProjectedNode(item); const snapshot = getSnapshot(item.node_id) || {}; const presentation = projected.presentation || {}; const inventory = projected.inventory || {}; return projected[key] ?? presentation[key] ?? inventory[key] ?? snapshot[key] ?? null; }
@@ -153,6 +215,7 @@
   }
   function normalizedRole(value) { const text = String(value || '').toLowerCase(); return ['firewall','router','switch','host','server','cloud','network'].includes(text) ? text : 'device'; }
   function renderGraph() {
+    if (state.exportView) state.exportView.disabled = true;
     const d3 = window.d3;
     if (!d3 || typeof d3.forceSimulation !== 'function' || typeof d3.forceX !== 'function' || typeof d3.forceY !== 'function' || typeof d3.forceCollide !== 'function') { showTopologyStatus('error','The topology layout engine did not load. Reload this page to restore the graph view.'); return; }
     const request = getRequest(); const nodes = getNodes(); const topology = getTopology();
@@ -216,7 +279,7 @@
       if (topology.traffic && topology.traffic.available === true) { const trafficValue = projected.traffic || topology.traffic.by_node && topology.traffic.by_node[item.node_id]; if (trafficValue) { const traffic = svgElement('text', { class: 'topology-node-traffic', x: pos.x + cardW - 12, y: pos.y + 82, 'text-anchor': 'end' }, group); traffic.textContent = String(trafficValue.label || trafficValue.value || ''); } }
     });
     state.renderedNodes = new Map(Array.from(state.svg.querySelectorAll('.topology-node'), (item) => [item.dataset.nodeId,item]));
-    renderMinimap(positions, links, cardW, cardH); renderFilters(); applyGraphFilters(); state.applyZoom(); return true;
+    renderMinimap(positions, links, cardW, cardH); renderFilters(); applyGraphFilters(); state.applyZoom(); if (state.exportView) state.exportView.disabled = !state.svg.querySelector('.topology-node'); return true;
   }
   function renderMinimap(positions, links, cardW, cardH) {
     if (!state.miniSvg || !state.base) return; state.miniSvg.replaceChildren(); state.miniSvg.setAttribute('viewBox', `0 0 ${state.base.width} ${state.base.height}`);
@@ -245,6 +308,7 @@
     state.svg.querySelectorAll('.topology-link').forEach((item) => { const index = Number(item.dataset.linkIndex); const link = (getTopology().links || getRequest().links || [])[index]; const filtered = Boolean(link && (!visible.has(link.a.node_id) || !visible.has(link.b.node_id))); item.classList.toggle('topology-filtered', filtered); item.setAttribute('aria-hidden',String(filtered)); item.setAttribute('tabindex',filtered ? '-1' : '0'); });
     const links = getTopology().links || getRequest().links || []; const facts = [['Devices',nodes.length],['Visible',visible.size],['Declared links',links.length],['View',state.event && state.event.mode === 'draft' ? 'Draft' : 'Configured paths']]; state.overview.replaceChildren(...facts.map(([label,value]) => { const stat = node('div','topology-overview-stat'); stat.append(node('span','',label),node('strong','',value)); return stat; })); renderActiveFilters();
     let empty = $('topology-empty-state'); if (!empty) { empty = node('div','topology-empty-state'); empty.id = 'topology-empty-state'; empty.setAttribute('role','status'); empty.append(node('strong','','No devices match these facets'),node('p','','Clear the current facets to return to the declared topology.')); const reset = node('button','topology-filter-reset','Clear map filters'); reset.id = 'topology-empty-reset'; reset.type = 'button'; reset.addEventListener('click',resetFilters); empty.append(reset); state.stage.append(empty); } empty.hidden = visible.size > 0 || nodes.length === 0;
+    renderPathNavigator();
   }
   function deviceSearchText(item) { const snapshot = getSnapshot(item.node_id); const projected = getProjectedNode(item); return [item.node_id, projected.label, projected.role, projected.icon, projected.zone, projected.subnet, projected.vrf, projected.vdom, snapshot && snapshot.hostname, snapshot && snapshot.vendor, snapshot && snapshot.context].flat().filter(Boolean).join(' ').toLocaleLowerCase(); }
   function sourceButton(snapshotId, ref, label, host) { if (!snapshotId || !ref) return; const button = node('button', 'topology-source-button', label || `Source ${String(ref).slice(0, 18)}`); button.type = 'button'; button.dataset.snapshotId = snapshotId; button.dataset.evidenceRef = ref; button.addEventListener('click', () => document.dispatchEvent(new CustomEvent('graphlayer:open-network-evidence', { detail: { snapshot_id: snapshotId, ref, trigger: button } }))); host.append(button); }
@@ -481,9 +545,11 @@
     const centerX = Number(card.getAttribute('x')) + Number(card.getAttribute('width')) / 2; const centerY = Number(card.getAttribute('y')) + Number(card.getAttribute('height')) / 2; state.scale = Math.max(1.5, Math.min(4, state.scale)); const width = state.base.width / state.scale; const height = state.base.height / state.scale; state.x = centerX - width / 2; state.y = centerY - height / 2; state.applyZoom(); target.focus({ preventScroll: true });
   }
   function showTopologyStatus(status, message) {
+    if (state.exportView) state.exportView.disabled = true;
     setup(); if (!state.root) return;
     const blocked = status !== 'ready'; const busy = status === 'loading';
-    [state.toolbar,state.resultControls,state.traceBadge,state.filtersHost,state.deviceList,state.stage,state.inspector].forEach((part) => { if (!part) return; part.inert = blocked; part.setAttribute('aria-busy',String(busy)); });
+    [state.toolbar,state.resultControls,state.pathNavigator,state.traceBadge,state.filtersHost,state.deviceList,state.stage,state.inspector].forEach((part) => { if (!part) return; part.inert = blocked; part.setAttribute('aria-busy',String(busy)); });
+    if (blocked && state.pathNavigator) { state.pathNavigator.hidden = true; state.pathPortShortcuts.replaceChildren(); state.pathPortShortcuts.removeAttribute('aria-label'); }
     if (!blocked) return;
     if (busy) {
       if (!state.loadingView) {
@@ -510,11 +576,12 @@
     const nextIdentity = event.detail.mode === 'draft' ? `draft:${JSON.stringify(request)}` : event.detail.mode === 'trace' ? `trace:${event.detail.investigation && event.detail.investigation.id || JSON.stringify(request)}` : `result:${event.detail.exploration && event.detail.exploration.id || JSON.stringify(request)}`;
     state.event = event.detail; indexPresentation();
     renderResultControls(event.detail);
-    const changedIdentity = state.identity !== nextIdentity; state.identity = nextIdentity;
+    const changedIdentity = state.identity !== nextIdentity; state.identity = nextIdentity; renderPathNavigator();
     const loadingView = state.loadingView; state.loadingView = null;
     if (changedIdentity) { state.selected = ''; state.selectedLink = -1; state.history = []; state.historyIndex = -1; state.location = null; state.portQuery = ''; state.disclosures.clear(); state.expandedPorts.clear(); state.activePorts.clear(); }
     showTopologyStatus('ready','');
     if (!renderGraph()) return;
+    state.pathNavigator.hidden = !(event.detail.mode === 'result' || event.detail.mode === 'trace');
     if (changedIdentity) { state.selected = ''; state.fit(); }
     else if (loadingView && loadingView.identity === nextIdentity && loadingView.base) { state.selected = loadingView.selected; state.selectedLink = loadingView.selectedLink; state.scale = loadingView.scale; state.x = loadingView.x; state.y = loadingView.y; state.applyZoom(); }
     else state.applyZoom();

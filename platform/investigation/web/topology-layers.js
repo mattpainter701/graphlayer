@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { root: null, csrf: '', dataset: null, projection: null, view: 'l3', network: '', zone: '', vrf: '', vdom: '', search: '', offset: 0, limit: 25, source: '', sourcePinned: false, destination: '', busy: false, seq: 0, timer: 0, controller: null, scale: 1, x: 0, y: 0, pan: null, selected: null, preservePan: false, transformFrame: 0, responsivePathFrame: 0, renderedPathOrientation: '', inspectorCollapsed: true, fullscreenActive: false, fullscreenFocus: null, bodyOverflow: null, focusHostId: '', focusNotice: '', backStack: [] };
+  const state = { root: null, csrf: '', dataset: null, projection: null, view: 'l3', network: '', zone: '', vrf: '', vdom: '', search: '', offset: 0, limit: 25, source: '', sourcePinned: false, destination: '', busy: false, seq: 0, timer: 0, controller: null, scale: 1, x: 0, y: 0, pan: null, selected: null, preservePan: false, transformFrame: 0, responsivePathFrame: 0, renderedPathOrientation: '', inspectorCollapsed: true, fullscreenActive: false, fullscreenFocus: null, bodyOverflow: null, focusHostId: '', focusNotice: '', focusCameraTarget: '', backStack: [] };
   const NS = 'http://www.w3.org/2000/svg';
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = String(text); return e; };
   const button = (id, label, cls = 'tl-button') => { const b = el('button', cls, label); b.type = 'button'; if (id) b.id = id; return b; };
@@ -47,13 +47,14 @@
     const actions = el('div', 'tl-actions');
     const focusPath = button('tl-focus-path', 'Show all attachments'); focusPath.hidden = true;
     const fit = button('tl-fit', 'Fit'); const focusSelection = button('tl-focus-selection', 'Focus selection'); focusSelection.disabled = true;
+    const exportView = button('tl-export-view', 'Export SVG'); exportView.disabled = true; exportView.title = 'Export the current rendered map as an SVG image.'; exportView.setAttribute('aria-label', 'Export the current network map as SVG');
     const zoomOut = button('tl-zoom-out', '−', 'tl-button tl-square'); const zoomLabel = el('output', 'tl-zoom', '100%'); zoomLabel.id = 'tl-zoom'; const zoomIn = button('tl-zoom-in', '+', 'tl-button tl-square'); const fullscreen = button('tl-fullscreen', 'Full screen'); fullscreen.setAttribute('aria-pressed', 'false');
     const inspectorToggle = button('tl-inspector-toggle', 'Details'); inspectorToggle.setAttribute('aria-controls', 'tl-inspector'); inspectorToggle.setAttribute('aria-expanded', 'false'); inspectorToggle.disabled = true;
-    actions.append(focusPath, fit, focusSelection, zoomOut, zoomLabel, zoomIn, inspectorToggle, fullscreen); canvasHead.append(graphTitle, actions);
+    actions.append(focusPath, fit, focusSelection, exportView, zoomOut, zoomLabel, zoomIn, inspectorToggle, fullscreen); canvasHead.append(graphTitle, actions);
     const graph = el('div', 'tl-graph'); graph.id = 'tl-graph'; graph.tabIndex = 0; graph.setAttribute('role', 'tabpanel'); graph.setAttribute('aria-labelledby', 'tl-tab-l3'); graph.setAttribute('aria-label', 'Interactive network map');
     const drawing = svg('svg', { id: 'tl-svg', role: 'group', 'aria-label': 'Network topology diagram' }); const stage = svg('g', { id: 'tl-stage' }); drawing.append(stage); graph.append(drawing);
     const minimap = svg('svg', { id: 'tl-minimap', role: 'group', 'aria-label': 'Map overview', hidden: '' });
-    const miniTitle = svg('title'); miniTitle.textContent = 'Map overview: click to recenter. Focus the viewport and use arrow keys to move; Enter or Home fits the map.';
+    const miniTitle = svg('title'); miniTitle.textContent = 'Map overview: click a node to focus it, or empty space to recenter. Focus the viewport and use arrow keys to move; Enter or Home fits the map.';
     const miniContent = svg('g', { 'aria-hidden': 'true', class: 'tl-minimap-content' });
     const miniViewport = svg('rect', { id: 'tl-minimap-viewport', tabindex: '0', role: 'button', 'aria-label': 'Map viewport. Arrow keys move the map; Enter fits the projection.' });
     minimap.append(miniTitle, miniContent, miniViewport); graph.append(minimap);
@@ -86,12 +87,13 @@
     const workspace = el('div', 'tl-workspace'); workspace.append(canvasHead, graph, legend, caption, breadcrumbs, pager, hostResults);
     const content = el('div', 'tl-content'); content.append(workspace, inspector); content.classList.add('is-inspector-collapsed');
     state.root.replaceChildren(header, summary, tabs, controls, filterCount, activeFilters, networkOptions, zoneOptions, vrfOptions, vdomOptions, content, lower, sourceDrawer, note);
-    Object.assign(state, { load, exportButton, summary, tabs, net: net.input, zoneInput: zone.input, vrfInput: vrf.input, vdomInput: vdom.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, vrfOptions, vdomOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, firstPage, lastPage, pagePosition, breadcrumbs, back, hostResults, hostResultsCount, hostResultsList, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel, applyFilters });
+    Object.assign(state, { load, exportButton, exportView, summary, tabs, net: net.input, zoneInput: zone.input, vrfInput: vrf.input, vdomInput: vdom.input, searchInput: search.input, resetFilters, activeFilters, filterCount, networkOptions, zoneOptions, vrfOptions, vdomOptions, pageSize, graphTitle, drawing, stage, graph, legend, caption, pager, prev, next, pageLabel, firstPage, lastPage, pagePosition, breadcrumbs, back, hostResults, hostResultsCount, hostResultsList, content, inspector, inspectorToggle, sourceField: source, destinationField: destination, options, traceButton, traceStatus, sourceBody, fullscreenButton: fullscreen, zoomLabel, applyFilters });
     Object.assign(state, { focusSelection, minimap, miniContent, miniViewport, rovingKey: '', focusCameraKey: '' });
     state.focusPath = true; state.focusToggle = focusPath;
     focusPath.addEventListener('click', () => { state.focusPath = !state.focusPath; render(); });
     load.addEventListener('click', loadDataset);
     exportButton.addEventListener('click', exportDataset);
+    exportView.addEventListener('click', exportCurrentView);
     tabs.addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) chooseView(b.dataset.view); });
     tabs.addEventListener('keydown', (e) => { const active = e.target.closest('[data-view]'); if (!active) return; const buttons = [...tabs.querySelectorAll('[data-view]')]; let i = buttons.indexOf(active); if (e.key === 'ArrowRight') i = (i + 1) % buttons.length; else if (e.key === 'ArrowLeft') i = (i - 1 + buttons.length) % buttons.length; else if (e.key === 'Home') i = 0; else if (e.key === 'End') i = buttons.length - 1; else return; e.preventDefault(); chooseView(buttons[i].dataset.view); buttons[i].focus(); });
     const filterInputs = [net.input, zone.input, vrf.input, vdom.input, search.input];
@@ -111,7 +113,16 @@
     fit.addEventListener('click', fitGraph); zoomIn.addEventListener('click', () => setZoom(state.scale * 1.2)); zoomOut.addEventListener('click', () => setZoom(state.scale / 1.2));
     focusSelection.addEventListener('click', () => focusGraphItem(selectedGraphItem()));
     minimap.addEventListener('pointerdown', (event) => event.stopPropagation());
-    minimap.addEventListener('click', recenterFromOverview);
+    minimap.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-mini-key]');
+      if (target) {
+        event.preventDefault(); event.stopPropagation();
+        const item = graphItems().find((candidate) => graphItemKey(candidate) === target.dataset.miniKey);
+        if (item) focusAndCenterGraphItem(item);
+        return;
+      }
+      recenterFromOverview(event);
+    });
     minimap.addEventListener('keydown', navigateOverview);
     drawing.addEventListener('focusin', (event) => { const item = event.target.closest('.tl-node,.tl-edge'); if (item) syncGraphRover(item); });
     drawing.addEventListener('keydown', navigateGraphItems);
@@ -134,7 +145,7 @@
   }
 
   function setSession(csrf) { const next = str(csrf); if (next !== state.csrf) { clearTimeout(state.timer); state.timer = 0; if (state.controller) { state.seq += 1; state.controller.abort(); state.controller = null; } state.busy = false; state.focusHostId = ''; state.focusNotice = ''; setProjectionBusy(false); } state.csrf = next; if (!state.csrf && state.stage) clearProjectionUI('Waiting for the local session…'); updateControls(); }
-  function updateControls() { if (state.applyFilters) state.applyFilters.disabled = !hasPendingFilters() || !state.csrf || !state.dataset; if (state.load) state.load.disabled = !state.csrf || state.busy; if (state.traceButton) state.traceButton.disabled = !state.csrf || state.busy || !state.dataset; updateViewportControls(); }
+  function updateControls() { if (state.applyFilters) state.applyFilters.disabled = !hasPendingFilters() || !state.csrf || !state.dataset; if (state.load) state.load.disabled = !state.csrf || state.busy; if (state.traceButton) state.traceButton.disabled = !state.csrf || state.busy || !state.dataset; if (state.exportView) state.exportView.disabled = state.busy || !state.projection || typeof window.GraphLayerGraphExport?.download !== 'function'; updateViewportControls(); }
   function setProjectionBusy(busy) {
     if (!state.inspector) return;
     state.inspector.setAttribute('aria-busy', String(Boolean(busy)));
@@ -238,10 +249,10 @@
       const result = await post('/api/topology-layers', request, controller.signal);
       if (seq !== state.seq) return null;
       if (request.source_host_id && (!state.traceRequested || request.source_host_id !== state.source || request.destination_host_id !== state.destination)) return null;
-      const projection = result.projection || result; validateProjection(projection); state.projection = projection; state.offset = Number(projection.pagination.offset ?? state.offset); state.focusNotice = ''; const focusHostId = str(request.focus_host_id); if (focusHostId && projection.navigation?.focus_host_id === focusHostId && projection.navigation?.focus_status !== 'visible') state.focusNotice = projection.navigation.focus_status === 'outside_filters' ? 'The selected host is outside the current filters. Adjust the filters to include it.' : 'The selected host is not available in this lab projection.'; else if (focusHostId && projection.navigation?.focus_status === 'visible') { const host = arr(projection.hosts).find((item) => idOf(item) === focusHostId); if (host) { state.selected = host; state.inspectorCollapsed = false; } } renderFilters(); render(); return projection;
+      const projection = result.projection || result; validateProjection(projection); state.projection = projection; state.offset = Number(projection.pagination.offset ?? state.offset); state.focusNotice = ''; state.focusCameraTarget = ''; const focusHostId = str(request.focus_host_id); if (focusHostId && projection.navigation?.focus_host_id === focusHostId && projection.navigation?.focus_status !== 'visible') state.focusNotice = projection.navigation.focus_status === 'outside_filters' ? 'The selected host is outside the current filters. Adjust the filters to include it.' : 'The selected host is not available in this lab projection.'; else if (focusHostId && projection.navigation?.focus_status === 'visible') { const host = arr(projection.hosts).find((item) => idOf(item) === focusHostId); if (host && projectionNodes().some((item) => idOf(item) === focusHostId)) { state.selected = host; state.inspectorCollapsed = false; state.focusCameraTarget = focusHostId; } } renderFilters(); render(); return projection;
     }
     catch (error) { if (seq === state.seq && error.name !== 'AbortError') showError(error); return null; }
-    finally { if (seq === state.seq) { state.busy = false; state.controller = null; setProjectionBusy(false); updateControls(); if (state.projection) { renderPager(state.projection); renderBreadcrumbs(); } } }
+    finally { if (seq === state.seq) { state.busy = false; state.controller = null; setProjectionBusy(false); updateControls(); if (state.projection) { renderPager(state.projection); renderBreadcrumbs(); } focusPendingHost(); } }
   }
   function validateDataset(dataset) { if (!isObject(dataset) || dataset.schema_version !== 1 || dataset.synthetic !== true || !Array.isArray(dataset.hosts) || dataset.hosts.length > 10000 || !Array.isArray(dataset.networks) || !Array.isArray(dataset.sources) || dataset.sources.length > 100 || dataset.hosts.some((host) => !isObject(host) || !host.id) || dataset.sources.some((source) => !isObject(source) || !source.id || !Array.isArray(source.lines) || !source.sha256)) throw new Error('The lab response has an unsupported dataset shape.'); }
   function validateProjection(projection) { if (!isObject(projection) || projection.schema_version !== 1 || projection.synthetic !== true || !Array.isArray(projection.nodes) || projection.nodes.length > 140 || !Array.isArray(projection.links) || projection.links.length > 5000 || !Array.isArray(projection.sources) || !isObject(projection.counts) || !isObject(projection.pagination) || projection.nodes.some((item) => !isObject(item) || !idOf(item)) || projection.links.some((edge) => !isObject(edge) || !first(edge.id, edge.from, edge.source_id) || !first(edge.to, edge.target, edge.destination_id)) || (projection.hosts !== undefined && (!Array.isArray(projection.hosts) || projection.hosts.length > 100)) || (projection.navigation !== undefined && !isObject(projection.navigation))) throw new Error('The topology response has an unsupported or unbounded shape.'); }
@@ -545,6 +556,17 @@
     state.y = visible.y + visible.height / 2 - (bounds.y + bounds.height / 2) * state.scale;
     state.focusCameraKey = graphItemKey(item); scheduleTransform();
   }
+  function focusPendingHost() {
+    if (!state.focusCameraTarget) return;
+    const target = graphItems().find((item) => item.__item && idOf(item.__item) === state.focusCameraTarget);
+    state.focusCameraTarget = '';
+    if (target && state.projection && state.projection.navigation?.focus_status === 'visible') focusAndCenterGraphItem(target);
+  }
+  function focusAndCenterGraphItem(item) {
+    if (!item || state.busy) return;
+    syncGraphRover(item, true);
+    focusGraphItem(item);
+  }
   function renderMinimap(nodes, edges, positions) {
     state.miniContent.replaceChildren(); state.minimap.setAttribute('viewBox', state.drawing.getAttribute('viewBox'));
     edges.forEach((edge) => {
@@ -554,7 +576,8 @@
     });
     nodes.forEach((item) => {
       const position = positions.get(idOf(item)); if (!position) return;
-      state.miniContent.append(svg('rect', { x: position.x - 64, y: position.y - 28, width: 128, height: 56, rx: 8, class: `tl-mini-node tl-mini-${typeOf(item)}`, 'data-mini-key': `node:${idOf(item)}` }));
+      const node = svg('rect', { x: position.x - 64, y: position.y - 28, width: 128, height: 56, rx: 8, class: `tl-mini-node tl-mini-${typeOf(item)}`, 'data-mini-key': `node:${idOf(item)}` });
+      const title = svg('title'); title.textContent = `Focus ${typeOf(item)} ${labelOf(item)}`; node.append(title); state.miniContent.append(node);
     });
   }
   function updateMinimapViewport() {
@@ -590,6 +613,15 @@
   function applyTransform() { if (!state.stage) return; state.stage.setAttribute('transform', `translate(${state.x} ${state.y}) scale(${state.scale})`); const percent = Math.round(state.scale * 100); const mode = state.scale < .7 ? 'Overview' : state.scale > 1.45 ? 'Detail' : 'Balanced'; state.graph.classList.remove('tl-scale-overview', 'tl-scale-balanced', 'tl-scale-detail'); state.graph.classList.add(`tl-scale-${mode.toLowerCase()}`); state.zoomLabel.textContent = `${percent}%`; state.zoomLabel.setAttribute('aria-label', `${mode} scale, ${percent} zoom`); state.zoomLabel.title = `${mode} scale`; updateMinimapViewport(); }
   function toggleFullscreen() { state.fullscreenActive = !state.fullscreenActive; state.root.classList.toggle('tl-fullscreen', state.fullscreenActive); state.fullscreenButton.setAttribute('aria-pressed', String(state.fullscreenActive)); state.fullscreenButton.textContent = state.fullscreenActive ? 'Exit full screen' : 'Full screen'; if (state.fullscreenActive) { state.fullscreenFocus = document.activeElement; state.bodyOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; state.graph.focus(); } else { document.body.style.overflow = state.bodyOverflow || ''; if (state.fullscreenFocus && state.fullscreenFocus.isConnected) state.fullscreenFocus.focus(); state.fullscreenFocus = null; } scheduleResponsivePathLayout(); }
   function exportDataset() { if (!state.dataset) return; const blob = new Blob([JSON.stringify(state.dataset, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = el('a'); link.href = url; link.download = 'graphlayer-synthetic-topology-lab.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); }
+  function exportCurrentView() {
+    const exporter = window.GraphLayerGraphExport;
+    if (!state.projection || state.busy || !exporter || typeof exporter.download !== 'function') return;
+    const viewLabel = ({ l3: 'Layer 3 overview', zone: 'Zone overview', l2: 'Host and Layer 2 detail' })[state.view] || 'Network map';
+    const filters = [['Network', state.network], ['Zone', state.zone], ['VRF', state.vrf], ['VDOM', state.vdom], ['Search', state.search]].filter(([, value]) => value).map(([name, value]) => `${name}: ${value}`);
+    const description = [viewLabel, filters.length ? `Applied filters: ${filters.join('; ')}` : 'Applied filters: none', str(state.caption.textContent), 'Synthetic configuration-derived view only; this map does not establish live reachability, traffic, or runtime state.'].join('\n');
+    try { exporter.download(state.drawing, { filename: 'graphlayer-network-map.svg', title: 'GraphLayer network map', description }); }
+    catch (_) { state.caption.textContent = 'Network map SVG export failed. The current view is unchanged.'; }
+  }
   function idOf(item) { return str(first(item.id, item.node_id, item.host_id, item.network_id, item.zone_id, item.subnet_id)); }
   function labelOf(item) { return str(first(item.label, item.name, item.hostname, item.display_name, item.cidr, idOf(item)), 'Network element'); }
   function typeOf(item) { const raw = str(first(item.role, item.type, item.kind, item.element_type, item.node_type), 'host').toLowerCase(); if (/zone/.test(raw)) return 'zone'; if (/network|subnet|segment|vlan/.test(raw)) return raw.includes('subnet') ? 'subnet' : 'network'; if (/firewall|router|switch|gateway/.test(raw)) return 'device'; return 'host'; }

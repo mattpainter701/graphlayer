@@ -21,7 +21,9 @@ or change the page size. Rust clamps stale pages and selects the page containing
 a requested host; the browser does not scan or build a second topology.
 
 Inspect a result to read its inventory and source evidence, or choose **Show on
-map** to open its Layer 2 network and select that host. VRF, VDOM, zone and search
+map** to open its Layer 2 network, select that host and center its returned card
+at a readable scale. Centering waits for Rust to confirm the target is visible;
+an unavailable or excluded host does not move the camera. VRF, VDOM, zone and search
 constraints remain active. The map does not clear a restrictive context to make
 a host appear. **Back** restores the prior view, filters, host page, page size,
 selection and map position. This bounded navigation history is local to the
@@ -66,7 +68,9 @@ focus through visible items and centers the focused item in the canvas; Home
 and End move to the first and last visible items. Enter or Space inspects the
 focused item, and Escape returns focus to the canvas. With the canvas focused,
 arrow keys pan instead. The overview shows the full layout and current
-viewport; click or keyboard activation recenters the canvas there. Fine labels
+viewport; click an overview node to center its matching rendered card, or click
+empty overview space to recenter the canvas there. Keyboard activation of the
+overview viewport keeps the existing pan and fit controls. Fine labels
 are reduced at overview zoom levels; zoom in for port and status details. Focus
 and camera controls update presentation without rerunning a projection or path
 analysis. Fit returns to the whole current projection.
@@ -77,7 +81,9 @@ viewport cannot make every label in a dense overview readable at once; use host
 focus and zoom for individual details. The 25, 50 and 100 host page sizes remain
 bounded, and navigation does not change the underlying topology or run domain
 analysis again.
-Crowded fullscreen layouts scroll the panel while retaining bounded space for
+Narrow workspaces stack the inspector below the map. Outside fullscreen, the
+inspector follows the page scroll so long port and source details are not
+confined to a small nested scroller. Crowded fullscreen layouts scroll the panel while retaining bounded space for
 the canvas and inspector. Restoring an expanded port does not enlarge the
 canvas; the explanatory footer remains below both.
 
@@ -130,6 +136,15 @@ inspectors identify endpoint interfaces and declared provenance. Source buttons
 open the existing line-addressed evidence; an icon annotation changes display
 only and does not alter the saved model.
 
+The path step navigator follows the selected returned forward or return hop
+sequence. Choose a direction, then use numbered hops or Previous/Next to inspect
+each device and its returned ingress/egress ports. A hop missing from the current
+projection or excluded by active facets is labeled unavailable; navigation does
+not clear the facets to reveal it. Changing the analysis, branch, return
+candidate or owning snapshots resets the step trail. An empty direction remains
+explicit and you can switch back to the other direction. These controls reuse
+the returned analysis without submitting another investigation.
+
 Expand an interface in the device inspector for its returned address, mask,
 zone, context, configured status, exact declared connections and selected path
 hops. Expand a forward or return hop to inspect ingress/egress, the selected
@@ -157,6 +172,17 @@ declared link and either endpoint's port. The bounded trail retains disclosure
 state for the same saved analysis and snapshots. Loading another analysis or
 changing the owning snapshot discards stale history. Port and source navigation
 reuses the returned result and does not submit another path investigation.
+
+## Export the displayed graph
+
+Choose **Export SVG** in either graph toolbar to download the current rendered
+canvas, including its camera position, labels, styles and selected overlays.
+Use Fit first to include the full current projection. The image contains a title
+and description with the current map scope or configured path context and its
+model limitations. It is a local image export; it does not upload or publish the
+workspace, export raw source configurations, or run another analysis. External
+resources and interactive scripts are excluded so the SVG can be viewed on its
+own. Dataset JSON and saved investigation exports remain separate controls.
 
 ## Scale and limits
 
