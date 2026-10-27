@@ -330,15 +330,21 @@ test('fullscreen keeps path controls compact and the canvas and inspector usable
         viewport: { width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth },
         root: { ...rect(root), scrollWidth: root.scrollWidth, clientWidth: root.clientWidth }, nav: rect(nav), body: rect(body), stage: rect(stage), inspector: rect(inspector),
         controls: [...nav.querySelectorAll('.topology-path-hop-button, .topology-path-port-button')].map((element) => ({ ...rect(element), text: element.textContent, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight })),
+        resultControls: [...root.querySelectorAll('.topology-result-select-label, .topology-result-status')].map((element) => ({ ...rect(element), scrollWidth: element.scrollWidth, clientWidth: element.clientWidth })),
       };
     });
     expect(layout.viewport.documentWidth).toBeLessThanOrEqual(width + 1);
     expect(layout.root.width).toBeLessThanOrEqual(width);
-    expect(layout.root.scrollWidth).toBeLessThanOrEqual(layout.root.clientWidth + 1);
+    expect(layout.root.scrollWidth, JSON.stringify(layout)).toBeLessThanOrEqual(layout.root.clientWidth + 1);
     expect(layout.nav.height, `navigator height at ${width}px`).toBeLessThan(width < 600 ? 400 : 300);
     expect(layout.body.height).toBeGreaterThanOrEqual(300);
     expect(layout.stage.height).toBeGreaterThanOrEqual(300);
     expect(layout.controls.length).toBeGreaterThan(0);
+    for (const control of layout.resultControls) {
+      expect(control.x).toBeGreaterThanOrEqual(layout.root.x - 1);
+      expect(control.right).toBeLessThanOrEqual(layout.root.right + 1);
+      expect(control.scrollWidth).toBeLessThanOrEqual(control.clientWidth + 1);
+    }
     for (const control of layout.controls) {
       expect(control.x).toBeGreaterThanOrEqual(layout.nav.x - 1);
       expect(control.right).toBeLessThanOrEqual(layout.nav.right + 1);
