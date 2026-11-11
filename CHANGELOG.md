@@ -5,7 +5,6 @@
 - Windows packages retain the project license and generated dependency notices, with notice bytes covered by package integrity checks.
 
 - Package Windows builds with matching application and Rust worker version resources, explicit unsigned development manifests, validated sibling-worker execution, and a gated signing workflow that verifies both executable signatures before hashing the final package.
-- Preserve reviewed Windows recovery validation on the isolated private Linux runner while hosted Windows validation and approved release signing remain pending.
 
 - Use project-owned Go module paths and neutral reference-comparison API names. Remove obsolete generated data, enforce privacy checks on working files, staged bytes and complete commit ancestry, reject opaque LFS pointers and keep private configuration collections outside source control. Existing clients must update their module imports and reference-comparison flags/types.
 - License original GraphLayer project code under Apache-2.0; preserve third-party component licenses.
