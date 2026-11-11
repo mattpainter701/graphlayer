@@ -1,0 +1,11 @@
+{
+  "accepted_spdx": [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0"
+  ],
+  "review_scope": "Windows release dependency notice generation only; unknown, copyleft, source-sharing, or otherwise unlisted licenses fail closed. This is not a legal conclusion or signing-provider eligibility determination."
+}

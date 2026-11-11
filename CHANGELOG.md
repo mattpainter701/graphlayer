@@ -12,6 +12,12 @@
 - Modernize topology canvas controls and responsive selection inspectors, with a viewport overview, keyboard navigation, source-detail shortcuts and clearer device/path states. Keep navigation separate from saved analysis and preserve evidence ownership.
 - Explore bounded host pages of 25, 50 or 100, reset network/zone/search filters, and inspect projected connections beside the map on wide screens. Index Rust topology validation and presentation lookups while retaining source evidence and existing size limits.
 
+- Preserve Windows application version metadata when building with the pinned Go toolchain.
+
+- Windows packages retain the project license and generated dependency notices, with notice bytes covered by package integrity checks.
+
+- Package Windows builds with matching application and Rust worker version resources, explicit unsigned development manifests, validated sibling-worker execution, and a gated signing workflow that verifies both executable signatures before hashing the final package.
+
 - Use project-owned Go module paths and neutral reference-comparison API names. Remove obsolete generated data, enforce privacy checks on working files, staged bytes and complete commit ancestry, reject opaque LFS pointers and keep private configuration collections outside source control. Existing clients must update their module imports and reference-comparison flags/types.
 - License original GraphLayer project code under Apache-2.0; preserve third-party component licenses.
 - Allow private, reviewed CI pushes to use a dedicated local Linux runner with one-job registrations; keep pull requests and native Windows checks on hosted runners.

@@ -4,7 +4,8 @@ The five GitHub Actions workflows can route Linux jobs to the dedicated runner
 when repository variable `GRAPHLAYER_ONPREM_RUNNERS` is `true`. Routing also
 requires the repository to be private, its name to be exactly
 `mattpainter701/graphlayer`, and the event to be a push to `main` or
-`codex/repository-privacy`. Pull requests, including fork pull requests, and
+`codex/repository-privacy` or the explicitly reviewed
+`codex/windows-worker-release-recovery` branch. Pull requests, including fork pull requests, and
 manual QA dispatches use GitHub-hosted runners. The Windows native job uses
 `windows-latest`; it is deferred while private local validation is enabled to
 avoid paid hosted execution, and resumes when the repository is public. A
@@ -66,13 +67,15 @@ workspace and mount.
 
 The controller defaults to `codex/repository-privacy`. After the coordinated
 history cleanup, use `--branch main --head <reviewed-commit-sha>` to validate
-private main pushes. It accepts only those two branch names and verifies the
+private main pushes. For the reviewed Windows recovery, use
+`--branch codex/windows-worker-release-recovery --head <reviewed-commit-sha>`.
+It accepts only those three exact branch names and verifies the
 selected branch and every workflow run against the exact reviewed revision.
 
 ## Public repository transition
 
 Enable `GRAPHLAYER_ONPREM_RUNNERS` only while trusted maintainers control pushes
-to the two enabled branches. Before making the repository public, disable the
+to the three enabled branches. Before making the repository public, disable the
 variable and remove all repository runner registrations. Hosted jobs use the
 configured GitHub artifact and cache storage. Local Linux jobs keep
 artifacts under `/opt/graphlayer-ci-evidence/<commit>/<run>/<job>/` and build

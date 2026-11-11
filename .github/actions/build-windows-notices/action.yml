@@ -1,0 +1,23 @@
+name: Collect Windows release notices
+description: Collect locked Windows-target dependency and toolchain notices before packaging.
+runs:
+  using: composite
+  steps:
+    - name: Generate complete Windows-target notice bundle
+      shell: bash
+      run: >-
+        python scripts/windows/build-release-notices.py
+        --output-directory "$RUNNER_TEMP/graphlayer-release-notices"
+        --work-directory "$RUNNER_TEMP/graphlayer-notice-work"
+        --github-env "$GITHUB_ENV"
+    - name: Archive generated notices and provenance reports
+      if: always()
+      uses: ./.github/actions/archive-ci-artifact
+      with:
+        name: windows-release-notices
+        path: |
+          ${{ runner.temp }}/graphlayer-release-notices/
+          ${{ runner.temp }}/graphlayer-notice-work/cargo.json
+          ${{ runner.temp }}/graphlayer-notice-work/go.csv
+          ${{ runner.temp }}/graphlayer-notice-work/*.log
+        if-no-files-found: ignore

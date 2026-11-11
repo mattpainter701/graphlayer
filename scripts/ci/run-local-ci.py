@@ -21,7 +21,7 @@ from urllib.parse import urlencode
 
 REPOSITORY = "mattpainter701/graphlayer"
 BRANCH = "codex/repository-privacy"
-SUPPORTED_BRANCHES = ("main", BRANCH, "codex/topology-modern-explorer")
+SUPPORTED_BRANCHES = ("main", BRANCH, "codex/windows-worker-release-recovery", "codex/topology-modern-explorer")
 RUNNER_LABELS = ("self-hosted", "Linux", "X64", "graphlayer-private")
 RUNNER_LABEL_SET = frozenset(label.casefold() for label in RUNNER_LABELS)
 RUNNER_PREFIX = "graphlayer-private-"
