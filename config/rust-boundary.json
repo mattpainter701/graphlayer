@@ -358,8 +358,8 @@
       "path": "platform/investigation/server.go",
       "category": "transport_adapter",
       "owner": "GraphLayer topology workspace maintainers",
-      "reason": "Existing local HTTP/storage compatibility layer resolves immutable snapshot and saved-result references and transports Rust project_topology and topology.layer_sample/project_layers requests. Rust owns auxiliary validation, aggregation, evidence and L2 traversal; no network decisions are implemented in Go. Source-only repository namespace cleanup preserves the existing behavior.",
-      "sha256": "d2372359bebf48b0d22a54fc73d1ad76ca4f0a1893eeb2a860f2d3c354cc2433",
+      "reason": "Existing local HTTP/storage compatibility layer resolves immutable snapshot and saved-result references and transports Rust project_topology and topology.layer_sample/project_layers requests. The reviewed static-asset allowlist additionally serves the view-only SVG export helper; it adds no domain behavior. Rust owns auxiliary validation, aggregation, evidence and L2 traversal; no network decisions are implemented in Go. Source-only repository namespace cleanup preserves the existing behavior.",
+      "sha256": "4711c18214a04c04c989121dbc0b5a649bf3e43e918dd3669cddce29d9520d04",
       "expires": "2027-01-15"
     },
     {

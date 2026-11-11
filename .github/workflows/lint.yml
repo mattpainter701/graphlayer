@@ -2,7 +2,7 @@ name: Lint
 
 on:
   push:
-    branches: [main, codex/repository-privacy, codex/windows-worker-release-recovery]
+    branches: [main, codex/repository-privacy, codex/windows-worker-release-recovery, codex/topology-modern-explorer]
   pull_request:
     branches: [main]
 
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   vet-supported:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery' || github.ref == 'refs/heads/codex/topology-modern-explorer') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +27,7 @@ jobs:
         run: go vet ./correlation/... ./comparison/... ./graph/... ./intelligence/... ./scoring/... ./vendors/shared/... ./models/... ./reference/iana/... ./policy/... ./cmd/graphlayer-policy/... ./vendors/cisco/asa/... ./firewall/... ./investigation/... ./cmd/graphlayer-investigate/... ./pathanalysis/... ./networkpath/...
 
   fuzz:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery' || github.ref == 'refs/heads/codex/topology-modern-explorer') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
