@@ -186,6 +186,22 @@ class LocalCIRunnerSecurityTests(unittest.TestCase):
             self.assertEqual(api.branch_calls, ["main"])
             self.assertEqual(api.workflow_run_calls, [("main", HEAD)])
 
+    def test_reviewed_recovery_branch_requires_its_exact_head_and_push_runs(self):
+        branch = "codex/windows-worker-release-recovery"
+        with tempfile.TemporaryDirectory() as directory:
+            api = FakeApi()
+            api.target_runs = [
+                workflow_run(run["id"], run["name"], branch=branch)
+                for run in api.target_runs
+            ]
+            controller, _ = self.make_controller(api, Path(directory), branch=branch)
+            self.assertEqual(set(controller._trusted_runs()), set(local_ci.EXPECTED_WORKFLOWS))
+            self.assertEqual(api.branch_calls, [branch])
+            api.branch_sha = "b" * 40
+            with self.assertRaisesRegex(local_ci.ControllerError, "branch head does not match"):
+                controller._trusted_runs()
+            self.assertEqual(api.generate_calls, [])
+
     def test_unreviewed_branch_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             api = FakeApi()

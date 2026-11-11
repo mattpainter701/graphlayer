@@ -31,6 +31,13 @@ absolute path of the built Rust executable. Packaged applications locate an
 exact `graphlayer-engine` / `graphlayer-engine.exe` sibling of the application;
 they do not search PATH. Both executables are required. CI produces a Windows
 bundle with SHA256 sums and exercises real imports on Linux and Windows.
+The hosted Windows artifact is explicitly an unsigned **Development** package;
+its successful smoke test does not establish trust under Smart App Control.
+For signed packages, use the approved-certificate signing and verification steps
+in [Windows signing](WINDOWS_SIGNING.md). Both executables must carry matching
+GraphLayer product and release-version metadata before signing. Verify their
+embedded signatures and pinned publisher, then generate the package manifest
+and SHA-256 sums from the signed bytes.
 
 `Dockerfile.investigate` packages both executables. On Linux use host networking
 to access this intentionally loopback-bound service; publishing a Docker bridge

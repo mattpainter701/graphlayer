@@ -2,7 +2,7 @@ name: Rust engine and architecture
 
 on:
   push:
-    branches: [main, codex/repository-privacy]
+    branches: [main, codex/repository-privacy, codex/windows-worker-release-recovery]
   pull_request:
     branches: [main]
 
@@ -11,9 +11,20 @@ permissions:
 
 jobs:
   rust-core:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platform/go.mod
+          cache: ${{ runner.environment != 'self-hosted' }}
+
+      - uses: ./.github/actions/build-windows-notices
 
       - name: Check formatting
         run: |
@@ -45,7 +56,7 @@ jobs:
           path: ${{ runner.temp }}/topology-scale/
 
   rust-boundary:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch only this revision's ancestry for the privacy audit
@@ -61,7 +72,7 @@ jobs:
         run: python -m unittest tests.test_rust_boundary -v
 
   rust-container:
-    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && github.event.repository.private == true && github.repository == 'mattpainter701/graphlayer' && vars.GRAPHLAYER_ONPREM_RUNNERS == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/repository-privacy' || github.ref == 'refs/heads/codex/windows-worker-release-recovery') && fromJSON('["self-hosted","Linux","X64","graphlayer-private"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - name: Build packaged investigation application
