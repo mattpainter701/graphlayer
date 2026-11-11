@@ -94,6 +94,12 @@ jobs:
 
       - uses: ./.github/actions/build-windows-notices
 
+      - name: Install LLVM resource tools from the pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup component add llvm-tools-preview
+          if ($LASTEXITCODE -ne 0) { throw 'The pinned Rust LLVM tools are required for Windows resource compatibility.' }
+
       - name: Prepare matching product metadata for both executables
         run: |
           $ErrorActionPreference = 'Stop'
@@ -118,6 +124,7 @@ jobs:
           $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $env:GITHUB_WORKSPACE 'target' }
           $engine = (Resolve-Path (Join-Path $targetDir 'release/graphlayer-engine.exe')).Path
           "GRAPHLAYER_ENGINE=$engine" >> $env:GITHUB_ENV
+          ./tests/windows-coff-resource.Tests.ps1 -RcPath $env:GRAPHLAYER_RC_PATH -CvtresPath $env:GRAPHLAYER_CVTRES_PATH
           ./tests/windows-version-resources.Tests.ps1 -RcPath $env:GRAPHLAYER_RC_PATH -CvtresPath $env:GRAPHLAYER_CVTRES_PATH -RustWorkerPath $engine -Version $env:GRAPHLAYER_RELEASE_VERSION
           New-Item -ItemType Directory -Path signing-input | Out-Null
           $env:CGO_ENABLED = '0'

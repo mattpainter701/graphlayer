@@ -45,6 +45,30 @@ function Assert-VersionInfo([string] $Path, [string] $Version, [string] $Descrip
     }
 }
 
+function Get-BoundedCompilerDiagnostic([string] $LogPath, [string] $Tool) {
+    if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) { return "$Tool emitted no retained diagnostic log." }
+    $tail = @(Get-Content -LiteralPath $LogPath -Tail 40 -ErrorAction SilentlyContinue |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $lines = @($tail | Where-Object { $_ -match '(?i)(error|fatal|failed|unsupported|undefined reference|cannot find|not found|sectnum)' } |
+        Select-Object -Last 5)
+    if ($lines.Count -eq 0) { $lines = @($tail | Select-Object -Last 5) }
+    if ($lines.Count -eq 0) { return "$Tool emitted no diagnostic text." }
+    $safe = foreach ($line in $lines) {
+        $text = [string]$line
+        foreach ($localRoot in @($temp, $repo, $env:USERPROFILE)) {
+            if (-not [string]::IsNullOrWhiteSpace($localRoot)) {
+                $text = [regex]::Replace($text, [regex]::Escape($localRoot), '[path]', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                $text = [regex]::Replace($text, [regex]::Escape($localRoot.Replace('\', '/')), '[path]', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            }
+        }
+        $text = [regex]::Replace($text, '(?i)(?:[A-Z]:\\|\\\\)[^\s:]+', '[path]')
+        $text = [regex]::Replace($text, '[\x00-\x08\x0B\x0C\x0E-\x1F]', ' ')
+        if ($text.Length -gt 220) { $text = $text.Substring(0, 220) }
+        $text
+    }
+    return "$Tool diagnostic (bounded, local paths redacted): $($safe -join ' | ')"
+}
+
 try {
     foreach ($badVersion in @('1.2', '1.2.3.4', '-1.2.3', '01.2.3', '65536.0.0', '1.2.3-rc1', '1.2.x')) {
         $candidate = Join-Path $temp ('invalid-' + [guid]::NewGuid().ToString('N'))
@@ -99,7 +123,8 @@ try {
                 Pop-Location
             }
             if ($cargoExitCode -ne 0) {
-                throw "Rust worker resource build failed with exit code $cargoExitCode; compiler diagnostics were suppressed."
+                $diagnostic = Get-BoundedCompilerDiagnostic $buildLog 'Rust compiler'
+                throw "Rust worker resource build failed with exit code $cargoExitCode. $diagnostic"
             }
             $workerOutputDirectory = Join-Path $targetDirectory 'release'
             if (-not [string]::IsNullOrWhiteSpace($targetTriple)) {
@@ -138,7 +163,8 @@ try {
             Pop-Location
         }
         if ($goExitCode -ne 0 -or -not (Test-Path -LiteralPath $probeExe -PathType Leaf)) {
-            throw "Go could not link the application resource into a PE probe (exit code $goExitCode); compiler diagnostics were suppressed."
+            $diagnostic = Get-BoundedCompilerDiagnostic $goLog 'Go compiler'
+            throw "Go could not link the application resource into a PE probe (exit code $goExitCode). $diagnostic"
         }
         Assert-VersionInfo $probeExe $Version 'GraphLayer Investigation Application' 'graphlayer-investigate' 'graphlayer-investigate.exe'
     } finally {

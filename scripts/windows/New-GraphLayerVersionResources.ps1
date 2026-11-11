@@ -7,6 +7,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$coffModule = Join-Path $PSScriptRoot 'GraphLayerCoff.psm1'
+Import-Module -Name $coffModule -Force -ErrorAction Stop
 
 function ConvertTo-VersionParts([string] $Value) {
     if ($Value -notmatch '^(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})$') {
@@ -88,6 +90,7 @@ END
 $parts = ConvertTo-VersionParts $Version
 $rc = Resolve-VerifiedMicrosoftTool -Path $RcPath -ExpectedName 'rc.exe'
 $cvtres = Resolve-VerifiedMicrosoftTool -Path $CvtresPath -ExpectedName 'cvtres.exe'
+$objcopy = Resolve-GraphLayerPinnedObjcopy
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $output) { throw "Output directory already exists: $output" }
 $parent = Split-Path -Parent $output
@@ -112,11 +115,16 @@ try {
         }
     }
 
+    $appRawSyso = Join-Path $output 'graphlayer-investigate-raw.syso'
+    $appCandidateSyso = Join-Path $output 'graphlayer-investigate-normalized.syso'
     $appSyso = Join-Path $output 'graphlayer-investigate.syso'
-    Invoke-MicrosoftTool $cvtres @('/nologo', '/MACHINE:X64', "/OUT:$appSyso", $appRes) 'cvtres.exe Go application resource conversion'
-    if (-not (Test-Path -LiteralPath $appSyso -PathType Leaf)) {
+    Invoke-MicrosoftTool $cvtres @('/nologo', '/MACHINE:X64', "/OUT:$appRawSyso", $appRes) 'cvtres.exe Go application resource conversion'
+    if (-not (Test-Path -LiteralPath $appRawSyso -PathType Leaf)) {
         throw 'cvtres.exe did not create the expected Go application resource object.'
     }
+    $null = Normalize-GraphLayerGoResource -InputPath $appRawSyso -OutputPath $appCandidateSyso -ObjcopyPath $objcopy
+    Move-Item -LiteralPath $appCandidateSyso -Destination $appSyso
+    Remove-Item -LiteralPath $appRawSyso -Force
     Remove-Item -LiteralPath $appRes -Force
     Write-Output $output
 } catch {

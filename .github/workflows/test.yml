@@ -207,6 +207,12 @@ jobs:
 
       - uses: ./.github/actions/build-windows-notices
 
+      - name: Install LLVM resource tools from the pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup component add llvm-tools-preview
+          if ($LASTEXITCODE -ne 0) { throw 'The pinned Rust LLVM tools are required for Windows resource compatibility.' }
+
       - name: Prepare matching application and Rust worker version resources
         shell: pwsh
         run: |
@@ -232,6 +238,7 @@ jobs:
       - name: Verify actual Rust worker and application PE resource contracts
         shell: pwsh
         run: |
+          ./tests/windows-coff-resource.Tests.ps1 -RcPath $env:GRAPHLAYER_RC_PATH -CvtresPath $env:GRAPHLAYER_CVTRES_PATH
           ./tests/windows-version-resources.Tests.ps1 -RcPath $env:GRAPHLAYER_RC_PATH -CvtresPath $env:GRAPHLAYER_CVTRES_PATH -RustWorkerPath $env:GRAPHLAYER_ENGINE -Version $env:GRAPHLAYER_PACKAGE_VERSION
           ./tests/windows-signing-input.Tests.ps1
 

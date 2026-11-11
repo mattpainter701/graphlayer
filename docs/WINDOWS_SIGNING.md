@@ -28,6 +28,20 @@ Sign every shipped executable component, including the application and worker. U
 
 ## Package workflow
 
+Application version-resource generation also requires the `llvm-tools-preview`
+component from the Rust toolchain pinned in `rust-toolchain.toml`. From the
+repository root, install it with `rustup component add llvm-tools-preview`.
+The Windows CI and signing workflows perform this setup explicitly. Resource
+preparation resolves `llvm-objcopy` from that exact toolchain's sysroot and host
+directory and fails if it is unavailable; it does not use a PATH fallback.
+
+Microsoft CVTRES emits a compiler provenance symbol that the pinned Go linker
+rejects. Resource preparation uses LLVM to remove only `@comp.id` from the
+application's staged COFF object, verifies that the resource data, other symbols
+and relocation targets are preserved, and then checks the linked application's
+actual PE version metadata. The Rust worker's `.res` input remains unchanged.
+This build conversion does not sign an executable or change Windows trust.
+
 The Windows package builder is `scripts/windows/New-GraphLayerWindowsPackage.ps1`. Its interface is:
 
 Generate the notice directory before packaging. The collector requires the pinned
